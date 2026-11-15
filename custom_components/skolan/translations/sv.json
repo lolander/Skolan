@@ -1,0 +1,77 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Skolan",
+        "description": "Skolan är en läxapp för barn med glosor, förhör, högläsning, meriter och husdjur.\n\nVälj en AI-tjänst om du vill att Skolan ska kunna läsa foton av glosor, veckobrev och läroböcker (valfritt).",
+        "data": {
+          "ai_task_entity": "AI-tjänst (valfritt)"
+        }
+      },
+      "barn": {
+        "title": "Lägg till ett barn",
+        "description": "Varje barn behöver en egen användare i Home Assistant. Barnet ser bara sina egna läxor.",
+        "data": {
+          "namn": "Barnets namn",
+          "anvandare": "Barnets användare i Home Assistant",
+          "notify": "Barnets telefon för notiser (valfritt)",
+          "klocka": "MQTT-prefix för Awtrix-klocka (valfritt)",
+          "fler": "Lägg till ett barn till efter detta"
+        }
+      },
+      "foraldrar": {
+        "title": "Föräldrar",
+        "description": "Föräldrar ser alla barn, skickar förhör och godkänner läxor gjorda utanför appen.",
+        "data": {
+          "foraldrar": "Föräldrar"
+        }
+      },
+      "notiser": {
+        "title": "Föräldrarnas telefoner",
+        "description": "Välj telefon för notiser till {namn} (valfritt).",
+        "data": {}
+      }
+    },
+    "error": {
+      "namn_finns": "Det namnet finns redan.",
+      "anvandare_finns": "Den användaren är redan ett barn."
+    },
+    "abort": {
+      "single_instance_allowed": "Skolan är redan inställd."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Skolan",
+        "menu_options": {
+          "nytt_barn": "Lägg till ett barn",
+          "ai": "Byt AI-tjänst"
+        }
+      },
+      "nytt_barn": {
+        "title": "Lägg till ett barn",
+        "data": {
+          "namn": "Barnets namn",
+          "anvandare": "Barnets användare",
+          "notify": "Barnets telefon (valfritt)"
+        }
+      },
+      "ai": {
+        "title": "AI-tjänst",
+        "data": {
+          "ai_task_entity": "AI-tjänst (valfritt)"
+        }
+      }
+    },
+    "error": {
+      "namn_finns": "Det namnet finns redan."
+    }
+  },
+  "issues": {
+    "omstart": {
+      "title": "Starta om för att använda Skolans nya inställningar",
+      "description": "Du har ändrat Skolans inställningar. Starta om Home Assistant för att de ska börja gälla."
+    }
+  }
+}

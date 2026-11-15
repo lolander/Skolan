@@ -1,0 +1,77 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Skolan",
+        "description": "Skolan is a homework app for kids (vocabulary, quizzes, reading aloud, rewards and pets). The app itself is in Swedish.\n\nPick an AI service if you want Skolan to read photos of vocabulary lists, weekly letters and textbooks (optional).",
+        "data": {
+          "ai_task_entity": "AI service (optional)"
+        }
+      },
+      "barn": {
+        "title": "Add a child",
+        "description": "Each child needs their own Home Assistant user. A child only sees their own homework.",
+        "data": {
+          "namn": "Child's name",
+          "anvandare": "Child's Home Assistant user",
+          "notify": "Child's phone for notifications (optional)",
+          "klocka": "MQTT prefix for Awtrix clock (optional)",
+          "fler": "Add another child after this"
+        }
+      },
+      "foraldrar": {
+        "title": "Parents",
+        "description": "Parents see all children, send quizzes and approve homework done outside the app.",
+        "data": {
+          "foraldrar": "Parents"
+        }
+      },
+      "notiser": {
+        "title": "Parents' phones",
+        "description": "Pick a phone for notifications to {namn} (optional).",
+        "data": {}
+      }
+    },
+    "error": {
+      "namn_finns": "That name already exists.",
+      "anvandare_finns": "That user is already a child."
+    },
+    "abort": {
+      "single_instance_allowed": "Skolan is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Skolan",
+        "menu_options": {
+          "nytt_barn": "Add a child",
+          "ai": "Change AI service"
+        }
+      },
+      "nytt_barn": {
+        "title": "Add a child",
+        "data": {
+          "namn": "Child's name",
+          "anvandare": "Child's user",
+          "notify": "Child's phone (optional)"
+        }
+      },
+      "ai": {
+        "title": "AI service",
+        "data": {
+          "ai_task_entity": "AI service (optional)"
+        }
+      }
+    },
+    "error": {
+      "namn_finns": "That name already exists."
+    }
+  },
+  "issues": {
+    "omstart": {
+      "title": "Restart to apply Skolan's new settings",
+      "description": "You changed Skolan's settings. Restart Home Assistant to apply them."
+    }
+  }
+}
