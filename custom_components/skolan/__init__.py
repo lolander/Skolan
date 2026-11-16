@@ -15,6 +15,7 @@ import html
 import io
 import json
 import logging
+import math
 import mimetypes
 import random
 import re
@@ -42,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.29.0"
+VERSION = "1.30.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -1908,6 +1909,50 @@ def _publik_forhor(f: dict, foralder: bool) -> dict:
     return {**f, "fragor": [{k: v for k, v in q.items() if k != "facit"} for q in f["fragor"]]}
 
 
+GODKANT_GRANS = 0.8  # minst 80 % rätt för godkänt (föräldern kan ändra beslutet)
+
+
+def _forslag(f: dict) -> str:
+    n = len(f["fragor"])
+    ratt = sum(1 for x in f["svar"] if x["ratt"])
+    return "godkant" if n and ratt >= math.ceil(n * GODKANT_GRANS - 1e-9) else "ej_godkant"
+
+
+def _fragor(g: dict, riktning: int) -> list[dict]:
+    fragor = []
+    for p in g["par"]:
+        fran = riktning if riktning in (0, 1) else (0 if uuid.uuid4().int % 2 else 1)
+        fragor.append({"fraga": p[fran], "facit": p[1 - fran], "fran": g["sprak"][fran], "till": g["sprak"][1 - fran]})
+    random.shuffle(fragor)
+    return fragor
+
+
+def _omprov(data: dict, f: dict) -> dict | None:
+    """Ett nytt förhör på samma glosor när det förra inte blev godkänt."""
+    if f.get("omprov_id") and any(x["id"] == f["omprov_id"] for x in data.get("forhor", [])):
+        return None
+    try:
+        a = _find(data.get("amnen", []), f["amne"])
+        g = _find(a["glosor"], f["glosor"])
+    except ValueError:
+        return None
+    riktning = f.get("riktning")
+    if riktning is None:
+        fr = {q.get("fran") for q in f["fragor"]}
+        riktning = 0 if fr == {g["sprak"][0]} else 1 if fr == {g["sprak"][1]} else 2
+    ratt = sum(1 for x in f["svar"] if x["ratt"])
+    ny = {
+        "id": _new_id(), "amne": a["id"], "glosor": g["id"], "namn": g["namn"], "amne_namn": a["namn"],
+        "meddelande": f"Nytt försök! Förra gången fick du {ratt} av {len(f['fragor'])} rätt. Du klarar det! 💪",
+        "av_id": f.get("av_id", ""), "av_namn": f.get("av_namn", "Förälder"),
+        "skapad": dt_util.now().isoformat(timespec="minutes"), "status": "skickat",
+        "fragor": _fragor(g, riktning), "svar": [], "riktning": riktning, "omprov_av": f["id"],
+    }
+    data.setdefault("forhor", []).append(ny)
+    f["omprov_id"] = ny["id"]
+    return ny
+
+
 class ForhorView(HomeAssistantView):
     url = "/api/skolan/forhor"
     name = "api:skolan:forhor"
@@ -1934,13 +1979,7 @@ class ForhorView(HomeAssistantView):
                     a = _find(data.get("amnen", []), body.get("amne"))
                     g = _find(a["glosor"], body.get("glosor"))
                     riktning = int(body.get("riktning") or 0)
-                    fragor = []
-                    for p in g["par"]:
-                        fran = riktning if riktning in (0, 1) else (0 if uuid.uuid4().int % 2 else 1)
-                        fragor.append(
-                            {"fraga": p[fran], "facit": p[1 - fran], "fran": g["sprak"][fran], "till": g["sprak"][1 - fran]}
-                        )
-                    random.shuffle(fragor)
+                    fragor = _fragor(g, riktning)
                     f = {
                         "id": _new_id(),
                         "amne": a["id"],
@@ -1954,6 +1993,7 @@ class ForhorView(HomeAssistantView):
                         "status": "skickat",
                         "fragor": fragor,
                         "svar": [],
+                        "riktning": riktning,
                     }
                     lista.append(f)
                     del lista[:-300]  # loggen sparar de 300 senaste
@@ -1997,7 +2037,16 @@ class ForhorView(HomeAssistantView):
                             text = f"{barn_conf['namn']} fick {ratt} av {len(f['fragor'])} rätt på {f['namn']}."
                             if fel:
                                 text += " Fel på: " + ", ".join(fel[:8]) + ("…" if len(fel) > 8 else "")
-                            notiser.append((conf["foralder_notify"].get(f["av_id"]), "📋 Förhöret är klart", text, url))
+                            f["forslag"] = f["bedomning"] = _forslag(f)
+                            f["bedomd_av"] = ""
+                            if f["bedomning"] == "godkant":
+                                rubrik = "✅ Förhöret är godkänt"
+                                text += " Tryck här om du vill ändra beslutet."
+                            else:
+                                rubrik = "❌ Förhöret är inte godkänt"
+                                text += f" {barn_conf['namn']} har fått ett nytt förhör. Tryck här om du hellre vill godkänna."
+                                _omprov(data, f)
+                            notiser.append((conf["foralder_notify"].get(f["av_id"]), rubrik, text, url))
                             meriter.forhor_klart(data, f)
                             # Felstavade ord blir "svåra ord" att öva på.
                             try:
@@ -2035,6 +2084,33 @@ class ForhorView(HomeAssistantView):
                         x = f["svar"][int(body.get("index"))]
                         x["ratt"] = not x["ratt"]
                         x["andrad"] = True
+                        if f["status"] == "klart":
+                            f["forslag"] = _forslag(f)
+                    elif op == "bedom":
+                        if not foralder:
+                            raise web.HTTPForbidden
+                        if f["status"] != "klart" or f.get("manuell"):
+                            raise ValueError("Förhöret går inte att bedöma.")
+                        beslut = body.get("bedomning")
+                        if beslut not in ("godkant", "ej_godkant"):
+                            raise ValueError("Okänt beslut.")
+                        if beslut != f.get("bedomning"):
+                            f["bedomning"] = beslut
+                            f["bedomd_av"] = user.name
+                            f["bedomd"] = dt_util.now().isoformat(timespec="minutes")
+                            if beslut == "godkant":
+                                om = next((x for x in lista if x["id"] == f.get("omprov_id")), None)
+                                if om and om["status"] == "skickat":  # inte påbörjat: behövs inte längre
+                                    lista.remove(om)
+                                    f.pop("omprov_id", None)
+                                notiser.append((barn_conf.get("notify"), "🎉 Förhöret är godkänt!", f"{user.name} har godkänt ditt förhör {f['namn']}. Bra jobbat!", url))
+                            else:
+                                ny = _omprov(data, f)
+                                notiser.append((
+                                    barn_conf.get("notify"), "📋 Nytt förhör",
+                                    f"{user.name}: förhöret {f['namn']} blev inte godkänt. Gör ett nytt försök!",
+                                    f"/skolan?barn={barn}&forhor={ny['id']}" if ny else url,
+                                ))
                     elif op == "ta_bort":
                         if not foralder:
                             raise web.HTTPForbidden

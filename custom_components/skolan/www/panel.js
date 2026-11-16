@@ -500,6 +500,10 @@ const DJUR_HUMOR = {
 };
 
 // "2026-11-21" -> { text: "fre 21 nov", kvar: "om 3 dagar", dagar: 3 }
+// Godkänt-gränsen (samma som servern): minst 80 % rätt.
+const fhGrans = (n) => Math.ceil(n * 0.8 - 1e-9);
+const fhMarke = (f) => (f.bedomning === "godkant" ? " ✅" : f.bedomning === "ej_godkant" ? " ❌" : "");
+
 const forhorInfo = (iso) => {
   if (!iso) return null;
   const d = new Date(`${iso}T00:00:00`);
@@ -667,7 +671,8 @@ class SkolanPanel extends HTMLElement {
       if (!body.kan_valja) {
         const oppet = (body.data.forhor || []).find((f) => f.status === "pagar") ||
           (body.data.forhor || []).find((f) => f.status === "skickat" && f.id !== this._fhSenare);
-        if (oppet && !(this._view.name === "forhor" && this._view.forhor === oppet.id)) {
+        const tittarResultat = this._view.name === "forhor" && (body.data.forhor || []).some((f) => f.id === this._view.forhor && f.status === "klart");
+        if (oppet && !(this._view.name === "forhor" && this._view.forhor === oppet.id) && !(oppet.status === "skickat" && tittarResultat)) {
           this._view = { name: "forhor", forhor: oppet.id, startad: oppet.status === "pagar" };
         }
       }
@@ -1069,7 +1074,7 @@ class SkolanPanel extends HTMLElement {
         ${lista
           .map((f) => {
             const ratt = f.svar.filter((x) => x.ratt).length;
-            const res = f.status === "klart" ? `<b>${ratt}/${f.fragor.length}</b> ${ratt === f.fragor.length ? "🏆" : ""}` : (f.status === "pagar" ? "✏️ pågår" : "📨 ej startat") + (f.paminnelser?.length ? ` · 🔔${f.paminnelser.length}` : "");
+            const res = f.status === "klart" ? `<b>${ratt}/${f.fragor.length}</b> ${ratt === f.fragor.length ? "🏆" : ""}${fhMarke(f)}` : (f.status === "pagar" ? "✏️ pågår" : "📨 ej startat") + (f.paminnelser?.length ? ` · 🔔${f.paminnelser.length}` : "");
             return `<tr data-open-forhor="${f.id}"><td>${esc((f.klart || f.skapad).slice(0, 10))}</td><td>${esc(f.namn)}<br><span class="muted small">${esc(f.amne_namn || "")} · ${esc(f.av_namn)}</span></td><td>${res}</td></tr>`;
           })
           .join("")}
@@ -1086,7 +1091,7 @@ class SkolanPanel extends HTMLElement {
         .map((f) => {
           const ratt = f.svar.filter((x) => x.ratt).length;
           const status =
-            f.status === "klart" ? `✅ ${ratt} av ${f.fragor.length} rätt` : f.status === "pagar" ? `✏️ Pågår ${f.svar.length}/${f.fragor.length}` : "📨 Skickat, inte startat";
+            f.status === "klart" ? `${ratt} av ${f.fragor.length} rätt${fhMarke(f)}` : f.status === "pagar" ? `✏️ Pågår ${f.svar.length}/${f.fragor.length}` : "📨 Skickat, inte startat";
           return `<button class="row" data-open-forhor="${f.id}"><span>${esc(f.namn)}<br><span class="muted small">${esc(f.skapad.slice(0, 10))} · från ${esc(f.av_namn)}</span></span><span class="small">${status} ›</span></button>`;
         })
         .join("")}<button class="row add" id="fh-logg">📋 Alla förhör (${lista.length})</button></div>`;
@@ -1105,7 +1110,7 @@ class SkolanPanel extends HTMLElement {
         )
         .join("")}
       ${klara.length ? `<h3>📋 Mina förhör</h3><div class="list">${klara
-        .map((f) => `<button class="row" data-open-forhor="${f.id}"><span>${esc(f.namn)}</span><span class="small">${f.svar.filter((x) => x.ratt).length} av ${f.fragor.length} rätt ›</span></button>`)
+        .map((f) => `<button class="row" data-open-forhor="${f.id}"><span>${esc(f.namn)}</span><span class="small">${f.svar.filter((x) => x.ratt).length} av ${f.fragor.length} rätt${fhMarke(f)} ›</span></button>`)
         .join("")}<button class="row add" id="fh-logg">📋 Alla förhör (${lista.length})</button></div>` : ""}`;
   }
 
@@ -1122,6 +1127,7 @@ class SkolanPanel extends HTMLElement {
         return `
           <div class="flash">
             <div class="big">📋</div>
+            ${f.omprov_av ? `<div class="fh-omprov">🔁 Nytt försök! Du behöver minst ${fhGrans(n)} av ${n} rätt för godkänt.</div>` : ""}
             <div class="word" style="font-size:24px">${esc(f.namn)}</div>
             <div>${n} ord · från ${esc(f.av_namn)}</div>
             ${f.meddelande ? `<div class="muted">"${esc(f.meddelande)}"</div>` : ""}
@@ -1162,7 +1168,8 @@ class SkolanPanel extends HTMLElement {
         f.status === "klart"
           ? `<div class="done" style="padding:10px 0"><div class="big">${pct >= 90 ? "🏆" : pct >= 60 ? "⭐" : "💪"}</div>
              <div class="score">${ratt} av ${n} rätt</div>
-             <div class="muted small">Klart ${esc((f.klart || "").replace("T", " "))}</div></div>`
+             <div class="muted small">Klart ${esc((f.klart || "").replace("T", " "))}</div></div>
+             ${this._fhBeslut(f, ratt, n)}`
           : f.status === "pagar"
           ? `<div class="forhor-kort folj">
                <div>✏️ <b>${esc(s.namn)} gör förhöret just nu</b></div>
@@ -1179,6 +1186,95 @@ class SkolanPanel extends HTMLElement {
         .map((x) => `<div class="row static"><span>${esc(forhorInfo(x.tid.slice(0, 10)).text)} kl. ${esc(x.tid.slice(11, 16))}</span><span class="muted small">${esc(x.av || "")}</span></div>`)
         .join("")}</div>` : ""}
       ${s.kan_valja ? `<div class="actions"><button class="ghost danger" id="fh-ta-bort">Ta bort förhöret</button></div>` : ""}`;
+  }
+
+  _fhBeslut(f, ratt, n) {
+    if (!f.bedomning || f.manuell) return "";
+    const s = this._s;
+    const ok = f.bedomning === "godkant";
+    const krav = `minst ${fhGrans(n)} av ${n} rätt`;
+    if (!s.kan_valja) {
+      const om = (s.data.forhor || []).find((x) => x.id === f.omprov_id);
+      return ok
+        ? `<div class="fh-beslut ok"><div class="fb-rubrik">🎉 Godkänt!</div><div>Snyggt jobbat${f.bedomd_av ? `, ${esc(f.bedomd_av)} har godkänt förhöret` : ""}!</div></div>`
+        : `<div class="fh-beslut fel"><div class="fb-rubrik">❌ Inte godkänt än</div>
+            <div>${f.bedomd_av ? `${esc(f.bedomd_av)} har bedömt förhöret.` : `Du behövde ${krav}.`} Kolla orden du hade fel på och försök igen!</div>
+            ${om && om.status !== "klart" ? `<button class="primary" data-open-forhor="${om.id}">🔁 Gör det nya förhöret →</button>` : ""}</div>`;
+    }
+    const vem = f.bedomd_av ? `Bedömt av ${esc(f.bedomd_av)}` : `Automatiskt: gränsen är ${krav}`;
+    const forslag = f.forslag && f.forslag !== f.bedomning ? `<div class="muted small">Efter ändrade svar blir förslaget nu ${f.forslag === "godkant" ? "godkänt" : "inte godkänt"}.</div>` : "";
+    const om = (s.data.forhor || []).find((x) => x.id === f.omprov_id);
+    return `<div class="fh-beslut ${ok ? "ok" : "fel"}">
+        <div class="fb-rubrik">${ok ? "✅ Godkänt" : "❌ Inte godkänt"}</div>
+        <div class="muted small">${vem}${om ? ` · nytt förhör ${om.status === "klart" ? "gjort" : om.status === "pagar" ? "pågår" : "skickat"}` : ""}</div>${forslag}
+        <div class="fb-knappar">
+          <button class="${ok ? "primary" : "ghost"}" data-fh-bedom="godkant">✅ Godkänn</button>
+          <button class="${ok ? "ghost" : "primary"}" data-fh-bedom="ej_godkant">❌ Inte godkänt</button>
+        </div>
+        <div class="muted small">Inte godkänt ger ${esc(s.namn)} ett nytt förhör på samma ord. Godkänner du tas ett nytt förhör som inte är påbörjat bort.</div>
+      </div>`;
+  }
+
+  _fhFira() {
+    // Fanfar och konfetti en gång per godkänt förhör (även om föräldern godkänner senare).
+    const s = this._s;
+    if (!s || s.kan_valja) return;
+    const vecka = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+    const f = [...(s.data.forhor || [])].reverse().find((x) => x.bedomning === "godkant" && (x.bedomd || x.klart || "") >= vecka);
+    if (!f) return;
+    const nyckel = `skolan_fh_firad_${s.barn}`;
+    let firade = [];
+    try { firade = JSON.parse(localStorage.getItem(nyckel) || "[]"); } catch (e) { /* ok */ }
+    if (firade.includes(f.id)) return;
+    try { localStorage.setItem(nyckel, JSON.stringify([...firade, f.id].slice(-30))); } catch (e) { /* ok */ }
+    const lugn = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const el = document.createElement("div");
+    el.id = "skolan-konfetti";
+    el.innerHTML = `<style>
+      #skolan-konfetti{position:fixed;inset:0;z-index:10000;pointer-events:none;overflow:hidden}
+      #skolan-konfetti i{position:absolute;top:-20px;width:10px;height:16px;border-radius:2px;animation:sk-fall var(--t) cubic-bezier(.3,.6,.5,1) var(--d) forwards}
+      #skolan-konfetti .sk-text{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%) scale(.3);font:800 44px/1.1 system-ui,sans-serif;color:#fff;
+        text-align:center;text-shadow:0 3px 0 #b8860b,0 6px 18px rgba(0,0,0,.45);animation:sk-pop 2.8s ease-out forwards;white-space:nowrap}
+      #skolan-konfetti .sk-text small{display:block;font-size:20px;font-weight:700;margin-top:6px}
+      @keyframes sk-fall{0%{transform:translate(0,0) rotate(0)}100%{transform:translate(var(--x),110vh) rotate(var(--r));opacity:.9}}
+      @keyframes sk-pop{0%{transform:translate(-50%,-50%) scale(.3);opacity:0}15%{transform:translate(-50%,-50%) scale(1.15);opacity:1}25%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1}100%{opacity:0}}
+    </style><div class="sk-text">🎉 GODKÄNT! 🎉<small>${esc(f.namn)}</small></div>`;
+    const farger = ["#ff4d6d", "#ffd23f", "#3bceac", "#4d96ff", "#b76eff", "#ff8c42"];
+    for (let i = 0; i < (lugn ? 0 : 120); i++) {
+      const b = document.createElement("i");
+      b.style.cssText = `left:${Math.random() * 100}%;background:${farger[i % farger.length]};--t:${2.2 + Math.random() * 1.8}s;--d:${Math.random() * 0.7}s;--x:${(Math.random() - 0.5) * 240}px;--r:${(Math.random() - 0.5) * 1440}deg;${Math.random() < 0.4 ? "width:8px;height:8px;border-radius:50%;" : ""}`;
+      el.appendChild(b);
+    }
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 4800);
+    this._fanfar();
+  }
+
+  _fanfar() {
+    // Egen kort segerfanfar (trumpetlik ton i C-dur).
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const ac = (this._ac ||= new AC());
+      ac.resume?.();
+      const ut = ac.createGain();
+      ut.gain.value = 0.1;
+      ut.connect(ac.destination);
+      const t0 = ac.currentTime + 0.05;
+      const ton = (f, s, d) => {
+        [1, 2.005].forEach((m, k) => {
+          const o = ac.createOscillator(), g = ac.createGain();
+          o.type = k ? "square" : "sawtooth"; o.frequency.value = f * m;
+          g.gain.setValueAtTime(0.0001, t0 + s);
+          g.gain.exponentialRampToValueAtTime(k ? 0.25 : 1, t0 + s + 0.02);
+          g.gain.setValueAtTime(k ? 0.2 : 0.8, t0 + s + d * 0.7);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + s + d);
+          o.connect(g).connect(ut); o.start(t0 + s); o.stop(t0 + s + d + 0.02);
+        });
+      };
+      [[523, 0, 0.14], [523, 0.16, 0.14], [523, 0.32, 0.14], [659, 0.48, 0.3], [587, 0.8, 0.14], [659, 0.96, 0.14], [784, 1.12, 0.7],
+       [392, 1.12, 0.7], [1047, 1.5, 0.6]].forEach(([f, s, d]) => ton(f, s, d));
+    } catch (e) { /* inget ljud */ }
   }
 
   _skickaView(a, g) {
@@ -4127,6 +4223,18 @@ class SkolanPanel extends HTMLElement {
     r.querySelectorAll("[data-fh-andra]").forEach((b) =>
       b.addEventListener("click", () => this._forhorAct("andra", { forhor: v.forhor, index: Number(b.dataset.fhAndra) }))
     );
+    r.querySelectorAll("[data-fh-bedom]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const beslut = b.dataset.fhBedom;
+        const f = (this._s.data.forhor || []).find((x) => x.id === v.forhor);
+        if (!f || f.bedomning === beslut) return;
+        if (beslut === "ej_godkant" && !confirm(`Underkänna förhöret? ${this._s.namn} får ett nytt förhör på samma ord.`)) return;
+        if (await this._forhorAct("bedom", { forhor: v.forhor, bedomning: beslut })) {
+          this._msg = { type: "ok", text: beslut === "godkant" ? `Godkänt! ${this._s.namn} får fanfar och konfetti 🎉` : `Nytt förhör skickat till ${this._s.namn} 📨` };
+          this._render();
+        }
+      })
+    );
     on("#fh-paminn", async () => {
       if (await this._forhorAct("paminn", { forhor: v.forhor })) {
         this._msg = { type: "ok", text: `Påminnelse skickad till ${this._s.namn} 🔔` };
@@ -4283,6 +4391,7 @@ class SkolanPanel extends HTMLElement {
     }
     r.querySelector("#svar")?.focus();
     r.querySelector("#fh-svar")?.focus();
+    this._fhFira();
     clearTimeout(this._fhPoll);
     const v = this._view;
     const f = v.name === "forhor" && (this._s?.data?.forhor || []).find((x) => x.id === v.forhor);
@@ -4392,6 +4501,12 @@ const CSS = `
   .row.snart { border-left:5px solid #e0603a; } .row.snart .forhor { color:#e0603a; }
   .forhor-kort { background:var(--card-background-color); border-radius:12px; padding:12px 14px; margin-bottom:12px; font-size:17px; }
   .forhor-kort.snart { background:rgba(224,96,58,.15); }
+  .fh-beslut { border-radius:14px; padding:14px; margin:0 0 14px; text-align:center; display:flex; flex-direction:column; gap:8px; }
+  .fh-beslut.ok { background:rgba(59,206,172,.18); border:2px solid #3bceac; }
+  .fh-beslut.fel { background:rgba(224,96,58,.14); border:2px solid #e0603a; }
+  .fh-beslut .fb-rubrik { font-size:22px; font-weight:800; }
+  .fh-beslut .fb-knappar { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .fh-omprov { background:rgba(224,96,58,.15); border-radius:10px; padding:8px 12px; font-weight:600; }
   .forhor-nytt { display:block; width:100%; text-align:left; border:none; border-radius:16px; padding:16px; margin-bottom:14px; cursor:pointer;
                  background:linear-gradient(135deg, #e0603a, #f7a14f); color:#fff; box-shadow:0 3px 10px rgba(224,96,58,.4); }
   .fn-rubrik { font-size:14px; opacity:.9; } .fn-namn { font-size:22px; font-weight:700; margin:4px 0; }
