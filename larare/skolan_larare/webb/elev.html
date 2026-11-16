@@ -1,0 +1,25 @@
+<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Synka med läraren</title><link rel="icon" href="/ikon.png">
+<style>
+body{font-family:system-ui,sans-serif;background:#e8eaf6;margin:0;padding:24px;text-align:center;color:#1a237e}
+.kort{background:#fff;border-radius:20px;padding:28px 20px;max-width:380px;margin:auto;box-shadow:0 4px 18px rgba(0,0,0,.12)}
+.stor{font-size:64px}.fel{color:#c62828}.ok{color:#2e7d32}
+button{font-size:18px;padding:12px 20px;border-radius:12px;border:0;background:#3949ab;color:#fff;margin-top:14px}
+</style></head><body><div class="kort" id="k"><div class="stor">🏫</div><h2>Ansluter…</h2></div>
+<script>
+const k = document.getElementById("k");
+const lank = decodeURIComponent(location.hash.slice(1));
+const visa = (ikon, rubrik, text, cls = "") => { k.innerHTML = `<div class="stor">${ikon}</div><h2 class="${cls}">${rubrik}</h2><p>${text}</p>`; };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+if (!lank) {
+  visa("📱", "Öppna Skolan först", "I Skolan-appen: tryck <b>🤝 Plugga ihop</b> och sedan <b>🏫 Anslut till läraren</b>. Skriv adressen som syns på lärarens skärm.");
+} else {
+  history.replaceState(null, "", location.pathname);  // klasslänken ska inte ligga kvar i adressfältet
+  fetch("/api/elev/koppla", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lank }) })
+    .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+    .then(({ ok, j }) => ok
+      ? visa("✅", `Klart, ${esc(j.namn)}!`, `Du är synkad med ${esc(j.klass || "klassen")}.${j.nya ? ` ${j.nya} nytt veckobrev skickades hem.` : ""}<br><br>Du kan stänga den här sidan.`, "ok")
+      : visa("😕", "Det gick inte", esc(j.fel || "Försök igen."), "fel"))
+    .catch(() => visa("📶", "Ingen kontakt", "Är du på skolans wifi, samma nätverk som läraren?", "fel"));
+}
+</script></body></html>

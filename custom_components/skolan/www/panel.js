@@ -973,6 +973,10 @@ class SkolanPanel extends HTMLElement {
       title = "🤝 Vänner";
       back = { name: "hem" };
       body = this._vannerView();
+    } else if (v.name === "skola") {
+      title = "🏫 Skolan och läraren";
+      back = { name: "hem" };
+      body = this._skolaView();
     } else if (v.name === "tillsammans") {
       title = "🤝 Plugga ihop";
       back = { name: "hem" };
@@ -1682,6 +1686,90 @@ class SkolanPanel extends HTMLElement {
       <div class="sak-rutnat">${f.skoldar.map(kort).join("")}</div>`;
   }
 
+  // ---------- skolan och läraren ----------
+  async _skolaAct(body, ok) {
+    if (this._busy) return null;
+    this._busy = true;
+    this._render();
+    try {
+      const res = await this._hass.fetchWithAuth("/api/skolan/skola", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...body }) });
+      const svar = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(svar.message || res.statusText);
+      if (!svar.forslag) this._s.skola = { ...this._s.skola, ...svar };
+      if (ok) this._msg = { type: "ok", text: ok };
+      return svar;
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+      return null;
+    } finally {
+      this._busy = false;
+      this._render();
+    }
+  }
+
+  _klassSynk(ny = false) {
+    const k = this._s.skola;
+    if (!k?.lank) return;
+    let url = !ny && k.larare?.url;
+    if (!url) {
+      const adr = this._ask("Skriv adressen som syns i lärarens app (t.ex. 192.168.1.20:8770)", "");
+      if (!adr) return;
+      url = /^https?:\/\//.test(adr) ? adr.replace(/\/+$/, "") : `http://${adr.trim()}`;
+    }
+    window.open(`${url}/elev#${encodeURIComponent(k.lank)}`, "_blank");
+  }
+
+  _klassKort() {
+    const k = this._s.skola;
+    if (!k || !k.lank) return "";
+    const kl = k.klass, kvar = kl ? Math.max(0, kl.hp - kl.skada) : 0;
+    return `<div class="card"><b>🏫 Klassen${k.larare?.klass ? `: ${esc(k.larare.klass)}` : ""}</b>
+      ${kl ? `<div class="small">Klassens boss: ${esc(kl.ikon)} ${esc(kl.boss)} · ❤️ ${kvar} av ${kl.hp} kvar · ${kl.antal} elever med</div>
+        <div class="progress boss-hp"><div style="width:${Math.round((kvar / kl.hp) * 100)}%"></div></div>
+        <div class="small muted">Allt du pluggar hjälper klassen. Klarar ni bossen får alla ${30} ⭐. Synka på lektionen så räknas ditt plugg.</div>` : ""}
+      ${(k.grupper || []).map((g) => `<div class="grupp-kort"><b>👥 ${esc(g.namn)}</b> <span class="small muted">med ${g.medlemmar.map(esc).join(", ")}</span>
+        <div>${esc(g.uppgift) || "<span class='muted'>Ingen uppgift än</span>"}${g.datum ? ` <span class="small muted">· klar senast ${esc(g.datum)}</span>` : ""}</div>
+        ${g.klar ? `<div class="small">✅ Du har bockat av uppgiften. Läraren ser det när du synkar.</div>` : `<button class="mini primary" data-grupp-klar="${g.id}">✔️ Vi är klara</button>`}</div>`).join("")}
+      ${k.larare?.url ? `<button class="primary" id="klass-synk">🔄 Synka med läraren</button> <button class="mini" id="klass-anslut">Annan lärare</button>`
+        : `<div class="small muted">Be läraren visa adressen i lärarappen.</div><button class="primary" id="klass-anslut">🏫 Anslut till läraren</button>`}
+      ${k.larare?.synkad ? `<div class="small muted">Senast synkad ${new Date(k.larare.synkad).toLocaleString("sv-SE", { dateStyle: "short", timeStyle: "short" })}</div>` : ""}</div>`;
+  }
+
+  _skolaView() {
+    const k = this._s.skola, s = this._s;
+    if (!k) return `<p class="muted">Hämtar…</p>`;
+    const f = k.foralder || {}, lar = k.larare, inst = lar?.inst || {};
+    const vd = ["mån", "tis", "ons", "tor", "fre", "lör", "sön"];
+    const larText = (id) => id === "mejl" && !lar ? "inte kopplad (ditt val räcker)" : !lar ? "inte kopplad än" : inst[id] ? "✅ på" : "❌ av";
+    const sm = k.smtp || {};
+    return `<p class="small muted">Du och läraren bestämmer tillsammans. En funktion är bara på när <b>båda</b> har slagit på den: du här och läraren i lärarappen.</p>
+      <div class="card"><b>Vad ska vara på?</b>
+        ${k.funktioner.map((x) => `<div class="sk-rad"><label class="kap-rad"><input type="checkbox" data-sk-f="${x.id}" ${f[x.id] ? "checked" : ""} ${this._busy ? "disabled" : ""}> ${x.ikon} <b>${esc(x.namn)}</b></label>
+          <div class="small muted">${esc(x.info)}</div>
+          <div class="small">Läraren: ${larText(x.id)} · ${k.aktiv[x.id] ? "<b>🟢 Aktiv</b>" : "⚪ Inte aktiv"}</div></div>`).join("")}</div>
+      <div class="card"><b>Läraren</b>
+        <label class="small">Namnet läraren ser <input id="sk-namn" maxlength="40" value="${esc(f.namn || "")}" placeholder="${esc(s.namn)}"></label>
+        <label class="small">Lärarens e-post <input id="sk-mejl" type="email" value="${esc(f.mejl_till || "")}" placeholder="larare@skolan.se"></label>
+        <div class="small">Skicka e-postrapporten dessa dagar kl. 18:</div>
+        <div class="lag-marken">${vd.map((d, i) => `<label><input type="checkbox" data-sk-dag="${i}" ${(f.mejl_dagar || []).includes(i) ? "checked" : ""}> ${d}</label>`).join("")}</div>
+        <button class="primary" id="sk-spara">💾 Spara</button>
+        ${lar ? `<div class="small" style="margin-top:8px">🏫 Kopplad till <b>${esc(lar.namn || "läraren")}</b>${lar.klass ? `, ${esc(lar.klass)}` : ""} · senast synkad ${esc((lar.synkad || "").replace("T", " "))}</div><button class="mini" id="sk-koppla-bort">Koppla bort läraren</button>` : ""}
+        <div class="small" style="margin-top:8px"><b>Klasslänk</b> (läraren behöver den för att synka; eleven skickar den när hen ansluter på lektionen)</div>
+        ${k.lank ? `<div class="small muted" style="word-break:break-all">${esc(k.lank)}</div><button class="mini" id="sk-kopiera">📋 Kopiera</button>` : `<div class="small muted">${k.kan_nas ? "Slå på något ovan först." : "Home Assistant behöver gå att nå utifrån (t.ex. Nabu Casa)."}</div>`}</div>
+      ${k.inkorg?.length ? `<h3>📬 Veckobrev från läraren</h3><ul class="lista">${k.inkorg.map((x) => `<li><b>${esc(x.titel)}</b>${x.vecka ? ` · v.${esc(x.vecka)}` : ""}
+          <button class="mini primary" data-ink-granska="${x.id}">👀 Granska och lägg in</button> <button class="mini" data-ink-avvisa="${x.id}">🗑️</button></li>`).join("")}</ul>` : ""}
+      <details class="card"><summary><b>📧 E-post (SMTP)</b> ${sm.har_losen ? "✅ inställd" : "– behövs för rapport via e-post"}</summary>
+        <div class="small muted">Home Assistant har ingen e-posttjänst, så Skolan skickar själv. För Gmail: server smtp.gmail.com, port 587 och ett <b>applösenord</b> (inte ditt vanliga lösenord). Lösenordet sparas bara i din Home Assistant.</div>
+        <label class="small">Server <input id="smtp-server" value="${esc(sm.server || "smtp.gmail.com")}"></label>
+        <label class="small">Port <input id="smtp-port" type="number" value="${esc(sm.port || 587)}"></label>
+        <label class="small">Användare <input id="smtp-anv" value="${esc(sm.anvandare || "")}" autocomplete="off"></label>
+        <label class="small">Från (avsändare) <input id="smtp-fran" value="${esc(sm.fran || "")}" placeholder="samma som användare"></label>
+        <label class="small">Lösenord <input id="smtp-losen" type="password" autocomplete="new-password" placeholder="${sm.har_losen ? "oförändrat" : ""}"></label>
+        <button class="primary" id="sk-smtp">💾 Spara e-post</button>
+        <label class="small">Skicka testrapport till <input id="sk-test-till" type="email" placeholder="din egen adress"></label>
+        <button class="mini" id="sk-test">📧 Skicka test</button></details>`;
+  }
+
   // ---------- plugga ihop: pluggstund och glosduell ----------
   async _tillLoad() {
     try {
@@ -1763,7 +1851,7 @@ class SkolanPanel extends HTMLElement {
       return `<li>⚔️ <b>${esc(x.namn)}</b> mot ${esc(de?.namn || "?")} · ${status} ${mig.med ? `· ${mig.ratt}/${x.antal}` : ""} ${knapp}</li>`;
     }).join("");
     const glosor = t.glosor || [];
-    return `<p class="small muted">Plugga ihop med ${t.vanner_pa ? "syskon och kompisar" : "syskon"}! ${t.vanner_pa ? "Kompisar i andra hem ser bara ditt smeknamn och dina poäng." : ""}</p>
+    return `${this._klassKort()}<p class="small muted">Plugga ihop med ${t.vanner_pa ? "syskon och kompisar" : "syskon"}! ${t.vanner_pa ? "Kompisar i andra hem ser bara ditt smeknamn och dina poäng." : ""}</p>
       ${stunder || ""}
       ${barn && komp.length ? `<div class="card"><b>🤝 Starta en pluggstund</b>
         <div class="small muted">Ni pluggar samtidigt i kväll. Når alla som är med ${t.stund_mal} ⭐ får alla +${t.stund_bonus} ⭐ (och lagbossen tar skada).</div>
@@ -2696,6 +2784,7 @@ class SkolanPanel extends HTMLElement {
       const opt = (lista, val) => lista.map(([k, t]) => `<option value="${esc(k)}" ${String(val) === String(k) ? "selected" : ""}>${esc(t)}</option>`).join("");
       const butik = s.butik?.beloningar || [];
       foralder = `
+        ${s.skola ? `<button class="row foralder-knapp" id="open-skola" style="margin-top:4px"><span>🏫 <b>Skolan och läraren</b>${s.skola.inkorg?.length ? ` <span class="badge">📬 ${s.skola.inkorg.length}</span>` : ""}<br><span class="muted small">Välj vad läraren får, veckobrev från läraren, rapport via e-post och klasslag</span></span><span>›</span></button>` : ""}
         <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
         <h3 style="margin-top:4px">📅 Läxschema för ${esc(s.namn)}</h3>
         <p class="muted small">När läxan brukar komma. Lägger ${esc(s.namn)} in den samma dag eller dagen efter blir det +${p.i_tid} ⭐. Glosor får förhörsdagen ifylld automatiskt. ${esc(s.namn)} får en påminnelse kl. 17.15 den dagen läxan brukar komma.</p>
@@ -4478,6 +4567,7 @@ class SkolanPanel extends HTMLElement {
       if (f.ord && v.med.ord) args.ord = f.ord;
       if (!Object.keys(args).length) return;
       if (await this._uppdragAct("veckoplan", args)) {
+        if (v.inkorg) await this._skolaAct({ op: "inkorg_klar", id: v.inkorg });
         this._go({ name: "hem" });
         this._msg = { type: "ok", text: "Veckans läxor är inlagda! 📅" };
         this._render();
@@ -4496,6 +4586,27 @@ class SkolanPanel extends HTMLElement {
     on("#open-arena", () => this._go({ name: "arena" }));
     on("#open-lag", () => this._go({ name: "lag" }));
     on("#open-till", () => this._go({ name: "tillsammans" }));
+    on("#open-skola", () => this._go({ name: "skola" }));
+    r.querySelectorAll("[data-sk-f]").forEach((b) => b.addEventListener("change", () => this._skolaAct({ op: "installningar", [b.dataset.skF]: b.checked })));
+    on("#sk-spara", () => this._skolaAct({ op: "installningar", namn: $("#sk-namn")?.value || "", mejl_till: $("#sk-mejl")?.value || "",
+      mejl_dagar: [...r.querySelectorAll("[data-sk-dag]")].filter((x) => x.checked).map((x) => Number(x.dataset.skDag)) }, "Sparat ✅"));
+    on("#sk-smtp", () => this._skolaAct({ op: "smtp", server: $("#smtp-server")?.value, port: $("#smtp-port")?.value, anvandare: $("#smtp-anv")?.value, fran: $("#smtp-fran")?.value, losen: $("#smtp-losen")?.value }, "E-posten är inställd ✅"));
+    on("#sk-test", () => this._skolaAct({ op: "mejl_test", till: $("#sk-test-till")?.value || "" }, "Testmejlet är skickat 📧"));
+    on("#sk-koppla-bort", () => { if (confirm("Koppla bort läraren? Klasslänken byts ut och läraren behöver koppla in eleven igen.")) this._skolaAct({ op: "koppla_bort" }, "Läraren är bortkopplad."); });
+    on("#sk-kopiera", () => navigator.clipboard?.writeText(this._s.skola?.lank || "").then(() => { this._msg = { type: "ok", text: "Klasslänken är kopierad 📋" }; this._render(); }));
+    r.querySelectorAll("[data-ink-avvisa]").forEach((b) => b.addEventListener("click", () => this._skolaAct({ op: "inkorg_avvisa", id: b.dataset.inkAvvisa }, "Veckobrevet är borttaget.")));
+    r.querySelectorAll("[data-ink-granska]").forEach((b) => b.addEventListener("click", async () => {
+      const svar = await this._skolaAct({ op: "inkorg_forslag", id: b.dataset.inkGranska });
+      if (!svar?.forslag) return;
+      const f = svar.forslag;
+      if (f.ord) f.ord.ord = f.ord.ord || [];
+      this._go({ name: "veckobrev", f, inkorg: b.dataset.inkGranska, med: { las: !!f.las, skriv: !!f.skriv, ord: !!f.ord } });
+      this._msg = { type: "ok", text: "Lärarens förslag. Kolla och tryck Spara." };
+      this._render();
+    }));
+    on("#klass-synk", () => this._klassSynk());
+    r.querySelectorAll("[data-grupp-klar]").forEach((b) => b.addEventListener("click", () => this._skolaAct({ op: "grupp_klar", id: b.dataset.gruppKlar }, "✅ Bra jobbat! Synka med läraren så ser hen det.")));
+    on("#klass-anslut", () => this._klassSynk(true));
     on("#stund-ny", () => this._tillAct({ op: "stund_ny", gaster: [...r.querySelectorAll("[data-stund-gast]")].filter((x) => x.checked).map((x) => x.dataset.stundGast) }, "🤝 Pluggstunden är startad! Nu pluggar ni."));
     on("#duell-ny", () => {
       const g = (r.querySelector("#duell-glosa")?.value || "").split("|"), gast = r.querySelector("#duell-gast")?.value;
@@ -5412,6 +5523,9 @@ const CSS = `
   .attack-knapp:disabled { opacity:.4; cursor:default; }
   .attack-sak.svag { outline:2px solid #fbc02d; }
   .sak-kort.svag { outline:2px solid #fbc02d; }
+  .grupp-kort { border-left:4px solid var(--primary-color); padding:4px 0 4px 10px; margin:8px 0; }
+  .sk-rad { padding:8px 0; border-bottom:1px solid var(--divider-color); }
+  .badge { background:#e53935; color:#fff; border-radius:10px; padding:1px 7px; font-size:12px; }
   .stund { display:flex; flex-direction:column; gap:6px; }
   .stund.klar { outline:2px solid #fbc02d; }
   .stund-rad { display:grid; grid-template-columns:minmax(70px,auto) 1fr auto; gap:8px; align-items:center; }

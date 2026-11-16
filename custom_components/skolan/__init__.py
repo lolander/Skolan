@@ -19,6 +19,7 @@ import math
 import mimetypes
 import random
 import re
+import smtplib
 import time
 import shutil
 import uuid
@@ -37,14 +38,14 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import meriter, tillsammans, vanner
+from . import meriter, skola, tillsammans, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.37.0"
+VERSION = "1.38.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -134,7 +135,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView):
+    for view in (StateView, ActionView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -343,6 +344,29 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
 
     async_track_time_change(hass, _vanner_synk, minute=list(range(3, 60, 15)), second=0)
     async_track_time_change(hass, _klockor, second=20)  # varje minut
+
+    async def _skola_mejl(_now=None) -> None:
+        """18:00: veckorapport till läraren de dagar föräldern har valt."""
+        if not skola.PA:
+            return
+        idag = dt_util.now().date()
+        for b in conf["barn"]:
+            try:
+                mapp = _dir(hass, b["id"])
+                s = await hass.async_add_executor_job(skola.las, mapp)
+                if not skola.aktiv(s, "mejl") or idag.weekday() not in s["foralder"]["mejl_dagar"] or s["mejl_skickat"] == idag.isoformat():
+                    continue
+                data = await hass.async_add_executor_job(_load, mapp)
+                namn = s["foralder"].get("namn") or b["namn"]
+                r = skola.rapport(data, namn)
+                await hass.async_add_executor_job(skola.skicka_mejl, hass.data[DOMAIN]["base"], s["foralder"]["mejl_till"],
+                                                  f"Skolan: rapport om {namn}", skola.rapport_text(r))
+                s["mejl_skickat"] = idag.isoformat()
+                await hass.async_add_executor_job(skola.spara, mapp, s)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Rapportmejl för %s gick inte att skicka: %s", b["id"], err)
+
+    async_track_time_change(hass, _skola_mejl, hour=18, minute=0, second=0)
     hass.async_create_task(_klockor())
 
     async def _notis_knapp(event: Event) -> None:
@@ -808,6 +832,7 @@ class StateView(HomeAssistantView):
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data),
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
+                "skola": await _skola_status(hass, barn, parent) if skola.PA else None,
                 "lag_lista": (await hass.async_add_executor_job(_load_fil, _lag_fil(hass))).get("lag", []) if parent else None,
                 "barn_lista": [{"id": b["id"], "namn": b["namn"]} for b in conf["barn"]] if parent else None,
                 "lag_van_val": await hass.async_add_executor_job(_lag_van_val, hass) if parent and vanner.pa() else None,
@@ -2723,7 +2748,7 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
     if p_skriv < 0.6:
         k_skriv = None
     las_dagar = sorted({int(x) for x in (ai.get("las_dagar") or []) if str(x).lstrip("-").isdigit() and 0 <= int(x) <= 6})
-    ord_lista = [str(x).strip()[:60] for x in (ai.get("ord") or []) if str(x).strip()][:40]
+    ord_lista = [str(x).strip()[:170] for x in (ai.get("ord") or []) if str(x).strip()][:100]
     diktamen = dag(ai["diktamen_dag"]) if ai.get("diktamen_dag") is not None else None
     g_finns = next((g for g in (a_ord or {}).get("glosor", []) if diktamen and g.get("forhor") == diktamen), None)
     titel = f"Kapitel {knr}" if knr else (knamn or "Veckans läsläxa")
@@ -2748,7 +2773,7 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
             "amne": (a_ord or {}).get("id"), "glosor": (g_finns or {}).get("id"),
             "befintliga": [p[0] for p in (g_finns or {}).get("par", [])],
             "namn": (g_finns or {}).get("namn") or f"Veckans ord v.{(mandag.isocalendar()[1])}",
-            "ord": ord_lista, "forhor": diktamen,
+            "ord": ord_lista, "forhor": diktamen, "sprak": ai.get("glosor_sprak"),
         } if ord_lista else None,
     }
 
@@ -2858,15 +2883,22 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
     ord_ = body.get("ord")
     if ord_:
         a = _find(amnen, ord_.get("amne"))
-        par = [[str(o).strip()[:80], ""] for o in (ord_.get("ord") or []) if str(o).strip()][:100]
+        rader = [str(o).strip() for o in (ord_.get("ord") or []) if str(o).strip()][:100]
+        sprak = ["Svenska", "Svenska"]
+        if rader and all(" = " in x for x in rader):  # glosor med översättning (t.ex. från lärarens veckobrev)
+            par = [[a_.strip()[:80], b_.strip()[:80]] for a_, b_ in (x.split(" = ", 1) for x in rader)]
+            sp = ord_.get("sprak") if isinstance(ord_.get("sprak"), list) and len(ord_["sprak"]) == 2 else ["Svenska", "Engelska"]
+            sprak = [str(sp[0])[:20] or "Svenska", str(sp[1])[:20] or "Engelska"]
+        else:
+            par = [[x[:80], ""] for x in rader]
         if not par:
             raise ValueError("Veckans ord är tomma.")
         forhor = datum(ord_["forhor"]) if ord_.get("forhor") else None
         if ord_.get("glosor"):
             g = _find(a["glosor"], ord_["glosor"])
-            g.update({"par": par, "forhor": forhor or g.get("forhor")})
+            g.update({"par": par, "forhor": forhor or g.get("forhor"), "sprak": sprak})
         else:
-            g = {"id": _new_id(), "namn": _name(ord_.get("namn") or "Veckans ord"), "sprak": ["Svenska", "Svenska"],
+            g = {"id": _new_id(), "namn": _name(ord_.get("namn") or "Veckans ord"), "sprak": sprak,
                  "par": par, "forhor": forhor, "skapad": dt_util.now().date().isoformat()}
             a["glosor"].append(g)
         skapat.append(f"📝 {g['namn']} ({len(par)} ord)")
@@ -3214,3 +3246,141 @@ class VanTillsammansView(HomeAssistantView):
         except (ValueError, TypeError, AttributeError):
             return self.json({"ok": False}, status_code=400)
         return self.json({"ok": True})
+
+
+# ---------- skolan: läraren och klassen ----------
+async def _skola_status(hass: HomeAssistant, barn: str, foralder: bool) -> dict:
+    mapp = _dir(hass, barn)
+    s = await hass.async_add_executor_job(skola.las, mapp)
+    if skola.se_till_nyckel(s):
+        await hass.async_add_executor_job(skola.spara, mapp, s)
+    st = skola.status(s, _bas_url(hass), foralder)
+    if not foralder:  # barnet ser klasslänken bara om föräldern har slagit på något
+        if not any(s["foralder"].get(f) for f in skola.FUNKTIONER if f != "mejl"):
+            st["lank"] = ""
+    else:
+        st["smtp"] = await hass.async_add_executor_job(skola.smtp_publik, hass.data[DOMAIN]["base"])
+    return st
+
+
+class SkolaView(HomeAssistantView):
+    """Inställningar för skolan (förälder): vad som är på, lärarens e-post, inkorgen med veckobrev."""
+
+    url = "/api/skolan/skola"
+    name = "api:skolan:skola"
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        if not skola.PA:
+            raise web.HTTPNotFound
+        barn = _barn_for(hass, request, request.query.get("barn"))
+        return self.json(await _skola_status(hass, barn, _ar_foralder(hass, request)))
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        if not skola.PA:
+            raise web.HTTPNotFound
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest
+        barn = _barn_for(hass, request, body.get("barn"))
+        mapp = _dir(hass, barn)
+        foralder = _ar_foralder(hass, request)
+        if body.get("op") == "grupp_klar" and not foralder:  # barnet bockar av gruppuppgiften
+            try:
+                async with _vlock(hass, f"skola:{barn}"):
+                    s = await hass.async_add_executor_job(skola.las, mapp)
+                    skola.grupp_klar(s, str(body.get("id") or ""))
+                    await hass.async_add_executor_job(skola.spara, mapp, s)
+            except ValueError as err:
+                return self.json_message(str(err), 400)
+            return self.json(await _skola_status(hass, barn, False))
+        if not foralder:
+            raise web.HTTPForbidden
+        bas = hass.data[DOMAIN]["base"]
+        op = str(body.get("op") or "")
+        try:
+            if op == "smtp":
+                await hass.async_add_executor_job(skola.smtp_spara, bas, body)
+            elif op == "mejl_test":
+                s = await hass.async_add_executor_job(skola.las, mapp)
+                till = str(body.get("till") or s["foralder"]["mejl_till"] or "").strip()
+                if not till:
+                    raise ValueError("Skriv en e-postadress.")
+                data = await hass.async_add_executor_job(_load, mapp)
+                namn = s["foralder"].get("namn") or next(b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn)
+                text = "(TEST – så här ser rapporten ut)\n\n" + skola.rapport_text(skola.rapport(data, namn))
+                try:
+                    await hass.async_add_executor_job(skola.skicka_mejl, bas, till, f"Skolan: testrapport om {namn}", text)
+                except (OSError, smtplib.SMTPException) as err:
+                    raise ValueError(f"Mejlet gick inte iväg: {err}") from err
+            elif op == "inkorg_forslag":
+                s = await hass.async_add_executor_job(skola.las, mapp)
+                b = next((x for x in s["inkorg"] if x["id"] == body.get("id")), None)
+                if not b:
+                    raise ValueError("Veckobrevet finns inte.")
+                data = await hass.async_add_executor_job(_load, mapp)
+                return self.json({"forslag": await hass.async_add_executor_job(_forslag_veckobrev, mapp, data, b["ai"])})
+            else:
+                async with _vlock(hass, f"skola:{barn}"):
+                    s = await hass.async_add_executor_job(skola.las, mapp)
+                    if op == "installningar":
+                        skola.satt_installningar(s, body)
+                    elif op == "koppla_bort":
+                        skola.koppla_bort(s)
+                    elif op in ("inkorg_klar", "inkorg_avvisa"):
+                        b = next((x for x in s["inkorg"] if x["id"] == body.get("id")), None)
+                        if b:
+                            b["status"] = "sparad" if op == "inkorg_klar" else "avvisad"
+                    else:
+                        raise ValueError("Okänd åtgärd.")
+                    await hass.async_add_executor_job(skola.spara, mapp, s)
+        except ValueError as err:
+            return self.json_message(str(err), 400)
+        return self.json(await _skola_status(hass, barn, True))
+
+
+class KlassView(HomeAssistantView):
+    """Lärarappen synkar med en elev. Ingen inloggning, hemlig nyckel i klasslänken."""
+
+    url = "/api/skolan/klass/{nyckel}"
+    name = "api:skolan:klass"
+    requires_auth = False
+
+    async def post(self, request: web.Request, nyckel: str) -> web.Response:
+        import hmac
+
+        hass: HomeAssistant = request.app["hass"]
+        if not skola.PA:
+            raise web.HTTPNotFound
+        hitta = None
+        for b in hass.data[DOMAIN]["conf"]["barn"]:
+            s = await hass.async_add_executor_job(skola.las, _dir(hass, b["id"]))
+            if s["nyckel"] and hmac.compare_digest(s["nyckel"], nyckel):
+                hitta = b
+        if not hitta:
+            raise web.HTTPNotFound
+        try:
+            body = json.loads(await request.content.read(65536))
+            if not isinstance(body, dict):
+                raise ValueError
+        except ValueError:
+            return self.json({"fel": "Fel format."}, status_code=400)
+        mapp = _dir(hass, hitta["id"])
+        async with hass.data[DOMAIN]["locks"][hitta["id"]]:
+            async with _vlock(hass, f"skola:{hitta['id']}"):
+                s = await hass.async_add_executor_job(skola.las, mapp)
+                if not any(s["foralder"].get(f) for f in skola.FUNKTIONER if f != "mejl"):
+                    return self.json({"fel": "Föräldern har inte slagit på något för läraren än."}, status_code=403)
+                data = await hass.async_add_executor_job(_load, mapp)
+                try:
+                    svar = skola.ta_emot(s, data, hitta["namn"], body)
+                except PermissionError as err:
+                    return self.json({"fel": str(err)}, status_code=409)
+                except ValueError as err:
+                    return self.json({"fel": str(err)}, status_code=400)
+                if skola.klassboss_belona(data, s):
+                    await hass.async_add_executor_job(_save, mapp, data)
+                await hass.async_add_executor_job(skola.spara, mapp, s)
+        svar["skolan"] = VERSION
+        return self.json(svar)
