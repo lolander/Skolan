@@ -261,6 +261,82 @@ const DJUR_UTSEENDE = {
 // Saker som sitter på ögonen i stället för på huvudet
 const PA_OGONEN = new Set(["solglas", "sol_hatt2", "dykmask"]);
 
+const STRID_CSS = `
+#skolan-strid { --f:1; position:fixed; inset:0; z-index:99999; overflow:hidden; font-family:system-ui,sans-serif; color:#fff; cursor:pointer; user-select:none; animation:sIn calc(.25s*var(--f)) ease-out; }
+#skolan-strid.lugn { --f:.5; }
+#skolan-strid.ut { animation:sUt .35s ease-in forwards; }
+#skolan-strid * { box-sizing:border-box; }
+#skolan-strid .scen { position:absolute; inset:0; background:radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--varld) 55%, #000) 0%, #07071a 75%); }
+#skolan-strid .mark { position:absolute; left:-30%; right:-30%; bottom:0; height:62%; background:linear-gradient(color-mix(in srgb, var(--varld) 35%, #000), #050510); transform:perspective(500px) rotateX(48deg); transform-origin:bottom;
+  background-image:repeating-linear-gradient(90deg, rgba(255,255,255,.06) 0 2px, transparent 2px 60px), linear-gradient(color-mix(in srgb, var(--varld) 35%, #000), #050510); }
+#skolan-strid .ridaa { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column; pointer-events:none; }
+#skolan-strid .ridaa b { flex:1; background:#fff; animation:sRidaa calc(.45s*var(--f)) ease-in forwards; animation-delay:calc(var(--i)*.03s*var(--f)); }
+#skolan-strid .ridaa b:nth-child(odd) { --dir:-1; } #skolan-strid .ridaa b:nth-child(even) { --dir:1; }
+.strid .ruta, .strid .namnruta { background:linear-gradient(#2a3fb8, #0b1660); border:3px solid #e8eaf6; border-radius:8px; box-shadow:0 0 0 2px #0b1660, 0 6px 18px rgba(0,0,0,.6); text-shadow:2px 2px 0 #000; }
+#skolan-strid .namnruta { position:absolute; top:6%; left:50%; transform:translateX(-50%); padding:8px 22px; font-size:20px; font-weight:800; white-space:nowrap; opacity:0; animation:sNamn calc(2.4s*var(--f)) ease-out forwards; animation-delay:calc(.45s*var(--f)); }
+#skolan-strid .fiende { position:absolute; left:4%; top:30%; width:44%; height:40%; display:flex; align-items:center; justify-content:center; }
+#skolan-strid .figur { font-size:min(28vw,150px); filter:drop-shadow(0 10px 8px rgba(0,0,0,.6)); animation:sFiendeIdle 2s ease-in-out infinite, sTraff calc(.55s*var(--f)) ease-out calc(1.7s*var(--f)); }
+#skolan-strid.seger .figur { animation:sFiendeIdle 2s ease-in-out infinite, sTraff calc(.55s*var(--f)) ease-out calc(1.7s*var(--f)), sDo calc(1s*var(--f)) ease-in calc(2.8s*var(--f)) forwards; }
+#skolan-strid .hjalte { position:absolute; right:6%; top:42%; width:min(34vw,170px); height:min(34vw,170px); animation:sHjalte calc(2.1s*var(--f)) ease-in-out calc(.6s*var(--f)) both; }
+#skolan-strid .hjalte svg { width:100%; height:100%; transform:scaleX(-1); filter:drop-shadow(0 8px 6px rgba(0,0,0,.6)); }
+#skolan-strid.seger .hjalte { animation:sHjalte calc(2.1s*var(--f)) ease-in-out calc(.6s*var(--f)) both, sSegerHopp .5s ease-in-out calc(3.5s*var(--f)) infinite; }
+#skolan-strid .fx { position:absolute; inset:0; pointer-events:none; }
+#skolan-strid .fx > * { position:absolute; left:50%; top:50%; opacity:0; }
+#skolan-strid .p { font-style:normal; font-size:30px; margin:-15px; animation-duration:calc(.9s*var(--f)); animation-delay:calc(1.05s*var(--f) + var(--d)); animation-fill-mode:forwards; }
+#skolan-strid .p.upp { animation-name:pUpp; } #skolan-strid .p.virvel { animation-name:pVirvel; } #skolan-strid .p.fall { animation-name:pFall; }
+#skolan-strid .p.bubbla { animation-name:pBubbla; } #skolan-strid .p.gnista { animation-name:pGnista; }
+#skolan-strid .glod { width:220px; height:220px; margin:-110px; border-radius:50%; background:radial-gradient(var(--g), transparent 65%); animation:fxGlod calc(1s*var(--f)) ease-out calc(1.05s*var(--f)) forwards; }
+#skolan-strid .bolt { width:70px; height:260px; margin:-230px 0 0 -35px; fill:none; stroke:#fffde7; stroke-width:7; stroke-linejoin:round; filter:drop-shadow(0 0 8px #ffeb3b) drop-shadow(0 0 18px #fff176); animation:fxBolt calc(.5s*var(--f)) steps(2) calc(1.15s*var(--f)) 2 forwards; }
+#skolan-strid .blixtsken { position:fixed !important; inset:0; left:0 !important; top:0 !important; background:#fff; animation:fxSken calc(.5s*var(--f)) steps(2) calc(1.15s*var(--f)) 2; }
+#skolan-strid .vag { width:420px; height:160px; margin:-60px 0 0 -40px; border-radius:50% 50% 0 0; background:linear-gradient(#b3e5fc, #0288d1 60%, transparent); filter:blur(1px); animation:fxVag calc(.9s*var(--f)) ease-in calc(1.05s*var(--f)) forwards; }
+#skolan-strid .frost { width:200px; height:200px; margin:-100px; border-radius:30%; background:radial-gradient(rgba(225,245,254,.9), rgba(129,212,250,.3) 60%, transparent 70%); animation:fxFrost calc(1s*var(--f)) ease-out calc(1.5s*var(--f)) forwards; }
+#skolan-strid .ring { width:40px; height:40px; margin:-20px; border-radius:50%; border:6px solid #fff59d; box-shadow:0 0 20px #ffeb3b; animation:fxRing calc(.8s*var(--f)) ease-out calc(1.1s*var(--f)) forwards; }
+#skolan-strid .ring.r2 { animation-delay:calc(1.25s*var(--f)); border-color:#ff8a65; } #skolan-strid .ring.r3 { animation-delay:calc(1.4s*var(--f)); border-color:#ce93d8; }
+#skolan-strid .jatte { font-size:120px; margin:-70px; animation:fxJatte calc(.8s*var(--f)) ease-out calc(1.15s*var(--f)) forwards; }
+#skolan-strid.t-kraft .scen { animation:sSkak calc(.5s*var(--f)) linear calc(1.2s*var(--f)); }
+#skolan-strid .tal { position:absolute; left:50%; top:8%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; font-size:44px; font-weight:900; color:#fff; text-shadow:3px 3px 0 #000, -1px -1px 0 #000; pointer-events:none; }
+#skolan-strid .tal { flex-direction:row; flex-wrap:wrap; justify-content:center; }
+#skolan-strid .tal span { display:inline-block; opacity:0; animation:sSiffra calc(1.5s*var(--f)) ease-out forwards; animation-delay:calc(1.8s*var(--f) + var(--i)*.05s); }
+#skolan-strid .tal.svag span { color:#ffeb3b; font-size:54px; }
+#skolan-strid .tal small { flex-basis:100%; white-space:nowrap; text-align:center; font-size:15px; color:#ffab40; letter-spacing:1px; opacity:0; animation:sSiffra calc(1.5s*var(--f)) ease-out calc(1.95s*var(--f)) forwards; }
+#skolan-strid .meny { position:absolute; left:3%; right:3%; bottom:4%; display:flex; gap:8px; font-size:17px; font-weight:700; animation:sMeny calc(.4s*var(--f)) ease-out calc(.3s*var(--f)) both; }
+#skolan-strid .meny .vanster { flex:1.3; padding:10px 14px; }
+#skolan-strid .meny .hoger { flex:1; padding:10px 14px; }
+#skolan-strid .kommando { margin-top:4px; color:#fff59d; font-size:15px; animation:sBlink .6s steps(2) infinite; }
+@keyframes sBlink { 50% { opacity:.55; } }
+#skolan-strid .rad { display:flex; justify-content:space-between; gap:8px; }
+#skolan-strid .hpbar { margin-top:6px; height:10px; border-radius:5px; background:#300; border:2px solid #000; overflow:hidden; }
+#skolan-strid .hpbar div { height:100%; background:linear-gradient(#ff8a80, #d50000); transition:width calc(.8s*var(--f)) ease-out; }
+#skolan-strid .segertext { position:absolute; left:0; right:0; top:30%; text-align:center; font-size:min(16vw,84px); font-weight:900; letter-spacing:6px; color:#ffe082; text-shadow:0 0 18px #ffb300, 4px 4px 0 #000; opacity:0; display:none; }
+#skolan-strid .segertext small { display:block; font-size:20px; letter-spacing:1px; color:#fff; }
+#skolan-strid.seger .segertext { display:block; animation:sSeger calc(.7s*var(--f)) cubic-bezier(.2,1.6,.4,1) calc(3.4s*var(--f)) forwards; }
+@keyframes sIn { from { opacity:0; } }
+@keyframes sUt { to { opacity:0; transform:scale(1.05); } }
+@keyframes sRidaa { 0% { transform:none; } 100% { transform:translateX(calc(var(--dir)*105%)); } }
+@keyframes sNamn { 0% { opacity:0; transform:translate(-50%,-14px); } 12%,85% { opacity:1; transform:translate(-50%,0); } 100% { opacity:0; } }
+@keyframes sMeny { from { transform:translateY(120%); } }
+@keyframes sFiendeIdle { 50% { translate:0 -6px; } }
+@keyframes sTraff { 0% { filter:brightness(4) saturate(0); transform:translateX(-14px); } 20% { transform:translateX(12px); } 40% { filter:brightness(2.5); transform:translateX(-8px); } 60% { filter:none; transform:translateX(5px); } 100% { transform:none; } }
+@keyframes sDo { 0% { opacity:1; filter:sepia(1) hue-rotate(-50deg) saturate(5) brightness(1.4); clip-path:inset(0 0 0 0); } 100% { opacity:0; filter:sepia(1) hue-rotate(-50deg) saturate(5) brightness(2) blur(4px); clip-path:inset(0 0 100% 0); transform:scale(1.1,.6); } }
+@keyframes sHjalte { 0% { transform:translateX(0); } 18% { transform:translateX(-18vw) scale(1.12); filter:drop-shadow(0 0 14px #fff); } 30%,70% { transform:translateX(-18vw) scale(1.12); } 85%,100% { transform:translateX(0); } }
+@keyframes sSegerHopp { 50% { translate:0 -22px; } }
+@keyframes pUpp { 0% { opacity:0; transform:translate(var(--x), 60px) scale(.4); } 30% { opacity:1; } 100% { opacity:0; transform:translate(var(--x), calc(var(--y) - 90px)) scale(1.5); } }
+@keyframes pVirvel { 0% { opacity:0; transform:rotate(0) translateX(110px) rotate(0); } 30% { opacity:1; } 100% { opacity:0; transform:rotate(calc(var(--r) + 540deg)) translateX(8px) rotate(360deg); } }
+@keyframes pFall { 0% { opacity:0; transform:translate(var(--x), -180px) rotate(0); } 25% { opacity:1; } 70% { opacity:1; transform:translate(calc(var(--x)*.4), var(--y)) rotate(var(--r)); } 100% { opacity:0; transform:translate(calc(var(--x)*.4), var(--y)) scale(1.6); } }
+@keyframes pBubbla { 0% { opacity:0; transform:translate(calc(var(--x) + 80px), 60px) scale(.5); } 30% { opacity:1; } 100% { opacity:0; transform:translate(var(--x), calc(var(--y) - 60px)) scale(1.2); } }
+@keyframes pGnista { 0% { opacity:0; transform:scale(0); } 40% { opacity:1; transform:translate(calc(var(--x)*1.6), calc(var(--y)*1.6)) scale(1.3); } 100% { opacity:0; transform:translate(calc(var(--x)*2.4), calc(var(--y)*2.4)) scale(.3); } }
+@keyframes fxGlod { 0% { opacity:0; transform:scale(.3); } 40% { opacity:.9; } 100% { opacity:0; transform:scale(1.6); } }
+@keyframes fxBolt { 0% { opacity:1; } 100% { opacity:0; } }
+@keyframes fxSken { 0% { opacity:.7; } 100% { opacity:0; } }
+@keyframes fxVag { 0% { opacity:0; transform:translateX(260px) scaleY(.4); } 30% { opacity:.9; } 70% { opacity:.9; transform:translateX(-120px) scaleY(1.1); } 100% { opacity:0; transform:translateX(-300px) scaleY(.6); } }
+@keyframes fxFrost { 0% { opacity:0; transform:scale(.5) rotate(0); } 40% { opacity:1; } 100% { opacity:0; transform:scale(1.4) rotate(45deg); } }
+@keyframes fxRing { 0% { opacity:1; transform:scale(.2); } 100% { opacity:0; transform:scale(7); } }
+@keyframes fxJatte { 0% { opacity:0; transform:scale(.2) rotate(-20deg); } 30% { opacity:1; transform:scale(1.4) rotate(5deg); } 100% { opacity:0; transform:scale(2.2); } }
+@keyframes sSkak { 0%,100% { transform:none; } 20% { transform:translate(-10px,6px); } 40% { transform:translate(9px,-7px); } 60% { transform:translate(-7px,-4px); } 80% { transform:translate(6px,5px); } }
+@keyframes sSiffra { 0% { opacity:0; transform:translateY(0); } 8% { opacity:1; transform:translateY(-28px); } 18% { transform:translateY(0); } 26% { transform:translateY(-10px); } 34%,80% { opacity:1; transform:translateY(0); } 100% { opacity:0; } }
+@keyframes sSeger { 0% { opacity:0; transform:scale(.3); } 100% { opacity:1; transform:scale(1); } }
+`;
+
 function ritaDjur(art, humor, steg, x = {}) {
   const u = DJUR_UTSEENDE[art] || DJUR_UTSEENDE["🐶"];
   const K = u.kropp, M = u.mage, linje = "#3e2723";
@@ -1304,6 +1380,108 @@ class SkolanPanel extends HTMLElement {
         ${attacker}
         <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
       </div></div>`;
+  }
+
+  // Stridsscen i stil med klassiska rollspel. Läggs i document.body så att omritningar inte avbryter den.
+  _strid(o) {
+    document.getElementById("skolan-strid")?.remove();
+    const lugn = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const typ = o.at.typ || "kraft", efter = Math.max(0, o.kvar - o.skada);
+    const slump = (a, b) => a + Math.random() * (b - a);
+    const partiklar = (n, tecken, cls) => Array.from({ length: n }, (_, i) =>
+      `<i class="p ${cls}" style="--x:${slump(-60, 60).toFixed(0)}px;--y:${slump(-50, 40).toFixed(0)}px;--r:${slump(-180, 180).toFixed(0)}deg;--d:${(i * 0.06).toFixed(2)}s">${tecken[i % tecken.length]}</i>`).join("");
+    const effekt = {
+      eld: `<div class="glod" style="--g:#ff6d00"></div>${partiklar(12, ["🔥"], "upp")}`,
+      natur: `<div class="glod" style="--g:#66bb6a"></div>${partiklar(14, ["🍃", "🌿"], "virvel")}`,
+      blixt: `<svg class="bolt" viewBox="0 0 60 200"><polyline points="30,0 18,70 36,80 14,150 40,120 26,200" /></svg><div class="blixtsken"></div>${partiklar(6, ["✨"], "gnista")}`,
+      vatten: `<div class="vag"></div>${partiklar(10, ["💧", "🫧"], "bubbla")}`,
+      is: `<div class="glod" style="--g:#4fc3f7"></div>${partiklar(12, ["❄️", "🧊"], "fall")}<div class="frost"></div>`,
+      kraft: `<div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div><div class="jatte">💥</div>${partiklar(10, ["⭐", "✨"], "gnista")}`,
+    }[typ] || "";
+    const siffror = String(o.skada).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("");
+    const el = document.createElement("div");
+    el.id = "skolan-strid";
+    el.className = `strid t-${typ}${o.klar ? " seger" : ""}${o.svag ? " svag" : ""}${lugn ? " lugn" : ""}`;
+    el.style.setProperty("--varld", o.mon?.varld?.farg || "#5c6bc0");
+    el.innerHTML = `<style>${STRID_CSS}</style>
+      <div class="ridaa">${Array.from({ length: 8 }, (_, i) => `<b style="--i:${i}"></b>`).join("")}</div>
+      <div class="scen">
+        <div class="mark"></div>
+        <div class="namnruta">${o.at.ikon} ${esc(o.at.namn)}</div>
+        <div class="fiende"><div class="figur">${o.mon?.ikon || "👾"}</div><div class="fx">${effekt}</div>
+          <div class="tal ${o.svag ? "svag" : ""}">${siffror}${o.svag ? "<small>SVAG PUNKT!</small>" : ""}</div></div>
+        <div class="hjalte">${o.djur ? ritaDjur(o.djur.art, "glad", Math.max(1, o.djur.steg), {}) : "🐾"}</div>
+        <div class="segertext">SEGER!<small>Nivå klar 🎉</small></div>
+        <div class="meny">
+          <div class="ruta vanster"><div class="rad"><span>${esc(o.mon?.boss ? "👑 " + o.mon.namn : o.mon?.namn || "Monster")}</span><span class="hpnum">${o.kvar}/${o.hp}</span></div>
+            <div class="hpbar"><div style="width:${(o.kvar / o.hp) * 100}%"></div></div></div>
+          <div class="ruta hoger"><div>${esc(o.djur?.namn || "")}</div><div class="kommando">▶ ${o.at.ikon} ${esc(o.at.namn)}</div></div>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    const ljud = this._stridLjud(typ, o.klar);
+    const fart = lugn ? 0.5 : 1, t = (ms) => ms * fart;
+    const timers = [];
+    const vid = (ms, fn) => timers.push(setTimeout(fn, t(ms)));
+    vid(1750, () => {
+      el.querySelector(".hpbar div").style.width = `${(efter / o.hp) * 100}%`;
+      const num = el.querySelector(".hpnum"), start = performance.now();
+      const steg = (nu) => {
+        const f = Math.min(1, (nu - start) / t(800));
+        num.textContent = `${Math.round(o.kvar - (o.kvar - efter) * f)}/${o.hp}`;
+        if (f < 1) requestAnimationFrame(steg);
+      };
+      requestAnimationFrame(steg);
+    });
+    const stang = () => {
+      timers.forEach(clearTimeout);
+      ljud?.stop();
+      el.classList.add("ut");
+      setTimeout(() => el.remove(), 350);
+    };
+    vid(o.klar ? 5600 : 3700, stang);
+    el.addEventListener("click", stang);
+  }
+
+  // Korta, egna ljudeffekter med Web Audio (inga ljudfiler).
+  _stridLjud(typ, klar) {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      const ac = (this._ac ||= new AC());
+      ac.resume?.();
+      const ut = ac.createGain();
+      ut.gain.value = 0.12;
+      ut.connect(ac.destination);
+      const t0 = ac.currentTime;
+      const ton = (f, s, d, form = "square", till = null) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = form; o.frequency.setValueAtTime(f, t0 + s);
+        if (till) o.frequency.exponentialRampToValueAtTime(till, t0 + s + d);
+        g.gain.setValueAtTime(0.0001, t0 + s);
+        g.gain.exponentialRampToValueAtTime(1, t0 + s + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + s + d);
+        o.connect(g).connect(ut); o.start(t0 + s); o.stop(t0 + s + d + 0.02);
+      };
+      const brus = (s, d) => {
+        const b = ac.createBuffer(1, ac.sampleRate * d, ac.sampleRate), x = b.getChannelData(0);
+        for (let i = 0; i < x.length; i++) x[i] = (Math.random() * 2 - 1) * (1 - i / x.length);
+        const k = ac.createBufferSource(), g = ac.createGain();
+        g.gain.value = 0.6; k.buffer = b; k.connect(g).connect(ut); k.start(t0 + s);
+      };
+      ton(220, 0.05, 0.25, "triangle", 880);
+      ({ eld: () => { brus(1.1, 0.6); ton(160, 1.1, 0.5, "sawtooth", 60); },
+         natur: () => { [0, 0.12, 0.24, 0.36].forEach((d) => ton(900, 1.1 + d, 0.1, "triangle", 1400)); },
+         blixt: () => { brus(1.25, 0.35); ton(1800, 1.2, 0.3, "square", 90); },
+         vatten: () => { ton(300, 1.1, 0.7, "sine", 120); brus(1.3, 0.4); },
+         is: () => { [1760, 1568, 2093, 1760].forEach((f, i) => ton(f, 1.1 + i * 0.09, 0.25, "triangle")); },
+         kraft: () => { ton(80, 1.0, 0.9, "sawtooth", 40); brus(1.4, 0.8); } }[typ] || (() => {}))();
+      ton(120, 1.75, 0.15, "square", 60);
+      if (klar) [523, 659, 784, 659, 784, 1047].forEach((f, i) => ton(f, 3.3 + i * 0.14, i === 5 ? 0.6 : 0.13, "square"));
+      return { stop: () => { try { ut.gain.setTargetAtTime(0, ac.currentTime, 0.05); } catch (_) {} } };
+    } catch (_) {
+      return null;
+    }
   }
 
   _kartaView() {
@@ -3357,12 +3535,11 @@ class SkolanPanel extends HTMLElement {
       b.addEventListener("click", async () => {
         const x = (this._s.karta?.attacker || []).find((y) => y.id === b.dataset.attack);
         if (!x || this._busy) return;
+        const k0 = this._s.karta, djur = this._s.meriter?.djur;
+        const fore = { mon: k0.monster, hp: k0.hp, kvar: k0.hp - k0.skada };
         if (!(await this._act("attack", { attack: x.id }))) return;
         const sen = this._s.data?.meriter?.karta?.senaste || {};
-        this._attackAnim = { ikon: x.ikon, skada: sen.skada ?? x.nu, svag: sen.svag ?? x.svag, klar: !!sen.klar };
-        clearTimeout(this._attackTimer);
-        this._attackTimer = setTimeout(() => { this._attackAnim = null; this._render(); }, 1900);
-        this._render();
+        this._strid({ at: x, djur, ...fore, skada: sen.skada ?? x.nu, svag: sen.svag ?? x.svag, klar: !!sen.klar });
         await this._load();
       })
     );
