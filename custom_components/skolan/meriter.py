@@ -1422,7 +1422,8 @@ def niva_info(n: int) -> dict:
     else:
         ik = v["monster"][plats % len(v["monster"])]
         mon = {"namn": f"Nivå {n}", "ikon": ik, "svag": typer[(n * 7 + vi) % len(typer)], "boss": False, "svar": 1.0}
-    return {**mon, "niva": n, "varld": {**{k: v[k] for k in ("id", "namn", "ikon", "farg")}, "nr": vi + 1, "varv": varv}}
+    return {**mon, "niva": n, "slag": VARLD_SLAG.get(v["id"], "kraft"),
+            "varld": {**{k: v[k] for k in ("id", "namn", "ikon", "farg")}, "nr": vi + 1, "varv": varv}}
 
 
 def niva_liv(data: dict, n: int) -> int:
@@ -1506,7 +1507,8 @@ def karta_status(data: dict) -> dict:
             "energi": k.get("energi", 0), "energi_max": ENERGI_MAX, "p_energi": P_ENERGI,
             "energi_pris": ENERGI_PRIS, "energi_kop_kvar": ENERGI_KOP_DAG - _energi_kopt(k), "attacker": lista, "typer": TYPER,
             "super_anvand": k.get("super") == vecka, "senaste": k.get("senaste"), "karta": karta,
-            "stjarnor_tot": sum(k["stjarnor"].values()), "klara": k.get("klara", [])[-3:], "laxor": laxor, "prov": prov}
+            "stjarnor_tot": sum(k["stjarnor"].values()), "klara": k.get("klara", [])[-3:], "laxor": laxor, "prov": prov,
+            "forsvar": skold_status(data), "def_halv": DEF_HALV, "slag": info.get("slag", "kraft")}
 
 
 def karta_kort(data: dict) -> dict:
@@ -1515,7 +1517,8 @@ def karta_kort(data: dict) -> dict:
     d = _m(data).get("djur") or {}
     return {"niva": k["niva"], "stjarnor": sum(k["stjarnor"].values()), "art": d.get("art"), "djur": d.get("namn"),
             "steg": _djur_steg(data), "repriser": [repris(r) for r in k.get("repriser", [])[-3:]],
-            "djur_niva": djur_niva(data)["niva"], "cp": djur_cp(data), "arena_poang": k.get("arena_poang", 0),
+            "djur_niva": djur_niva(data)["niva"], "cp": djur_cp(data), "def": djur_def(data),
+            "skold": (skold(data) or {}).get("ikon", ""), "arena_poang": k.get("arena_poang", 0),
             "arena_hist": k.get("arena_hist", [])[-3:]}
 
 
@@ -1531,12 +1534,15 @@ def repris(r: dict) -> dict | None:
         liv_max = max(1, min(1000, int(r.get("liv_max") or 0))) if r.get("liv_max") else None
         liv_fore = max(0, min(liv_max, int(r.get("liv_fore") or 0))) if liv_max else None
         mot = max(0, min(1000, int(r.get("mot") or 0)))
+        tillbaka = max(0, min(10**6, int(r.get("tillbaka") or 0)))
     except (StopIteration, TypeError, ValueError):
         return None
     mon = niva_info(niva)
     return {"id": at["id"], "ikon": at["ikon"], "namn": at["namn"], "typ": at["typ"], "niva": niva, "hp": hp, "kvar": kvar,
             "skada": skada, "svag": bool(r.get("svag")), "klar": bool(r.get("klar")), "tid": str(r.get("tid") or "")[:25],
             "mot": mot, "miss": bool(r.get("miss")), "liv_fore": liv_fore, "liv_max": liv_max,
+            "skydd": r.get("skydd") if r.get("skydd") in SKYDD else "", "tillbaka": tillbaka,
+            "skold": r.get("skold") if r.get("skold") in SKOLD else "",
             "mon": {"ikon": mon["ikon"], "namn": mon["namn"], "boss": mon["boss"], "varld": {"farg": mon["varld"]["farg"]}}}
 
 
@@ -1598,10 +1604,10 @@ def djur_kraft(data: dict) -> float:
 
 
 def djur_cp(data: dict) -> int:
-    """Stridskraft att jämföra med: liv + bästa attack, gånger kraften."""
+    """Stridskraft att jämföra med: liv + bästa attack + försvar, gånger kraften."""
     agda = _m(data).get("attacker", [])
     basta = max([x["skada"] for x in ATTACKER if x["id"] in agda] or [KNUFF["skada"]])
-    return round((djur_liv(data)[1] + basta * 6) * djur_kraft(data))
+    return round((djur_liv(data)[1] + basta * 6 + djur_def(data) * 3) * djur_kraft(data))
 
 
 def djur_liv(data: dict) -> tuple[int, int]:
@@ -1698,6 +1704,108 @@ def dryck(data: dict, dryck_id: str) -> dict:
     return {"fore": liv, "liv": nytt, "max": mx}
 
 
+# ---------- sköldar: försvar 🛡️ ----------
+# DEF minskar skadan husdjuret tar: skada × 50 / (50 + DEF). DEF 50 halverar skadan.
+# Sköldarna hör till barnet (som attackerna) och följer med när barnet byter djur. En sköld på åt gången.
+DEF_HALV = 50
+SKOLDAR = [
+    {"id": "s_kartong", "ikon": "📦", "namn": "Kartongsköld", "def": 2, "pris": 20, "steg": 0, "info": "Bättre än inget!"},
+    {"id": "s_tra", "ikon": "🪵", "namn": "Träsköld", "def": 3, "pris": 40, "steg": 0, "info": "Enkel och stadig."},
+    {"id": "s_panna", "ikon": "🍳", "namn": "Stekpanna", "def": 5, "pris": 60, "steg": 0, "block": 0.10, "info": "10 % chans att blockera helt. PLONK!"},
+    {"id": "s_lov", "ikon": "🌿", "namn": "Lövsköld", "def": 6, "pris": 90, "steg": 0, "laka": 1, "info": "+1 ❤️ varje gång du attackerar."},
+    {"id": "s_sten", "ikon": "🪨", "namn": "Stensköld", "def": 8, "pris": 100, "steg": 0, "info": "Tung och tålig."},
+    {"id": "s_eld", "ikon": "🔥", "namn": "Eldsköld", "def": 10, "pris": 150, "steg": 0, "mot": "eld", "info": "Halv skada från 🔥 eld."},
+    {"id": "s_vatten", "ikon": "🌊", "namn": "Vattensköld", "def": 10, "pris": 150, "steg": 0, "mot": "vatten", "info": "Halv skada från 🌊 vatten."},
+    {"id": "s_is", "ikon": "❄️", "namn": "Issköld", "def": 10, "pris": 150, "steg": 0, "mot": "is", "info": "Halv skada från ❄️ is."},
+    {"id": "s_blixt", "ikon": "⚡", "namn": "Blixtsköld", "def": 10, "pris": 150, "steg": 0, "mot": "blixt", "info": "Halv skada från ⚡ blixt."},
+    {"id": "s_natur", "ikon": "🍃", "namn": "Natursköld", "def": 10, "pris": 150, "steg": 0, "mot": "natur", "info": "Halv skada från 🍃 natur."},
+    {"id": "s_tagg", "ikon": "🦔", "namn": "Taggsköld", "def": 12, "pris": 200, "steg": 1, "tagg": 0.2, "info": "20 % av skadan studsar tillbaka."},
+    {"id": "s_magnet", "ikon": "🧲", "namn": "Magnetsköld", "def": 14, "pris": 220, "steg": 1, "magnet": 1, "info": "+1 stridsenergi i arenan när du blir träffad."},
+    {"id": "s_bubbla", "ikon": "🫧", "namn": "Bubbelsköld", "def": 15, "pris": 250, "steg": 2, "bubbla": True, "info": "Första träffen blockeras (en gång per nivå och arenastrid)."},
+    {"id": "s_padda", "ikon": "🐢", "namn": "Sköldpaddsskal", "def": 18, "pris": 260, "steg": 3, "info": "Hårt skal."},
+    {"id": "s_spegel", "ikon": "🪞", "namn": "Spegelsköld", "def": 10, "pris": 300, "steg": 3, "spegel": 0.15, "info": "15 % chans att skicka tillbaka hela attacken."},
+    {"id": "s_regnbage", "ikon": "🌈", "namn": "Regnbågssköld", "def": 20, "pris": 500, "steg": 3, "alla": 0.8, "info": "−20 % skada från alla typer."},
+    {"id": "s_riddare", "ikon": "🛡️", "namn": "Riddarsköld", "def": 25, "pris": 400, "steg": 3, "info": "En riktig riddarsköld."},
+    {"id": "s_stjarna", "ikon": "✨", "namn": "Stjärnsköld", "def": 30, "pris": 650, "steg": 4, "block": 0.25, "info": "25 % chans att blockera helt."},
+    {"id": "s_drake", "ikon": "🐉", "namn": "Drakfjällssköld", "def": 35, "pris": 700, "steg": 4, "info": "Gjord av drakfjäll."},
+    {"id": "s_legend", "ikon": "👑", "namn": "Legendsköld", "def": 50, "pris": 1200, "steg": 5, "bubbla": True, "block": 0.10, "info": "Bubbla + 10 % blockchans. Halverar all skada."},
+]
+SKOLD = {x["id"]: x for x in SKOLDAR}
+SKYDD = ("bubbla", "block", "spegel", "tagg", "typ", "def")
+# Vilken typ monstren slår med i varje värld (så att typsköldarna gör nytta mot bossarna också)
+VARLD_SLAG = {"skog": "natur", "hav": "vatten", "berg": "kraft", "trask": "is", "fabrik": "blixt", "vulkan": "eld", "slott": "is", "tid": "vatten"}
+
+
+def skold(data: dict) -> dict | None:
+    s = SKOLD.get(_m(data).get("skold") or "")
+    return s if s and s["id"] in _m(data).get("skoldar", []) else None
+
+
+def djur_def(data: dict) -> int:
+    s = skold(data)
+    return s["def"] if s else 0
+
+
+def skada_andel(dfn: int) -> float:
+    """Hur stor del av skadan som går igenom (1.0 = all)."""
+    return DEF_HALV / (DEF_HALV + max(0, dfn))
+
+
+def skold_kop(data: dict, sid: str) -> None:
+    m = _m(data)
+    d = m.get("djur")
+    s = SKOLD.get(sid)
+    if not d or not s:
+        raise ValueError("Det finns inte.")
+    agda = m.setdefault("skoldar", [])
+    if sid in agda:
+        raise ValueError("Den skölden har du redan.")
+    if _djur_steg(data) < s["steg"]:
+        raise ValueError(f"{d['namn']} måste bli {DJUR_STEG[s['steg']][1]} först.")
+    if m.get("saldo", 0) < s["pris"]:
+        raise ValueError(f"Du behöver {s['pris']} ⭐ (du har {m.get('saldo', 0)}).")
+    ge(data, -s["pris"], f"🛡️ {d['namn']} fick {s['namn']} {s['ikon']}", None, "🛍️")
+    agda.append(sid)
+    m["skold"] = sid  # nyköpt sköld tas på direkt
+
+
+def skold_pa(data: dict, sid: str | None) -> None:
+    m = _m(data)
+    if not sid:
+        m["skold"] = ""
+        return
+    if sid not in m.get("skoldar", []) or sid not in SKOLD:
+        raise ValueError("Den skölden har du inte.")
+    m["skold"] = sid
+
+
+def _skydda(s: dict | None, typ: str, skada: int, bubbla_kvar: bool) -> dict:
+    """Vad skölden gör med en träff: {"skada": som går igenom, "skydd": vad som hände, "tillbaka": skada åt anfallaren}."""
+    if not s or skada <= 0:
+        return {"skada": skada, "skydd": "", "tillbaka": 0}
+    if bubbla_kvar and s.get("bubbla"):
+        return {"skada": 0, "skydd": "bubbla", "tillbaka": 0}
+    if random.random() < s.get("block", 0):
+        return {"skada": 0, "skydd": "block", "tillbaka": 0}
+    if random.random() < s.get("spegel", 0):
+        return {"skada": 0, "skydd": "spegel", "tillbaka": skada}
+    ut = skada * skada_andel(s["def"]) * s.get("alla", 1)
+    typskydd = s.get("mot") == typ
+    if typskydd:
+        ut *= 0.5
+    ut = max(1, round(ut))
+    tillbaka = round(ut * s.get("tagg", 0))
+    return {"skada": ut, "skydd": "tagg" if tillbaka else "typ" if typskydd else "def", "tillbaka": tillbaka}
+
+
+def skold_status(data: dict) -> dict:
+    m = _m(data)
+    agda, pa = m.get("skoldar", []), skold(data)
+    dfn = djur_def(data)
+    return {"def": dfn, "minskar": round((1 - skada_andel(dfn)) * 100), "pa": pa["id"] if pa else "",
+            "skoldar": [{**x, "har": x["id"] in agda} for x in SKOLDAR]}
+
+
 def _motattack(n: int, mon: dict) -> int:
     """Hur hårt monstret slår tillbaka. Starkare längre fram och på bossnivåer."""
     bas = (3 + min(15, n // 6)) * (1.8 if mon.get("boss") else 1)
@@ -1766,12 +1874,26 @@ def attack(data: dict, at_id: str) -> dict:
     klar = k["niva"] > n
     # Monstret slår tillbaka om det överlevde
     miss = not klar and random.random() < MISS_CHANS
-    mot = 0 if klar or miss else _motattack(n, mon)
+    sk = skold(data)
+    laka = sk.get("laka", 0) if sk else 0
+    if laka:  # lövskölden läker lite när husdjuret attackerar
+        liv_fore = min(liv_max, liv_fore + laka)
+    skydd = {"skada": 0, "skydd": "", "tillbaka": 0}
+    if not klar and not miss:
+        skydd = _skydda(sk, mon.get("slag", "kraft"), _motattack(n, mon), k.get("bubbla") != n)
+        if skydd["skydd"] == "bubbla":
+            k["bubbla"] = n
+    mot = skydd["skada"]
     k["liv"] = max(0, liv_fore - mot)
-    k["senaste"].update({"klar": klar, "mot": mot, "miss": miss, "liv_fore": liv_fore, "liv": k["liv"], "liv_max": liv_max})
+    if skydd["tillbaka"]:  # taggar eller spegel skadar monstret
+        _karta_skada(data, skydd["tillbaka"])
+    klar2 = k["niva"] > n
+    k["senaste"].update({"klar": klar or klar2, "mot": mot, "miss": miss, "liv_fore": liv_fore, "liv": k["liv"], "liv_max": liv_max,
+                         "skydd": skydd["skydd"], "tillbaka": skydd["tillbaka"], "skold": sk["id"] if sk else "", "laka": laka})
     k["repriser"] = (k.get("repriser", []) + [{"id": at_id, "niva": n, "hp": hp_fore, "kvar": kvar_fore, "skada": skada,
-                                               "svag": svag, "klar": klar, "tid": k["senaste"]["tid"], "mot": mot,
-                                               "miss": miss, "liv_fore": liv_fore, "liv_max": liv_max}])[-5:]
+                                               "svag": svag, "klar": klar or klar2, "tid": k["senaste"]["tid"], "mot": mot,
+                                               "miss": miss, "liv_fore": liv_fore, "liv_max": liv_max,
+                                               "skydd": skydd["skydd"], "tillbaka": skydd["tillbaka"], "skold": sk["id"] if sk else ""}])[-5:]
     return k["senaste"]
 
 
@@ -1784,7 +1906,7 @@ ARENA_VINST, ARENA_FORLUST = 10, 2  # arenapoäng 🏆
 ARENA_XP_VINST, ARENA_XP_FORLUST = 15, 5
 # Arenaversion för strider mellan vänner i olika hem. Höj den när regler, drag eller skada ändras
 # så att en strid mot en annan version skulle bli fel. Båda hemmen måste ha samma version för att strida.
-ARENA_VER = 1
+ARENA_VER = 2  # 2: sköldar och försvar
 
 
 def _kampe(data: dict, agare: str) -> dict:
@@ -1796,8 +1918,10 @@ def _kampe(data: dict, agare: str) -> dict:
         if at["id"] in agda:
             drag[at["id"]] = _attack_varde(data, at, {})[0] * ARENA_GANGER
     mx = djur_liv(data)[1]
+    sk = skold(data)
     return {"agare": agare, "namn": d.get("namn", "?"), "art": d.get("art"), "steg": _djur_steg(data),
-            "niva": djur_niva(data)["niva"], "cp": djur_cp(data), "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag}
+            "niva": djur_niva(data)["niva"], "cp": djur_cp(data), "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag,
+            "skold": sk["id"] if sk else "", "def": sk["def"] if sk else 0}
 
 
 def _drag_info(at_id: str) -> dict:
@@ -1809,7 +1933,7 @@ def arena_kampe(data: dict) -> dict | None:
     if not _m(data).get("djur"):
         return None
     k = _kampe(data, "")
-    return {x: k[x] for x in ("namn", "art", "steg", "niva", "cp", "max", "drag")}
+    return {x: k[x] for x in ("namn", "art", "steg", "niva", "cp", "max", "drag", "skold")}
 
 
 def _int(v, lo: int, hi: int) -> int:
@@ -1837,9 +1961,10 @@ def rensa_kampe(k: dict, agare: str) -> tuple[dict, int]:
     drag.setdefault("knuff", KNUFF["skada"] * ARENA_GANGER)
     liv_tak = LIV_MAX[-1] + (DJUR_NIVA_MAX - 1) * 4
     mx = _int(k.get("max"), 1, liv_tak)
+    sk = SKOLD.get(k.get("skold") if isinstance(k.get("skold"), str) else "")  # DEF räknas här, vännens siffra används inte
     return {"agare": str(agare)[:16], "namn": str(k.get("namn") or "?")[:20], "art": str(k.get("art") or "")[:8],
-            "steg": _int(k.get("steg"), 0, 4), "niva": _int(k.get("niva"), 1, DJUR_NIVA_MAX), "cp": _int(k.get("cp"), 0, 10**6),
-            "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag}, okanda
+            "steg": _int(k.get("steg"), 0, len(DJUR_STEG) - 1), "niva": _int(k.get("niva"), 1, DJUR_NIVA_MAX), "cp": _int(k.get("cp"), 0, 10**6),
+            "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag, "skold": sk["id"] if sk else "", "def": sk["def"] if sk else 0}, okanda
 
 
 def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict | None = None, de: dict | None = None) -> dict:
@@ -1857,12 +1982,24 @@ def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict
     return k["arena"]
 
 
-def _slag(kampe: dict, at_id: str, mal: dict) -> tuple[int, bool]:
+def _slag(kampe: dict, at_id: str, mal: dict) -> dict:
+    """Ett anfall i arenan. Målets sköld tar emot träffen."""
+    ls = SKOLD.get(kampe.get("skold") or "")
+    if ls and ls.get("laka"):
+        kampe["liv"] = min(kampe["max"], kampe["liv"] + ls["laka"])
     if random.random() < ARENA_MISS:
-        return 0, True
-    skada = max(1, round(kampe["drag"][at_id] * random.uniform(0.85, 1.15)))
-    mal["liv"] = max(0, mal["liv"] - skada)
-    return skada, False
+        return {"skada": 0, "miss": True, "skydd": "", "tillbaka": 0}
+    ra = max(1, round(kampe["drag"][at_id] * random.uniform(0.85, 1.15)))
+    s = SKOLD.get(mal.get("skold") or "")
+    sk = _skydda(s, _drag_info(at_id)["typ"], ra, not mal.get("bubbla_anv"))
+    if sk["skydd"] == "bubbla":
+        mal["bubbla_anv"] = True
+    mal["liv"] = max(0, mal["liv"] - sk["skada"])
+    if sk["tillbaka"]:
+        kampe["liv"] = max(0, kampe["liv"] - sk["tillbaka"])
+    if s and s.get("magnet") and sk["skada"] > 0:
+        mal["ap"] = min(ARENA_AP_MAX, mal["ap"] + s["magnet"])
+    return {"skada": sk["skada"], "miss": False, "skydd": sk["skydd"], "tillbaka": sk["tillbaka"]}
 
 
 def _ai_val(de: dict) -> str:
@@ -1885,18 +2022,22 @@ def arena_drag(data: dict, at_id: str) -> dict:
         raise ValueError(f"Du behöver {kostar} ⚡ i striden. Använd Knuff 🐾 och vänta en tur.")
     tur = {"at": at_id, "jag_fore": jag["liv"], "de_fore": de["liv"]}
     jag["ap"] -= kostar
-    tur["skada"], tur["miss"] = _slag(jag, at_id, de)
-    if de["liv"] > 0:
+    x = _slag(jag, at_id, de)
+    tur.update({"skada": x["skada"], "miss": x["miss"], "skydd": x["skydd"], "tillbaka": x["tillbaka"]})
+    if de["liv"] > 0 and jag["liv"] > 0:
         mot = _ai_val(de)
         de["ap"] -= _drag_info(mot)["energi"]
         tur["mot_at"] = mot
-        tur["mot"], tur["mot_miss"] = _slag(de, mot, jag)
+        y = _slag(de, mot, jag)
+        tur.update({"mot": y["skada"], "mot_miss": y["miss"], "mot_skydd": y["skydd"], "mot_tillbaka": y["tillbaka"]})
+    tur["jag_efter"], tur["de_efter"] = jag["liv"], de["liv"]
     jag["ap"] = min(ARENA_AP_MAX, jag["ap"] + ARENA_AP_TUR)
     de["ap"] = min(ARENA_AP_MAX, de["ap"] + ARENA_AP_TUR)
     a["turer"].append(tur)
     if de["liv"] <= 0 or jag["liv"] <= 0 or len(a["turer"]) >= 40:
-        _arena_slut(data, de["liv"] <= 0 and jag["liv"] > 0)
-        tur["slut"] = "vinst" if de["liv"] <= 0 else "forlust"
+        vann = de["liv"] <= 0 and jag["liv"] > 0
+        tur["slut"] = "vinst" if vann else "forlust"
+        _arena_slut(data, vann)
     return tur
 
 
@@ -1916,8 +2057,8 @@ def _arena_slut(data: dict, vann: bool, gav_upp: bool = False) -> None:
         kolla_medaljer(data)
     k["arena_hist"] = (k.get("arena_hist", []) + [{
         "mot": a["mot"], "mot_namn": a["mot_namn"], "vann": vann, "gav_upp": gav_upp, "tid": dt_util.now().isoformat(timespec="seconds"),
-        "jag": {x: a["jag"][x] for x in ("namn", "art", "steg", "niva", "max")},
-        "de": {x: a["de"][x] for x in ("namn", "art", "steg", "niva", "max")},
+        "jag": {x: a["jag"].get(x) for x in ("namn", "art", "steg", "niva", "max", "skold", "def")},
+        "de": {x: a["de"].get(x) for x in ("namn", "art", "steg", "niva", "max", "skold", "def")},
         "turer": a["turer"][-40:]}])[-10:]
 
 
@@ -1925,7 +2066,7 @@ def arena_status(data: dict) -> dict:
     k = _karta(data)
     a = k.get("arena")
     n = djur_niva(data)
-    return {"niva": n, "cp": djur_cp(data), "kraft": round(djur_kraft(data), 2), "poang": k.get("arena_poang", 0),
+    return {"niva": n, "cp": djur_cp(data), "def": djur_def(data), "kraft": round(djur_kraft(data), 2), "poang": k.get("arena_poang", 0),
             "vinster": _m(data)["raknare"].get("arena_vinster", 0), "pagar": a, "hist": k.get("arena_hist", [])[-5:],
             "knuff": KNUFF, "ap_max": ARENA_AP_MAX, "ver": ARENA_VER, "drag": {x["id"]: {y: x[y] for y in ("ikon", "namn", "typ", "energi")} for x in [KNUFF, *ATTACKER]}}
 

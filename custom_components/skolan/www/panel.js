@@ -354,6 +354,13 @@ const STRID_CSS = `
 #skolan-strid .fiende { position:absolute; left:4%; top:30%; width:44%; height:40%; display:flex; align-items:center; justify-content:center; }
 #skolan-strid .figur { font-size:min(28vw,150px); filter:drop-shadow(0 10px 8px rgba(0,0,0,.6)); animation:sFiendeIdle 2s ease-in-out infinite, sTraff calc(.55s*var(--f)) ease-out calc(1.7s*var(--f)); }
 #skolan-strid.seger .figur { animation:sFiendeIdle 2s ease-in-out infinite, sTraff calc(.55s*var(--f)) ease-out calc(1.7s*var(--f)), sDo calc(1s*var(--f)) ease-in calc(2.8s*var(--f)) forwards; }
+#skolan-strid .skold-ikon { position:absolute; font-size:min(9vw,44px); z-index:3; filter:drop-shadow(0 3px 3px rgba(0,0,0,.6)); }
+#skolan-strid .skold-ikon.hj { right:4%; top:58%; }
+#skolan-strid .skold-ikon.fi { left:30%; top:30%; }
+#skolan-strid .skyddtext { position:absolute; z-index:4; padding:4px 10px; border-radius:10px; background:rgba(0,0,0,.65); color:#80d8ff; font-weight:700; font-size:15px; opacity:0; }
+#skolan-strid .skyddtext.fi { left:6%; top:24%; animation:sSkydd calc(1.6s*var(--f)) ease-out calc(1.4s*var(--f)) forwards; }
+#skolan-strid .skyddtext.hj { right:4%; top:36%; animation:sSkydd calc(1.6s*var(--f)) ease-out calc(3.0s*var(--f)) forwards; }
+@keyframes sSkydd { 0% { opacity:0; transform:scale(.6); } 15% { opacity:1; transform:scale(1.1); } 80% { opacity:1; transform:scale(1); } 100% { opacity:0; } }
 #skolan-strid .hjalte { position:absolute; right:6%; top:42%; width:min(34vw,170px); height:min(34vw,170px); animation:sHjalte calc(2.1s*var(--f)) ease-in-out calc(.6s*var(--f)) both; }
 #skolan-strid .hjalte svg { width:100%; height:100%; transform:scaleX(-1); filter:drop-shadow(0 8px 6px rgba(0,0,0,.6)); }
 #skolan-strid.seger .hjalte { animation:sHjalte calc(2.1s*var(--f)) ease-in-out calc(.6s*var(--f)) both, sSegerHopp .5s ease-in-out calc(3.5s*var(--f)) infinite; }
@@ -1502,6 +1509,7 @@ class SkolanPanel extends HTMLElement {
         return `<div class="sak-kort"><div class="sak-ikon">⚡</div><div class="small"><b>${n} energi</b></div>
           ${titta ? `<span class="small muted">${pris} ⭐</span>` : `<button class="mini ${kan ? "primary" : ""}" data-energi-kop="${n}" ${kan && !this._busy ? "" : "disabled"}>${pris} ⭐</button>`}</div>`;
       }).join("")}</div>
+      ${this._skoldButik(am, d, saldo, titta)}
       <h3>🧪 Livdrycker</h3>
       <div class="small muted">❤️ ${am.liv} av ${am.liv_max} liv. Monstren slår tillbaka när ${esc(d.namn)} attackerar. Plugga (1 ❤️ per ${am.p_liv} ⭐) eller drick en livdryck. Dryckerna hamnar i ryggsäcken 🎒.</div>
       <div class="sak-rutnat">${(am.drycker || []).map((x) => {
@@ -1581,7 +1589,7 @@ class SkolanPanel extends HTMLElement {
         if (!sedd || an.niva.niva > sedd) setTimeout(() => { try { localStorage.setItem(nyckel, an.niva.niva); } catch (e) { /* privat läge */ } }, 8000);
       } catch (e) { /* privat läge */ }
     }
-    const livRad = d ? `${upp ? `<div class="niva-upp">⬆️ ${esc(d.namn)} nådde nivå ${an.niva.niva}! Mer ❤️ liv och 💪 starkare attacker.</div>` : ""}${an ? `<div class="small djur-niva">⬆️ Nivå ${an.niva.niva} · 💪 CP ${an.cp}${an.niva.till ? ` · <span class="muted">${an.niva.xp - an.niva.fran}/${an.niva.till - an.niva.fran} XP</span>` : ""}</div>` : ""}<div class="liv-rad"><span>❤️ ${esc(d.namn)}</span><div class="progress djur-liv ${k.liv / k.liv_max < 0.3 ? "lag" : ""}"><div style="width:${Math.round((k.liv / k.liv_max) * 100)}%"></div></div><b>${k.liv}/${k.liv_max}</b></div>
+    const livRad = d ? `${upp ? `<div class="niva-upp">⬆️ ${esc(d.namn)} nådde nivå ${an.niva.niva}! Mer ❤️ liv och 💪 starkare attacker.</div>` : ""}${an ? `<div class="small djur-niva">⬆️ Nivå ${an.niva.niva} · 💪 CP ${an.cp} · ${this._defText(k.forsvar)}${an.niva.till ? ` · <span class="muted">${an.niva.xp - an.niva.fran}/${an.niva.till - an.niva.fran} XP</span>` : ""}</div>` : ""}<div class="liv-rad"><span>❤️ ${esc(d.namn)}</span><div class="progress djur-liv ${k.liv / k.liv_max < 0.3 ? "lag" : ""}"><div style="width:${Math.round((k.liv / k.liv_max) * 100)}%"></div></div><b>${k.liv}/${k.liv_max}</b></div>
       ${barn && (k.drycker || []).some((x) => x.antal) ? `<div class="attack-rad">🎒 ${(k.drycker || []).filter((x) => x.antal).map((x) => {
         const kan = !this._busy && (x.id === "d_fenix" ? ko : k.liv < k.liv_max);
         return `<button class="mini dryck-knapp" data-dryck="${x.id}" ${kan ? "" : "disabled"} title="${esc(x.namn)}: ${esc(x.info)}">${x.ikon} ×${x.antal}</button>`;
@@ -1617,6 +1625,34 @@ class SkolanPanel extends HTMLElement {
       </div></div>`;
   }
 
+  _defText(f) {
+    if (!f) return "🛡️ DEF 0";
+    const sk = (f.skoldar || []).find((x) => x.id === f.pa);
+    return `${sk ? sk.ikon : "🛡️"} DEF ${f.def}${f.def ? ` <span class="muted">(−${f.minskar} % skada)</span>` : ""}`;
+  }
+
+  _skoldButik(am, d, saldo, titta) {
+    const f = am.forsvar;
+    if (!f) return "";
+    const typer = am.typer || {};
+    const kort = (x) => {
+      const last = d.steg < x.steg, pa = f.pa === x.id;
+      const knapp = x.har
+        ? (titta ? `<span class="small">${pa ? "✅ På" : "✅ Har"}</span>`
+          : pa ? `<button class="mini" data-skold-pa="">✅ På · ta av</button>` : `<button class="mini primary" data-skold-pa="${x.id}">Ta på</button>`)
+        : titta ? `<span class="small muted">${last ? "🔒 " + esc(this._s.djur_steg[x.steg]) + " · " : ""}${x.pris} ⭐</span>`
+        : last ? `<span class="small muted">🔒 ${esc(this._s.djur_steg[x.steg])}</span>`
+        : `<button class="mini ${saldo >= x.pris ? "primary" : ""}" data-skold-kop="${x.id}" ${saldo >= x.pris && !this._busy ? "" : "disabled"}>${x.pris} ⭐</button>`;
+      const bra = x.mot && x.mot === am.slag;
+      return `<div class="sak-kort ${last ? "last" : ""} ${pa ? "vald" : ""} ${bra ? "svag" : ""}"><div class="sak-ikon">${x.ikon}</div>
+        <div class="small"><b>${esc(x.namn)}</b></div><div class="small">🛡️ DEF ${x.def}</div>
+        <div class="small muted">${esc(x.info)}</div>${bra ? `<div class="small">🎯 Bra mot nivå ${am.niva}!</div>` : ""}${knapp}</div>`;
+    };
+    return `<h3>🛡️ Sköldar</h3>
+      <div class="small muted">${esc(d.namn)} har ${this._defText(f)}. Skadan blir skada × ${am.def_halv} / (${am.def_halv} + DEF). Skölden följer med om du byter husdjur. Monstren på nivå ${am.niva} slår med ${typer[am.slag] || "💥 Kraft"}.</div>
+      <div class="sak-rutnat">${f.skoldar.map(kort).join("")}</div>`;
+  }
+
   // ---------- arenan ----------
   _arenaView() {
     const s = this._s, a = s.arena, d = s.meriter?.djur, barn = !s.kan_valja;
@@ -1638,14 +1674,14 @@ class SkolanPanel extends HTMLElement {
     return `<div class="card arena-jag">
         <div class="arena-djur">${ritaDjur(d.art, d.humor || "glad", Math.max(1, d.steg), {})}</div>
         <div><h3 style="margin:0">${esc(d.namn)}</h3>
-          <div>⬆️ Nivå <b>${n.niva}</b> · 💪 CP <b>${a.cp}</b> · ❤️ ${k.liv_max}</div>
+          <div>⬆️ Nivå <b>${n.niva}</b> · 💪 CP <b>${a.cp}</b> · ❤️ ${k.liv_max} · ${this._defText(k.forsvar)}</div>
           <div class="progress"><div style="width:${pct}%"></div></div>
           <div class="small muted">${n.till ? `${n.xp - n.fran} av ${n.till - n.fran} XP till nivå ${n.niva + 1}. Allt du pluggar ger XP.` : "Högsta nivån!"}</div>
           <div class="small">🏆 ${a.poang} arenapoäng · ${a.vinster} vinster · ⚡ ${k.energi}</div></div></div>
       ${a.pagar ? `<button class="primary" id="arena-fortsatt">⚔️ Fortsätt striden mot ${esc(a.pagar.mot_namn)}</button>` : ""}
       <h3>⚔️ Utmana</h3>
       ${andra.length ? `<ul class="lista arena-lista">${andra.map((t) => `<li><span class="van-djur">${t.karta.art ? ritaDjur(t.karta.art, "glad", Math.max(1, t.karta.steg || 1), {}) : "🥚"}</span>
-          <span><b>${esc(t.namn)}</b>${t.karta.djur ? ` · ${esc(t.karta.djur)}` : ""}<br><span class="small">⬆️ ${t.karta.djur_niva || 1} · 💪 CP ${t.karta.cp || 0}</span></span>
+          <span><b>${esc(t.namn)}</b>${t.karta.djur ? ` · ${esc(t.karta.djur)}` : ""}<br><span class="small">⬆️ ${t.karta.djur_niva || 1} · 💪 CP ${t.karta.cp || 0} · ${t.karta.skold || "🛡️"} DEF ${t.karta.def || 0}</span></span>
           ${barn && t.karta.art && !a.pagar ? `<button class="mini primary" data-arena-mot="${esc(t.id)}" ${k.energi >= 1 && !this._busy ? "" : "disabled"}>Utmana · 1⚡</button>` : ""}</li>`).join("")}</ul>`
         : `<p class="muted">Ingen att utmana än.</p>`}
       ${(this._vanner?.vanner || []).length ? `<h3>🤝 Vänner</h3><ul class="lista arena-lista">${this._vanner.vanner.map((x) => {
@@ -1670,7 +1706,9 @@ class SkolanPanel extends HTMLElement {
     return { at, djur: { art: a.jag.art, steg: Math.max(1, a.jag.steg), namn: a.jag.namn }, motDjur: { art: a.de.art, steg: Math.max(1, a.de.steg) },
       mon: { ikon: "", namn: `${a.de.namn}`, boss: false, varld: { farg: "#6a1b9a" } }, hp: a.de.max, kvar: tur ? tur.de_fore : a.de.liv,
       skada: tur?.skada || 0, jagMiss: !!tur?.miss, svag: false, klar: tur?.slut === "vinst", mot: tur?.mot || 0, miss: !!tur?.mot_miss, motAt,
-      livFore: tur ? tur.jag_fore : a.jag.liv, livMax: a.jag.max, arena: true, ...extra };
+      livFore: tur ? tur.jag_fore : a.jag.liv, livMax: a.jag.max, arena: true,
+      efter: tur?.de_efter, livEfter: tur?.jag_efter, skold: a.jag.skold, motSkold: a.de.skold,
+      deSkydd: tur?.skydd, deTillbaka: tur?.tillbaka, skydd: tur?.mot_skydd, tillbaka: tur?.mot_tillbaka, ...extra };
   }
 
   _arenaVisa() {
@@ -1729,7 +1767,8 @@ class SkolanPanel extends HTMLElement {
     const sen = this._s.data?.meriter?.karta?.senaste || {};
     const laddat = this._load();
     this._strid({ at: x, djur, ...fore, skada: sen.skada ?? x.nu, svag: sen.svag ?? x.svag, klar: !!sen.klar,
-      mot: sen.mot || 0, miss: !!sen.miss, livFore: sen.liv_fore, livMax: sen.liv_max, live: true, fortsatt, laddat });
+      mot: sen.mot || 0, miss: !!sen.miss, livFore: sen.liv_fore, livMax: sen.liv_max, live: true, fortsatt, laddat,
+      skydd: sen.skydd, tillbaka: sen.tillbaka, skold: sen.skold });
     await laddat;
     return true;
   }
@@ -1862,7 +1901,8 @@ class SkolanPanel extends HTMLElement {
     try { localStorage.setItem(`skolan_repris_${nyckel}`, x.r.tid || ""); } catch (e) { /* privat läge */ }
     const r = x.r;
     this._strid({ at: { ikon: r.ikon, namn: r.namn, typ: r.typ }, djur: x.djur, mon: r.mon, hp: r.hp, kvar: r.kvar,
-      skada: r.skada, svag: r.svag, klar: r.klar, mot: r.mot || 0, miss: !!r.miss, livFore: r.liv_fore, livMax: r.liv_max, vem: x.vem === "Din attack" ? "Repris" : `${x.vem} attackerar!` });
+      skada: r.skada, svag: r.svag, klar: r.klar, mot: r.mot || 0, miss: !!r.miss, livFore: r.liv_fore, livMax: r.liv_max,
+      skydd: r.skydd, tillbaka: r.tillbaka, skold: r.skold, vem: x.vem === "Din attack" ? "Repris" : `${x.vem} attackerar!` });
     this._render();
   }
 
@@ -1870,9 +1910,13 @@ class SkolanPanel extends HTMLElement {
   _strid(o) {
     document.getElementById("skolan-strid")?.remove();
     const lugn = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const typ = o.idle ? "" : o.at.typ || "kraft", efter = Math.max(0, o.kvar - o.skada);
+    const typ = o.idle ? "" : o.at.typ || "kraft";
+    const efter = o.efter ?? Math.max(0, o.kvar - o.skada - (o.arena ? 0 : o.tillbaka || 0));
     const motFas = !o.idle && !o.klar && o.livMax != null && o.livFore != null;
-    const livEfter = motFas ? Math.max(0, o.livFore - o.mot) : o.livFore;
+    const livEfter = o.livEfter ?? (motFas ? Math.max(0, o.livFore - o.mot) : o.livFore);
+    const skoldIk = (id) => (this._s.karta?.forsvar?.skoldar || []).find((x) => x.id === id)?.ikon || (id ? "🛡️" : "");
+    const skyddText = (sk, tb) => ({ bubbla: "🫧 Bubblan tog träffen!", block: "🛡️ Blockerad!", spegel: `🪞 Speglad! −${tb} tillbaka`,
+      tagg: `🦔 Taggar! −${tb} tillbaka`, typ: "🛡️ Typskydd: halv skada!" })[sk] || "";
     const ko = motFas && livEfter <= 0;
     const slump = (a, b) => a + Math.random() * (b - a);
     const partiklar = (n, tecken, cls) => Array.from({ length: n }, (_, i) =>
@@ -1898,6 +1942,9 @@ class SkolanPanel extends HTMLElement {
         <div class="namnruta">${o.at.ikon} ${esc(o.at.namn)}</div>${o.vem ? `<div class="vem">📺 ${esc(o.vem)}</div>` : ""}
         <div class="fiende ${o.motDjur ? "djur-fiende" : ""}"><div class="bosshp"><div style="width:${(o.kvar / o.hp) * 100}%"></div><span class="hpnum">${o.kvar}/${o.hp}</span></div><div class="figur">${o.motDjur ? ritaDjur(o.motDjur.art, ko ? "glad" : o.klar ? "hungrig" : "glad", o.motDjur.steg, {}) : o.mon?.ikon || "👾"}</div><div class="fx">${effekt}</div>
           <div class="tal ${o.svag ? "svag" : ""} ${o.jagMiss ? "jagmiss" : ""}">${siffror}${o.svag ? "<small>SVAG PUNKT!</small>" : ""}</div></div>
+        ${o.skold ? `<div class="skold-ikon hj">${skoldIk(o.skold)}</div>` : ""}${o.motSkold ? `<div class="skold-ikon fi">${skoldIk(o.motSkold)}</div>` : ""}
+        ${!o.idle && skyddText(o.deSkydd, o.deTillbaka) ? `<div class="skyddtext fi">${skyddText(o.deSkydd, o.deTillbaka)}</div>` : ""}
+        ${motFas && !o.miss && skyddText(o.skydd, o.tillbaka) ? `<div class="skyddtext hj">${skyddText(o.skydd, o.tillbaka)}</div>` : ""}
         <div class="hjalte"><div class="kropp">${o.djur ? ritaDjur(o.djur.art, ko ? "hungrig" : "glad", Math.max(1, o.djur.steg), {}) : "🐾"}</div>
           ${motFas ? `<div class="tal motal">${o.miss ? "<span>MISS!</span>" : String(o.mot).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("")}</div>` : ""}</div>
         ${motFas ? `<div class="motnamn">${o.motAt ? `${esc(o.mon?.namn || "")} använder ${o.motAt.ikon} ${esc(o.motAt.namn)}!` : `${o.mon?.ikon || "👾"} ${esc(o.mon?.boss ? o.mon.namn : "Monstret")} slår tillbaka!`}</div>` : ""}
@@ -2254,6 +2301,14 @@ class SkolanPanel extends HTMLElement {
         `⚡ Energi kan du också köpa i butiken: <b>20 ⭐</b> per ⚡, högst 5 per dag.`,
         `🧪 Livdrycker köper du i butiken och har i ryggsäcken (högst 5 av varje). 🪶 Fenixfjädern väcker ett utmattat husdjur.`,
         `Allt du tjänar ger husdjuret XP. Ny nivå ger mer ❤️ liv och starkare attacker. <b>CP</b> visar hur starkt husdjuret är.`,
+      ])}
+
+      ${kort("🛡️", "Sköldar och försvar (DEF)", [
+        `Köp sköldar i 🛍️ Butiken. Skölden hör till dig och följer med när du byter husdjur. Du har en sköld på dig åt gången.`,
+        `<b>🛡️ DEF</b> minskar skadan ditt husdjur tar. DEF 50 halverar skadan. DEF räknas också in i 💪 CP.`,
+        `Vissa sköldar har något extra: blockera helt, skicka tillbaka skada, läka eller halv skada från en typ (🔥 🌊 ❄️ ⚡ 🍃).`,
+        `Monstren slår med sin världs typ, till exempel 🔥 i Drakvulkanen. Rätt typsköld tar halva skadan.`,
+        `Skölden gäller både mot bossarna och i arenan.`,
       ])}
 
       ${kort("🏟️", "Arenan", [
@@ -4206,6 +4261,20 @@ class SkolanPanel extends HTMLElement {
         this._render();
       })
     );
+    r.querySelectorAll("[data-skold-kop]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const x = (this._s.karta?.forsvar?.skoldar || []).find((y) => y.id === b.dataset.skoldKop);
+        if (!x || !confirm(`Köpa ${x.namn} ${x.ikon} (DEF ${x.def}) för ${x.pris} ⭐?`)) return;
+        if (await this._act("skold_kop", { skold: x.id })) { this._msg = { type: "ok", text: `${x.ikon} ${x.namn} är på! 🛡️ DEF ${x.def}` }; await this._load(); }
+        this._render();
+      })
+    );
+    r.querySelectorAll("[data-skold-pa]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        if (await this._act("skold_pa", { skold: b.dataset.skoldPa })) await this._load();
+        this._render();
+      })
+    );
     r.querySelectorAll("[data-energi-kop]").forEach((b) =>
       b.addEventListener("click", async () => {
         if (await this._act("energi_kop", { n: Number(b.dataset.energiKop) })) {
@@ -5007,6 +5076,8 @@ const CSS = `
   .attack-knapp.svag { border-color:#ffeb3b; box-shadow:0 0 8px #ffeb3b; }
   .attack-knapp:disabled { opacity:.4; cursor:default; }
   .attack-sak.svag { outline:2px solid #fbc02d; }
+  .sak-kort.svag { outline:2px solid #fbc02d; }
+  .sak-kort.vald { outline:3px solid #42a5f5; box-shadow:0 0 10px rgba(66,165,245,.5); }
   .liv-rad { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:13px; }
   .liv-rad .djur-liv { flex:1; height:10px; margin:0; } .liv-rad .djur-liv div { background:linear-gradient(90deg,#00c853,#69f0ae); }
   .liv-rad .djur-liv.lag div { background:linear-gradient(90deg,#d50000,#ff8a80); }

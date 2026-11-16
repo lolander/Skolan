@@ -43,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.34.3"
+VERSION = "1.35.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -858,7 +858,7 @@ def _apply(data: dict, body: dict) -> list[str]:
         if body.get("_barn"):  # föräldrar som provar övningen betalar inget
             meriter.kop_tips(data, "forsok" if op == "ova_forsok" else "tips")
         return []
-    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck", "energi_kop", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
+    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
         if op == "djur":
@@ -879,6 +879,10 @@ def _apply(data: dict, body: dict) -> list[str]:
             meriter.dryck_kop(data, str(body.get("dryck") or ""))
         elif op == "energi_kop":
             meriter.energi_kop(data, int(body.get("n") or 1))
+        elif op == "skold_kop":
+            meriter.skold_kop(data, str(body.get("skold") or ""))
+        elif op == "skold_pa":
+            meriter.skold_pa(data, str(body.get("skold") or "") or None)
         elif op == "dryck":
             meriter.dryck(data, str(body.get("dryck") or ""))
         elif op == "arena_start":
