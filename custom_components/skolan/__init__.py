@@ -43,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.30.1"
+VERSION = "1.31.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -2268,6 +2268,36 @@ class UppdragView(HomeAssistantView):
                             _framsteg(data, u)
                             if u["typ"] == "prov" and not u.get("klart"):
                                 meriter.prov_studiedag(data, u)
+                    elif op == "prov_resultat":
+                        if not foralder:
+                            raise web.HTTPForbidden
+                        if u["typ"] != "prov":
+                            raise ValueError("Det här är inget prov.")
+                        if body.get("rensa"):
+                            meriter.prov_resultat(data, u, None)
+                        else:
+                            betyg = str(body.get("betyg") or "").strip().upper()
+                            res = {"kommentar": str(body.get("kommentar") or "").strip()[:200],
+                                   "av": user.name, "tid": dt_util.now().isoformat(timespec="minutes")}
+                            if body.get("max") not in (None, ""):
+                                mx, po = float(body.get("max")), float(body.get("poang") or 0)
+                                if mx <= 0 or po < 0 or po > mx or mx > 10000:
+                                    raise ValueError("Poängen måste vara mellan 0 och maxpoängen.")
+                                res.update({"poang": po, "max": mx})
+                                visa = f"{po:g} av {mx:g} poäng"
+                            elif betyg in meriter.PROV_BETYG:
+                                res["betyg"] = betyg
+                                visa = f"betyg {betyg}"
+                            else:
+                                raise ValueError("Skriv in poäng och maxpoäng, eller välj ett betyg.")
+                            ny = "resultat" not in u
+                            diff = meriter.prov_resultat(data, u, res)
+                            if ny or diff:
+                                belon = f" Du får +{diff} ⭐!" if diff > 0 else ""
+                                notiser.append((
+                                    barn_conf.get("notify"), f"📝 Provresultat: {u['namn']}",
+                                    f"{user.name} har lagt in ditt resultat: {visa}.{belon}",
+                                ))
                     elif op == "hogl_klar":
                         if u["typ"] != "hogl":
                             raise ValueError("Det här är ingen högläsning.")

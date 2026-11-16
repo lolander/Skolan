@@ -500,6 +500,9 @@ const DJUR_HUMOR = {
 };
 
 // "2026-11-21" -> { text: "fre 21 nov", kvar: "om 3 dagar", dagar: 3 }
+// Provresultat: "18 av 20 p (90 %)" eller "Betyg B".
+const provResText = (r) => `${r.andel >= 0.9 ? "🌟" : r.andel >= 0.6 ? "⭐" : "📝"} ${r.max ? `${r.poang} av ${r.max} p` : `Betyg ${r.betyg}`}`;
+
 // Godkänt-gränsen (samma som servern): minst 80 % rätt.
 const fhGrans = (n) => Math.ceil(n * 0.8 - 1e-9);
 const fhMarke = (f) => (f.bedomning === "godkant" ? " ✅" : f.bedomning === "ej_godkant" ? " ❌" : "");
@@ -2132,6 +2135,7 @@ class SkolanPanel extends HTMLElement {
         `Läsläxa klar i tid: ${p(30)} (för sent: ${p(10)})`,
         `Registrera ett prov minst 3 dagar innan: ${p(10)}`,
         `Plugga inför provet en dag före provet: ${p(10)} per dag (högst 5 dagar)`,
+        `📝 När mamma eller pappa lägger in provresultatet: minst 90 % rätt (eller betyg A/B) ${p(50)}, 75 % (C) ${p(30)}, 60 % (D/E) ${p(15)}. Toppresultat ger medaljen 🌟 Provstjärna.`,
         `Allt läst och kontrollfrågorna klara före provdagen: ${p(40)}`,
       ])}
 
@@ -2396,7 +2400,8 @@ class SkolanPanel extends HTMLElement {
     const s = this._s;
     const idag = new Date().toISOString().slice(0, 10);
     const lista = (s.data.uppdrag || [])
-      .filter((u) => !u.klart || (u.klart || "").slice(0, 10) >= new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10))
+      .filter((u) => !u.klart || (u.klart || "").slice(0, 10) >= new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10) ||
+        (u.typ === "prov" && (u.resultat ? (u.resultat.tid || "").slice(0, 10) >= plusDagar(idag, -7) : s.kan_valja && u.datum <= idag && u.datum >= plusDagar(idag, -30))))
       .sort((a, b) => (a.klart ? 1 : 0) - (b.klart ? 1 : 0) || a.datum.localeCompare(b.datum));
     const kort = lista
       .map((u) => {
@@ -2405,7 +2410,7 @@ class SkolanPanel extends HTMLElement {
         const sen = !u.klart && u.datum < idag;
         if (u.typ === "hogl" || u.typ === "skriv") return this._veckoKort(u, f, sen);
         return `<button class="uppdrag-kort ${u.typ} ${u.klart ? "klar" : ""} ${sen ? "sen" : ""}" data-open-uppdrag="${u.id}" data-amne="${u.amne}">
-          <div class="uk-rad"><b>${TYP_IKON[u.typ] || "📖"} ${TYP_NAMN[u.typ] || "Läsläxa"}: ${esc(u.namn)}</b><span class="small">${u.klart ? "✅ Klar" : u.typ === "prov" ? `${esc(f.text)} · ${f.kvar}` : `senast ${esc(f.text)}`}</span></div>
+          <div class="uk-rad"><b>${TYP_IKON[u.typ] || "📖"} ${TYP_NAMN[u.typ] || "Läsläxa"}: ${esc(u.namn)}</b><span class="small">${u.resultat ? `${provResText(u.resultat)}` : u.typ === "prov" && s.kan_valja && u.datum <= idag ? "✏️ Lägg in resultat" : u.klart ? "✅ Klar" : u.typ === "prov" ? `${esc(f.text)} · ${f.kvar}` : `senast ${esc(f.text)}`}</span></div>
           ${u.sidor.length ? `<div class="small">${esc(u.kapitel || `Sidorna ${u.fran}–${u.till}`)} · ${u.lasta}/${u.sidor.length} sidor lästa</div><div class="progress"><div style="width:${pct}%"></div></div>` : ""}
           ${u.glosor?.length ? `<div class="small">+ ${u.glosor.length} glosläx${u.glosor.length === 1 ? "a" : "or"}</div>` : ""}
         </button>`;
@@ -2517,10 +2522,40 @@ class SkolanPanel extends HTMLElement {
               .join("")}</div>`
           : ""
       }
+      ${u.typ === "prov" ? this._provResultat(u) : ""}
       ${s.kan_valja && !u.klart ? `<button class="row foralder-knapp" id="u-manuell"><span>✅ <b>Gjord i boken</b><br><span class="muted small">Registrera att ${esc(s.namn)} har gjort den utanför appen, så blir meriterna rätt</span></span><span>›</span></button>` : ""}
       ${u.manuell ? `<p class="muted small">Registrerad som gjord i boken.</p>` : ""}
       ${s.kan_valja && u.typ === "prov" && !u.klart ? this._dagValjare("📚 Pluggat inför provet utanför appen", u.studiedagar || [], (d) => d < u.datum, "data-man-plugg") : ""}
       ${s.kan_valja || u.av_id === s.user_id ? `<div class="actions"><button class="ghost danger" id="u-ta-bort">Ta bort</button></div>` : ""}`;
+  }
+
+  _provResultat(u) {
+    const s = this._s;
+    const r = u.resultat;
+    const idag = idagISO();
+    const kort = r
+      ? `<div class="prov-res ${r.andel >= 0.9 ? "topp" : r.andel >= 0.6 ? "bra" : ""}">
+          <div class="pr-rubrik">${provResText(r)}${r.max ? ` <span class="small">(${Math.round(r.andel * 100)} %)</span>` : ""}</div>
+          ${r.p ? `<div>${r.andel >= 0.9 ? "Toppresultat" : r.andel >= 0.75 ? "Mycket bra resultat" : "Bra resultat"}! <b>+${r.p} ⭐</b></div>` : `<div>${s.kan_valja ? "Under 60 %, ingen belöning." : "Nästa gång går det bättre. Plugga i god tid! 💪"}</div>`}
+          ${r.kommentar ? `<div class="muted">"${esc(r.kommentar)}"</div>` : ""}
+          <div class="muted small">Inlagt av ${esc(r.av || "")}</div>
+        </div>`
+      : "";
+    if (!s.kan_valja) return r ? `<h3>📝 Provresultat</h3>${kort}` : "";
+    if (!r && u.datum > idag) return "";
+    const b = this._view.provBetyg ?? (r?.betyg ? "betyg" : "poang");
+    return `<h3>📝 Provresultat</h3>${kort}
+      <div class="forhor-kort prov-form">
+        <div class="pf-val"><label><input type="radio" name="pr-typ" value="poang" ${b === "poang" ? "checked" : ""}> Poäng</label>
+          <label><input type="radio" name="pr-typ" value="betyg" ${b === "betyg" ? "checked" : ""}> Betyg A–F</label></div>
+        ${b === "poang"
+          ? `<div class="pf-rad"><input id="pr-poang" type="number" inputmode="decimal" min="0" step="0.5" placeholder="Poäng" value="${r?.max ? r.poang : ""}"> av
+             <input id="pr-max" type="number" inputmode="decimal" min="1" step="0.5" placeholder="Max" value="${r?.max || ""}"></div>`
+          : `<div class="pf-rad">${["A", "B", "C", "D", "E", "F"].map((x) => `<label class="pf-betyg"><input type="radio" name="pr-betyg" value="${x}" ${r?.betyg === x ? "checked" : ""}> ${x}</label>`).join("")}</div>`}
+        <input id="pr-komm" placeholder="Kommentar (frivilligt)" value="${esc(r?.kommentar || "")}" maxlength="200">
+        <div class="muted small">Belöning: minst 90 % +50 ⭐ · 75 % +30 ⭐ · 60 % +15 ⭐ (betyg A/B = topp, C = mycket bra, E–D = bra). Ändrar du resultatet justeras meriterna.</div>
+        <div class="actions"><button class="primary" id="pr-spara">${r ? "Spara ändring" : "💾 Spara resultat"}</button>${r ? `<button class="ghost danger" id="pr-rensa">Ta bort resultat</button>` : ""}</div>
+      </div>`;
   }
 
   // Förälder: tryck på dagen då barnet gjorde något utanför appen (senaste 7 dagarna). Meriterna räknas som den dagen.
@@ -3846,6 +3881,34 @@ class SkolanPanel extends HTMLElement {
       if (u) this._go({ name: "uppdrag", id: u.id, amne: u.amne });
     });
     on("#u-fragor", () => this._uppdragAct("fragor", { id: v.id }));
+    r.querySelectorAll("input[name=pr-typ]").forEach((x) =>
+      x.addEventListener("change", () => { v.provBetyg = x.value; this._render(); })
+    );
+    on("#pr-spara", async () => {
+      const typ = r.querySelector("input[name=pr-typ]:checked")?.value || "poang";
+      const args = { id: v.id, kommentar: $("#pr-komm")?.value || "" };
+      if (typ === "poang") {
+        const po = $("#pr-poang")?.value, mx = $("#pr-max")?.value;
+        if (po === "" || mx === "") { this._msg = { type: "error", text: "Skriv in poäng och maxpoäng." }; this._render(); return; }
+        Object.assign(args, { poang: Number(po.replace(",", ".")), max: Number(mx.replace(",", ".")) });
+      } else {
+        const b = r.querySelector("input[name=pr-betyg]:checked")?.value;
+        if (!b) { this._msg = { type: "error", text: "Välj ett betyg." }; this._render(); return; }
+        args.betyg = b;
+      }
+      if (await this._uppdragAct("prov_resultat", args)) {
+        const u = (this._s.data.uppdrag || []).find((x) => x.id === v.id);
+        const p = u?.resultat?.p || 0;
+        this._msg = { type: "ok", text: p ? `Resultatet är sparat. ${this._s.namn} får +${p} ⭐ totalt för provet 🌟` : "Resultatet är sparat." };
+        this._render();
+      }
+    });
+    on("#pr-rensa", async () => {
+      if (confirm("Ta bort provresultatet? Meriterna för det dras tillbaka.") && (await this._uppdragAct("prov_resultat", { id: v.id, rensa: true }))) {
+        this._msg = { type: "ok", text: "Resultatet är borttaget." };
+        this._render();
+      }
+    });
     on("#u-manuell", async () => {
       const idag = new Date().toISOString().slice(0, 10);
       const datum = this._ask("Vilket datum blev den klar? (ÅÅÅÅ-MM-DD)", idag);
@@ -4529,6 +4592,14 @@ const CSS = `
   .fh-beslut.fel { background:rgba(224,96,58,.14); border:2px solid #e0603a; }
   .fh-beslut .fb-rubrik { font-size:22px; font-weight:800; }
   .fh-beslut .fb-knappar { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .prov-res { border-radius:14px; padding:14px; margin-bottom:12px; text-align:center; background:var(--card-background-color); border:2px solid var(--divider-color); display:flex; flex-direction:column; gap:4px; }
+  .prov-res.topp { border-color:#ffd23f; background:rgba(255,210,63,.14); } .prov-res.bra { border-color:#3bceac; background:rgba(59,206,172,.12); }
+  .prov-res .pr-rubrik { font-size:24px; font-weight:800; }
+  .prov-form { display:flex; flex-direction:column; gap:10px; }
+  .prov-form .pf-val, .prov-form .pf-rad { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .prov-form input[type=number] { width:90px; font-size:18px; padding:6px; }
+  .prov-form #pr-komm { font-size:16px; padding:8px; }
+  .pf-betyg { font-size:18px; font-weight:700; }
   .fh-omprov { background:rgba(224,96,58,.15); border-radius:10px; padding:8px 12px; font-weight:600; }
   .forhor-nytt { display:block; width:100%; text-align:left; border:none; border-radius:16px; padding:16px; margin-bottom:14px; cursor:pointer;
                  background:linear-gradient(135deg, #e0603a, #f7a14f); color:#fff; box-shadow:0 3px 10px rgba(224,96,58,.4); }

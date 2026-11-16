@@ -46,6 +46,8 @@ MEDALJER = [
     ("lasare", "📖", "Läshäst", "Klarat en läsläxa", "las_klara", 1),
     ("bokmal", "🐛", "Bokmal", "Klarat 5 läsläxor", "las_klara", 5),
     ("provproffs", "📝", "Provproffs", "Pluggat klart inför ett prov i tid", "prov_klara", 1),
+    ("provstjarna", "🌟", "Provstjärna", "Toppresultat (minst 90 %) på ett prov", "prov_topp", 1),
+    ("provgeni", "🧠", "Provgeni", "Toppresultat på 5 prov", "prov_topp", 5),
     ("utmanare", "🎯", "Utmanare", "Klarat dagens utmaning", "utmaningar", 1),
     ("utmaningskung", "👑", "Utmaningskung", "Klarat dagens utmaning 10 gånger", "utmaningar", 10),
     ("snabbfinger", "⚡", "Snabbfinger", "Fått 20 rätt i Glosrekord", "rekord_max", 20),
@@ -830,6 +832,51 @@ def prov_studiedag(data: dict, u: dict, dag: str | None = None) -> None:
             if len(dagar_lista) <= 5:
                 ge(data, P_PROV_DAG, f"Pluggade inför provet {u['namn']}", f"provdag:{u['id']}:{idag.isoformat()}", "📚")
                 kolla_medaljer(data)
+
+
+# Provresultat som en förälder lägger in. Belöningen beror på andelen rätt (eller betyget).
+PROV_BETYG = {"A": 1.0, "B": 0.9, "C": 0.8, "D": 0.7, "E": 0.6, "F": 0.0}
+PROV_BELONING = [(0.9, 50, "Toppresultat"), (0.75, 30, "Mycket bra resultat"), (0.6, 15, "Bra resultat")]
+
+
+def prov_andel(res: dict) -> float | None:
+    if res.get("max"):
+        return max(0.0, min(1.0, res["poang"] / res["max"]))
+    return PROV_BETYG.get(res.get("betyg"))
+
+
+def prov_beloning(andel: float | None) -> tuple[int, str]:
+    for grans, p, text in PROV_BELONING:
+        if andel is not None and andel >= grans - 1e-9:
+            return p, text
+    return 0, ""
+
+
+def prov_resultat(data: dict, u: dict, res: dict | None) -> int:
+    """Sätt (eller ta bort, res=None) provresultatet. Ändras resultatet justeras meriterna. Returnerar nya meriter."""
+    gammal = u.get("resultat") or {}
+    fore = int(gammal.get("p", 0))
+    if res is None:
+        u.pop("resultat", None)
+        if fore:
+            ge(data, -fore, f"Provresultatet för {u['namn']} togs bort", None, "➖")
+        return -fore
+    andel = prov_andel(res)
+    p, text = prov_beloning(andel)
+    res["p"] = p
+    res["andel"] = round(andel, 3) if andel is not None else None
+    res["topp"] = gammal.get("topp", False)
+    u["resultat"] = res
+    diff = p - fore
+    if diff > 0:
+        ge(data, diff, f"{text} på provet {u['namn']}!" if not fore else f"Bättre provresultat på {u['namn']}", None, "📝")
+    elif diff < 0:
+        ge(data, diff, f"Ändrat provresultat på {u['namn']}", None, "➖")
+    if andel is not None and andel >= 0.9 - 1e-9 and not res["topp"]:
+        res["topp"] = True
+        _rakna(data, "prov_topp")
+        kolla_medaljer(data)
+    return diff
 
 
 def registrerat(data: dict, u: dict) -> None:
