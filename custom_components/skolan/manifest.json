@@ -1,6 +1,6 @@
 {
   "domain": "skolan",
-  "name": "Skolan",
+  "name": "Läxspelet",
   "codeowners": [
     "@lolander"
   ],
@@ -17,5 +17,5 @@
   "issue_tracker": "https://github.com/lolander/Skolan/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "1.38.0"
+  "version": "1.39.0"
 }

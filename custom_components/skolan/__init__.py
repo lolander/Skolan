@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.38.0"
+VERSION = "1.39.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -186,14 +186,14 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
                     if u.get("typ") == "hogl" and d and d.get("status") not in ("ok", "vantar"):
                         await _notis(
                             hass, b["notify"], "🗣️ Dags att läsa högt!",
-                            f"{u['namn']}: läs för mamma eller pappa och tryck på knappen i Skolan. +{meriter.P_HOGL_DAG} ⭐",
+                            f"{u['namn']}: läs för mamma eller pappa och tryck på knappen i Läxspelet. +{meriter.P_HOGL_DAG} ⭐",
                             f"/skolan?uppdrag={u['id']}",
                         )
                 for s in data.get("schema", []):
                     if int(s["kommer"]) == idag.weekday() and f"lagt_in:{s['id']}:{idag.isoformat()}" not in nycklar:
                         await _notis(
                             hass, b["notify"], f"📥 Har du fått {s['namn']}?",
-                            f"Lägg in den i Skolan idag eller imorgon så får du {meriter.P_I_TID} meriter! ⏰",
+                            f"Lägg in den i Läxspelet idag eller imorgon så får du {meriter.P_I_TID} meriter! ⏰",
                         )
             else:
                 await _dagens_peppning(b, data)
@@ -263,7 +263,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
             klara = sum(1 for x in utm if x["klar"])
             djur = m["djur"] or {}
             hass.states.async_set(f"sensor.skolan_{b['id']}_svit", m["streak"], {
-                "friendly_name": f"Skolan {b['namn']} svit", "icon": "mdi:fire", "unit_of_measurement": "dagar",
+                "friendly_name": f"Läxspelet {b['namn']} svit", "icon": "mdi:fire", "unit_of_measurement": "dagar",
                 "idag": m["streak_idag"], "svitskydd": m["skydd"], "stjarnor": m["saldo"],
                 "utmaning": f"{klara}/{len(utm)}" if utm else None,
                 "husdjur": djur.get("namn"), "husdjur_humor": djur.get("humor"),
@@ -275,7 +275,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
                 figur = "🥚" if djur["steg"] == 0 else djur["art"]
                 status = f"{figur} {djur['namn']} " + ("väntar på att kläckas" if djur["steg"] == 0 else humor_text)
             else:
-                figur, status = "🥚", "Välj ditt husdjur i Skolan!"
+                figur, status = "🥚", "Välj ditt husdjur i Läxspelet!"
             hass.states.async_set(f"sensor.skolan_{b['id']}_husdjur", status[:250], {
                 "friendly_name": f"{b['namn']}s husdjur", "icon": "mdi:paw",
                 "figur": figur, "namn": djur.get("namn"), "humor": djur.get("humor"),
@@ -326,9 +326,9 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
                 continue
             namn = d["namn"]
             if d["humor"] == "hungrig":
-                titel, text = f"😟 {namn} är hungrig!", f"{namn} har inte fått mat på två dagar. Öva lite i Skolan så blir {namn} glad igen!"
+                titel, text = f"😟 {namn} är hungrig!", f"{namn} har inte fått mat på två dagar. Öva lite i Läxspelet så blir {namn} glad igen!"
             else:
-                titel, text = f"😢 {namn} saknar dig…", f"{namn} är ledsen. Kom tillbaka till Skolan och gör något litet, så blir {namn} glad!"
+                titel, text = f"😢 {namn} saknar dig…", f"{namn} är ledsen. Kom tillbaka till Läxspelet och gör något litet, så blir {namn} glad!"
             await _notis(hass, b.get("notify"), titel, text, "/skolan")
 
     async_track_time_change(hass, _hungrig_notis, hour=16, minute=0, second=0)
@@ -360,7 +360,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
                 namn = s["foralder"].get("namn") or b["namn"]
                 r = skola.rapport(data, namn)
                 await hass.async_add_executor_job(skola.skicka_mejl, hass.data[DOMAIN]["base"], s["foralder"]["mejl_till"],
-                                                  f"Skolan: rapport om {namn}", skola.rapport_text(r))
+                                                  f"Läxspelet: rapport om {namn}", skola.rapport_text(r))
                 s["mejl_skickat"] = idag.isoformat()
                 await hass.async_add_executor_job(skola.spara, mapp, s)
             except Exception as err:  # noqa: BLE001
@@ -396,7 +396,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
         hass,
         frontend_url_path="skolan",
         webcomponent_name=f"skolan-panel-{VERSION.replace('.', '-')}",  # nytt namn per version = appen laddar alltid den nya
-        sidebar_title="Skolan",
+        sidebar_title="Läxspelet",
         sidebar_icon="mdi:school",
         module_url=f"{STATIC_URL}/panel.js?v={VERSION}",
         require_admin=False,
@@ -528,13 +528,13 @@ class VanPublikView(HomeAssistantView):
             return self.json(k)
         lank = html.escape(str(request.url.with_query(None)))
         sida = f"""<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bli vän i Skolan</title><style>body{{font-family:system-ui;background:#fff8e1;margin:0;padding:24px;text-align:center}}
+<title>Bli vän i Läxspelet</title><style>body{{font-family:system-ui;background:#fff8e1;margin:0;padding:24px;text-align:center}}
 .kort{{background:#fff;border-radius:20px;padding:24px;max-width:360px;margin:auto;box-shadow:0 4px 16px rgba(0,0,0,.12)}}
 .djur{{font-size:72px}}button{{font-size:18px;padding:12px 20px;border-radius:12px;border:0;background:#43a047;color:#fff;margin-top:16px}}
 textarea{{width:100%;font-size:12px;margin-top:12px;height:70px}}</style></head><body><div class="kort">
-<div class="djur">{html.escape(k['art'] or '🙂')}</div><h2>{html.escape(k['smeknamn'])} vill bli din vän i Skolan!</h2>
+<div class="djur">{html.escape(k['art'] or '🙂')}</div><h2>{html.escape(k['smeknamn'])} vill bli din vän i Läxspelet!</h2>
 <p>🗺️ Nivå {k['niva']} · ⭐ {k['stjarnor']}</p>
-<p>Kopiera länken och klistra in den under <b>🤝 Vänner</b> i din Skolan-app.</p>
+<p>Kopiera länken och klistra in den under <b>🤝 Vänner</b> i Läxspelet.</p>
 <button onclick="navigator.clipboard.writeText(document.getElementById('l').value).then(()=>this.textContent='✅ Kopierad!')">📋 Kopiera vänlänken</button>
 <textarea id="l" readonly>{lank}</textarea></div></body></html>"""
         return web.Response(text=sida, content_type="text/html")
@@ -564,7 +564,7 @@ class VanForfraganView(HomeAssistantView):
             return self.json({"ok": False}, status_code=400)
         if rad:
             await _vanner_foraldrar(hass, f"🤝 Vänförfrågan till {b['namn']}",
-                                    f"{rad['smeknamn'] or 'Någon'} har lagt till {b['namn']} som vän i Skolan. Godkänn eller neka under Vänner.")
+                                    f"{rad['smeknamn'] or 'Någon'} har lagt till {b['namn']} som vän i Läxspelet. Godkänn eller neka under Vänner.")
         return self.json({"ok": True})
 
 
@@ -627,7 +627,7 @@ class VannerView(HomeAssistantView):
                         await vanner.skicka_forfragan(session, kod, egen, v["smeknamn"])
                     else:
                         vanner.onska(v, kod, egen)
-                        meddela = (f"🤝 {b['namn']} vill lägga till en vän", "Godkänn eller neka under Vänner i Skolan.")
+                        meddela = (f"🤝 {b['namn']} vill lägga till en vän", "Godkänn eller neka under Vänner i Läxspelet.")
                 elif op in ("svar_utgaende", "svar_inkommande"):
                     kod = vanner.normal_kod(kod)
                     if body.get("ja"):
@@ -1613,7 +1613,7 @@ class WidgetView(HomeAssistantView):
         humor_text = {"glad": "är mätt och glad!", "nojd": "väntar på dagens mat", "hungrig": "är hungrig!", "ledsen": "saknar dig…"}[humor]
         return self.json({
             "namn": d.get("namn") or "Välj ett husdjur",
-            "text": ("väntar på att kläckas" if agg else humor_text) if d else "Öppna Skolan och välj ditt husdjur!",
+            "text": ("väntar på att kläckas" if agg else humor_text) if d else "Öppna Läxspelet och välj ditt husdjur!",
             "humor": humor,
             "bild": f"{STATIC_URL}/djur/{'agg' if agg or not d else slug}_{humor}.png",
             "hatt": hatt["ikon"] if hatt else ("👑" if d.get("steg", 0) >= 5 else None),
@@ -2101,7 +2101,7 @@ async def _notis(hass: HomeAssistant, tjanst: str | None, titel: str, text: str,
             if bild:
                 extra["image"] = bild
                 if d["steg"] and d["humor"] in ("hungrig", "ledsen") and d["namn"] not in text:
-                    text += f"\n{'😟' if d['humor'] == 'hungrig' else '😢'} {d['namn']} är {'hungrig' if d['humor'] == 'hungrig' else 'ledsen'}, mata hen genom att göra något i Skolan!"
+                    text += f"\n{'😟' if d['humor'] == 'hungrig' else '😢'} {d['namn']} är {'hungrig' if d['humor'] == 'hungrig' else 'ledsen'}, mata hen genom att göra något i Läxspelet!"
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Skolan: ingen husdjursbild: %s", err)
     try:
@@ -2239,7 +2239,7 @@ class ForhorView(HomeAssistantView):
                     lista.append(f)
                     del lista[:-300]  # loggen sparar de 300 senaste
                     notiser.append(
-                        (barn_conf.get("notify"), f"📋 Förhör från {user.name}", f"{g['namn']} ({a['namn']}), {len(fragor)} ord. Öppna Skolan för att börja.", "/skolan")
+                        (barn_conf.get("notify"), f"📋 Förhör från {user.name}", f"{g['namn']} ({a['namn']}), {len(fragor)} ord. Öppna Läxspelet för att börja.", "/skolan")
                     )
                 else:
                     f = _find(lista, body.get("forhor"))
@@ -3004,7 +3004,7 @@ async def _godkann(hass: HomeAssistant, barn: str, uid: str, datum: str | None, 
         await hass.async_add_executor_job(_save, path, data)
     if svar:
         b = next(x for x in hass.data[DOMAIN]["conf"]["barn"] if x["id"] == barn)
-        await _notis(hass, b.get("notify"), "Skolan", svar, f"/skolan?glosor={uid[7:]}" if uid.startswith("glosor-") else f"/skolan?bok={uid[4:]}" if uid.startswith("bok-") else f"/skolan?uppdrag={uid}")
+        await _notis(hass, b.get("notify"), "Läxspelet", svar, f"/skolan?glosor={uid[7:]}" if uid.startswith("glosor-") else f"/skolan?bok={uid[4:]}" if uid.startswith("bok-") else f"/skolan?uppdrag={uid}")
         for tjanst in hass.data[DOMAIN]["conf"].get("foralder_notify", {}).values():  # ta bort frågan hos den andra föräldern
             try:
                 await hass.services.async_call("notify", tjanst, {"message": "clear_notification", "data": {"tag": f"skolan-{barn}__{uid}__{datum or '-'}"}})
@@ -3066,11 +3066,11 @@ async def _van_bjud(hass: HomeAssistant, barn: str, kod: str, body: dict) -> Non
         async with async_get_clientsession(hass).post(f"{kod}/tillsammans", json={**body, "kod": egen, "smeknamn": v["smeknamn"]},
                                                       timeout=vanner.TIMEOUT, allow_redirects=False) as r:
             if r.status != 200:
-                raise ValueError("Kompisens Skolan svarade inte. Har de samma version?")
+                raise ValueError("Läxspelet hos kompisen svarade inte. Har de samma version?")
     except ValueError:
         raise
     except Exception as err:  # noqa: BLE001
-        raise ValueError("Kunde inte nå kompisens Skolan just nu.") from err
+        raise ValueError("Kunde inte nå Läxspelet hos kompisen just nu.") from err
 
 
 async def _tillsammans_lage(hass: HomeAssistant, barn: str) -> dict:
@@ -3311,7 +3311,7 @@ class SkolaView(HomeAssistantView):
                 namn = s["foralder"].get("namn") or next(b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn)
                 text = "(TEST – så här ser rapporten ut)\n\n" + skola.rapport_text(skola.rapport(data, namn))
                 try:
-                    await hass.async_add_executor_job(skola.skicka_mejl, bas, till, f"Skolan: testrapport om {namn}", text)
+                    await hass.async_add_executor_job(skola.skicka_mejl, bas, till, f"Läxspelet: testrapport om {namn}", text)
                 except (OSError, smtplib.SMTPException) as err:
                     raise ValueError(f"Mejlet gick inte iväg: {err}") from err
             elif op == "inkorg_forslag":

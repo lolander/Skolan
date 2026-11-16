@@ -5,12 +5,12 @@
 
 [Setup]
 AppId={{6E3F2B1A-5C4D-4E8F-9A7B-1C2D3E4F5A6B}
-AppName=Skolan
+AppName=Läxspelet
 AppVersion={#VERSION}
 AppPublisher=Skolan
 AppPublisherURL=https://github.com/lolander/Skolan
 DefaultDirName={autopf}\Skolan
-DefaultGroupName=Skolan
+DefaultGroupName=Läxspelet
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 OutputDir=Output
@@ -27,22 +27,29 @@ Name: "sv"; MessagesFile: "compiler:Languages\Swedish.isl"
 
 [Tasks]
 Name: "skrivbord"; Description: "Skapa en genväg på skrivbordet"; GroupDescription: "Genvägar:"
-Name: "autostart"; Description: "Starta Skolan när datorn startar (rekommenderas, så att mobilerna alltid når den)"; GroupDescription: "Start:"
+Name: "autostart"; Description: "Starta Läxspelet när datorn startar (rekommenderas, så att mobilerna alltid når den)"; GroupDescription: "Start:"
 
 [Files]
 Source: "..\dist\Skolan\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+; Gamla genvägar från när appen hette Skolan.
+[InstallDelete]
+Type: files; Name: "{group}\Skolan.lnk"
+Type: files; Name: "{group}\Avinstallera Skolan.lnk"
+Type: files; Name: "{autodesktop}\Skolan.lnk"
+Type: files; Name: "{userstartup}\Skolan.lnk"
+
 [Icons]
-Name: "{group}\Skolan"; Filename: "{app}\Skolan.exe"
-Name: "{group}\Avinstallera Skolan"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Skolan"; Filename: "{app}\Skolan.exe"; Tasks: skrivbord
-Name: "{userstartup}\Skolan"; Filename: "{app}\Skolan.exe"; Parameters: "--tyst"; Tasks: autostart
+Name: "{group}\Läxspelet"; Filename: "{app}\Skolan.exe"
+Name: "{group}\Avinstallera Läxspelet"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Läxspelet"; Filename: "{app}\Skolan.exe"; Tasks: skrivbord
+Name: "{userstartup}\Läxspelet"; Filename: "{app}\Skolan.exe"; Parameters: "--tyst"; Tasks: autostart
 
 [Run]
 ; Låt mobiler i hemmanätverket nå Skolan (bara privata nätverk, inte publika wifi).
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Skolan"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Skolan"" dir=in action=allow program=""{app}\Skolan.exe"" enable=yes profile=private"; Flags: runhidden
-Filename: "{app}\Skolan.exe"; Description: "Starta Skolan nu"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\Skolan.exe"; Description: "Starta Läxspelet nu"; Flags: nowait postinstall skipifsilent runasoriginaluser
 ; Uppdatering inifrån appen (tyst installation): starta Skolan igen när den är klar.
 Filename: "{app}\Skolan.exe"; Parameters: "--tyst"; Flags: nowait runasoriginaluser; Check: WizardSilent
 

@@ -12,7 +12,7 @@ const lank = decodeURIComponent(location.hash.slice(1));
 const visa = (ikon, rubrik, text, cls = "") => { k.innerHTML = `<div class="stor">${ikon}</div><h2 class="${cls}">${rubrik}</h2><p>${text}</p>`; };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 if (!lank) {
-  visa("📱", "Öppna Skolan först", "I Skolan-appen: tryck <b>🤝 Plugga ihop</b> och sedan <b>🏫 Anslut till läraren</b>. Skriv adressen som syns på lärarens skärm.");
+  visa("📱", "Öppna Läxspelet först", "I Läxspelet: tryck <b>🤝 Plugga ihop</b> och sedan <b>🏫 Anslut till läraren</b>. Skriv adressen som syns på lärarens skärm.");
 } else {
   history.replaceState(null, "", location.pathname);  // klasslänken ska inte ligga kvar i adressfältet
   fetch("/api/elev/koppla", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lank }) })

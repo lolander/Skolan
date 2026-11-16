@@ -4,7 +4,7 @@ self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener("push", (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data && e.data.text() }; }
-  e.waitUntil(self.registration.showNotification(d.title || "Skolan", {
+  e.waitUntil(self.registration.showNotification(d.title || "Läxspelet", {
     body: d.body || "", icon: "/app/bilder/ikon-192.png", badge: "/app/bilder/ikon-64.png",
     image: d.image || undefined, tag: d.tag || undefined, data: { url: d.url || "/skolan" },
   }));

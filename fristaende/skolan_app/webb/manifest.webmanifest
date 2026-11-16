@@ -1,6 +1,6 @@
 {
-  "name": "Skolan",
-  "short_name": "Skolan",
+  "name": "Läxspelet",
+  "short_name": "Läxspelet",
   "start_url": "/skolan",
   "scope": "/",
   "display": "standalone",

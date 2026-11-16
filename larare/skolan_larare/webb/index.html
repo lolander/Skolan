@@ -1,5 +1,5 @@
 <!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Skolan Lärare</title><link rel="icon" href="/ikon.png">
+<title>Läxspelet Lärare</title><link rel="icon" href="/ikon.png">
 <style>
 :root{--bg:#f4f5fb;--kort:#fff;--text:#1c2340;--muted:#6b7190;--acc:#3949ab;--rand:#dfe2f0;--ok:#2e7d32;--fel:#c62828}
 @media (prefers-color-scheme: dark){:root{--bg:#141726;--kort:#1f2338;--text:#e8eaf6;--muted:#9aa0bf;--acc:#7986cb;--rand:#2e3352}}
@@ -26,7 +26,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:7px;bord
 .grupp{border-left:4px solid var(--acc);padding-left:10px;margin:10px 0}
 @media (max-width:640px){.grid2{grid-template-columns:1fr}}
 </style></head><body>
-<header><img src="/ikon.png" width="32" height="32" alt=""><h1 id="rubrik">Skolan Lärare</h1><span id="ver" class="small"></span></header>
+<header><img src="/ikon.png" width="32" height="32" alt=""><h1 id="rubrik">Läxspelet Lärare</h1><span id="ver" class="small"></span></header>
 <nav id="nav"></nav><main id="main"></main>
 <script>
 const flikar = [["oversikt", "🏫 Översikt"], ["veckobrev", "📬 Veckobrev"], ["grupper", "👥 Grupper"], ["klasslag", "🐲 Klasslag"], ["rapporter", "📊 Rapporter"], ["historik", "📜 Historik"], ["inst", "⚙️ Inställningar"]];
@@ -44,7 +44,7 @@ async function andra(body, ok) {
 }
 function rita() {
   $("#ver").textContent = "v" + L.version;
-  $("#rubrik").textContent = L.klass ? `Skolan Lärare · ${L.klass}` : "Skolan Lärare";
+  $("#rubrik").textContent = L.klass ? `Läxspelet Lärare · ${L.klass}` : "Läxspelet Lärare";
   $("#nav").innerHTML = flikar.map(([id, t]) => `<button class="${id === flik ? "vald" : ""}" data-f="${id}">${t}</button>`).join("");
   document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { flik = b.dataset.f; location.hash = flik; msg = null; rita(); });
   $("#main").innerHTML = (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, veckobrev, grupper, klasslag, rapporter, historik, inst }[flik] || oversikt)();
@@ -55,7 +55,7 @@ function oversikt() {
   const f = (e) => Object.entries(e.foralder || {}).filter(([, v]) => v).map(([k]) => ({ veckobrev: "📬", rapport: "📊", klasslag: "🏫", mejl: "📧", grupper: "👥" })[k]).join(" ");
   return `<div class="kort flex"><img class="qr" src="/api/qr.svg" alt="QR-kod">
     <div><h2>Eleverna ansluter här</h2><div class="adress">${esc(L.adress)}</div>
-    <p class="muted">Eleverna ska vara på samma wifi som datorn. I Skolan-appen trycker de <b>🤝 Plugga ihop → 🏫 Anslut till läraren</b> och skriver adressen.
+    <p class="muted">Eleverna ska vara på samma wifi som datorn. I Läxspelet trycker de <b>🤝 Plugga ihop → 🏫 Anslut till läraren</b> och skriver adressen.
     Nästa gång räcker <b>🔄 Synka med läraren</b>.</p><p class="small muted">Föräldern bestämmer också: en funktion fungerar bara när både du och föräldern har slagit på den.</p></div></div>
   <div class="kort"><h2>Elever (${L.elever.length})</h2>
     ${L.elever.length ? `<table><tr><th>Namn</th><th>Senast synkad</th><th>Föräldern har slagit på</th><th></th></tr>
@@ -89,7 +89,7 @@ function grupper() {
     <div class="small muted">Skapad ${esc(g.skapad)}${g.avslutad ? ` · avslutad ${esc(g.avslutad)}` : ""} · klara: ${g.klara_namn.map(esc).join(", ") || "ingen än"}</div>
     ${aktiv ? `<button class="m" data-g-avsluta="${g.id}">✔️ Avsluta gruppen</button>` : ""}</div>`;
   return `${av("grupper")}<div class="kort"><h2>Dela klassen i grupper</h2>
-    <p class="small muted">Grupperna är tillfälliga. Eleverna ser sin grupp och uppgiften i Skolan när de synkar, och kan markera uppgiften som klar. Allt sparas i 📜 Historik.</p>
+    <p class="small muted">Grupperna är tillfälliga. Eleverna ser sin grupp och uppgiften i Läxspelet när de synkar, och kan markera uppgiften som klar. Allt sparas i 📜 Historik.</p>
     <label>Gruppuppgift</label><textarea id="g-uppgift" placeholder="t.ex. Gör en affisch om vikingatiden"></textarea>
     <label>Klar senast</label><input id="g-datum" type="date">
     <div class="grid2"><div><label>Dela slumpvis i antal grupper</label><input id="g-antal" type="number" min="1" value="4"><button class="p" id="g-dela">🎲 Dela slumpvis</button></div>
@@ -105,7 +105,7 @@ function klasslag() {
     <div class="bar"><div style="width:${Math.round(kvar / b.hp * 100)}%"></div></div>
     <p>${b.klar ? "🎉 Besegrad! Alla som är med får 30 ⭐ nästa gång de synkar." : `❤️ ${kvar} av ${b.hp} kvar`} · ${b.antal} elever med</p>
     <p class="small muted">Du ser bara klassens summa, aldrig vad en enskild elev har pluggat. Elevernas plugg räknas när de synkar.</p></div>
-  <div class="kort"><h2>Klassens plugg i klassrummet</h2><p class="small muted">Alla elever har inte Skolan. Lägg till poäng för det klassen gör tillsammans, så kan alla vara med. Den här veckan: ${b.extra}.</p>
+  <div class="kort"><h2>Klassens plugg i klassrummet</h2><p class="small muted">Alla elever har inte Läxspelet. Lägg till poäng för det klassen gör tillsammans, så kan alla vara med. Den här veckan: ${b.extra}.</p>
     <div class="flex"><input id="kp-poang" type="number" min="1" value="20" style="width:120px"><button class="p" id="kp-lagg">➕ Lägg till</button></div></div>`;
 }
 function rapporter() {

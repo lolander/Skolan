@@ -211,7 +211,7 @@ async def hamta_kort(session, kod: str) -> dict:
             text = await r.content.read(4096)
         k = json.loads(text)
         if not isinstance(k, dict) or k.get("v") != 1:
-            raise ValueError("Det där verkar inte vara en vänlänk från Skolan.")
+            raise ValueError("Det där verkar inte vara en vänlänk från Läxspelet.")
         return k
     except ValueError:
         raise
@@ -223,11 +223,11 @@ def arena_koll(svar: dict, namn: str) -> None:
     """Versionskoll innan en vänstrid: båda hemmen måste ha samma arenaversion."""
     deras = svar.get("arena_ver") if isinstance(svar, dict) else None
     if not isinstance(deras, int) or "kampe" not in svar:
-        raise ValueError(f"{namn} har en äldre Skolan som inte kan vänstrider än. Be en förälder där uppdatera Skolan.")
+        raise ValueError(f"{namn} har en äldre Läxspelet som inte kan vänstrider än. Be en förälder där uppdatera Läxspelet.")
     if deras < meriter.ARENA_VER:
-        raise ValueError(f"{namn} har en äldre version av Skolan ({str(svar.get('skolan') or '?')[:12]}). Be en förälder där uppdatera, så kan ni strida.")
+        raise ValueError(f"{namn} har en äldre version av Läxspelet ({str(svar.get('skolan') or '?')[:12]}). Be en förälder där uppdatera, så kan ni strida.")
     if deras > meriter.ARENA_VER:
-        raise ValueError(f"{namn} har en nyare version av Skolan ({str(svar.get('skolan') or '?')[:12]}). Be mamma eller pappa uppdatera din Skolan, så kan ni strida.")
+        raise ValueError(f"{namn} har en nyare version av Läxspelet ({str(svar.get('skolan') or '?')[:12]}). Be mamma eller pappa uppdatera Läxspelet, så kan ni strida.")
     if not svar.get("kampe"):
         raise ValueError(f"{namn} har inget husdjur än.")
 

@@ -1,7 +1,7 @@
 """Koppling till skolan: läraren och klassen.
 
 Föräldern och läraren bestämmer tillsammans. En funktion är bara på när BÅDA har slagit på den:
-föräldern i Skolans inställningar, läraren i lärarappen (Skolan Lärare för Windows).
+föräldern i Skolans inställningar, läraren i lärarappen (Läxspelet Lärare för Windows).
 E-postrapporten kräver bara föräldern, men läraren kan säga nej till den i lärarappen.
 
 Lärarappen pratar med barnets Skolan via klasslänken {extern adress}/api/skolan/klass/{nyckel}
@@ -30,7 +30,7 @@ FUNKTIONER = {
     "veckobrev": ("📬", "Veckobrev från läraren", "Lärarens veckobrev hamnar i din inkorg. Du godkänner innan läxorna läggs in."),
     "rapport": ("📊", "Veckorapport till läraren i lärarappen", "När eleven synkar ser läraren en kort rapport: dagar övat, förhör och prov."),
     "klasslag": ("🏫", "Klasslag", "Klassen bekämpar en gemensam boss. Läraren ser bara klassens summa, aldrig ditt barns poäng."),
-    "mejl": ("📧", "Rapport via e-post", "Skolan mejlar en kort rapport till läraren de dagar du väljer."),
+    "mejl": ("📧", "Rapport via e-post", "Läxspelet mejlar en kort rapport till läraren de dagar du väljer."),
     "grupper": ("👥", "Grupper och gruppuppgifter", "Läraren kan sätta ditt barn i tillfälliga grupper med en uppgift. Barnet ser gruppen och kan bocka av uppgiften."),
 }
 KLASSBOSS_BELONING = 30
@@ -154,7 +154,7 @@ def rapport(data: dict, namn: str, dagar: int = 7) -> dict:
 def rapport_text(r: dict) -> str:
     return "\n".join([f"Hej! Här är en kort rapport om {r['namn']} ({r['fran']} – {r['till']}).", ""]
                      + [f"• {x}" for x in r["rader"]]
-                     + ["", "Rapporten skickas automatiskt från familjens Skolan-app. Svara gärna på mejlet om något är oklart."])
+                     + ["", "Rapporten skickas automatiskt från familjens Läxspelet. Svara gärna på mejlet om något är oklart."])
 
 
 # ---------- e-post ----------

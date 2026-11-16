@@ -1,4 +1,4 @@
-# 🎒 Skolan
+# 🎒 Läxspelet
 
 > ⚠️ **Förhandsversion.** Inställningsguiden är ny och inte färdigtestad. Rapportera gärna fel under Issues.
 

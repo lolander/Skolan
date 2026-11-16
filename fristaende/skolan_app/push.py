@@ -73,7 +73,7 @@ class Push:
             return
         pid = service[len(PREFIX):]
         extra = data.get("data") or {}
-        payload = json.dumps({"title": data.get("title") or "Skolan", "body": data.get("message") or "",
+        payload = json.dumps({"title": data.get("title") or "Läxspelet", "body": data.get("message") or "",
                               "url": extra.get("url") or "/skolan", "image": extra.get("image"),
                               "tag": extra.get("tag")}, ensure_ascii=False)
         await asyncio.get_running_loop().run_in_executor(None, self._skicka_alla, pid, payload)

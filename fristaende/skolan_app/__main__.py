@@ -1,4 +1,4 @@
-"""Startar Skolan. I Windows syns en ikon vid klockan: Öppna Skolan, Koppla mobilen, Avsluta.
+"""Startar Skolan. I Windows syns en ikon vid klockan: Öppna Läxspelet, Koppla mobilen, Avsluta.
 
 python -m skolan_app [--utan-ikon] [--port 8765]
 """
@@ -31,13 +31,13 @@ def _ikon(port: int, styr: dict) -> None:
         ikon.stop()
 
     meny = pystray.Menu(
-        pystray.MenuItem("Öppna Skolan", lambda: _oppna(port), default=True),
+        pystray.MenuItem("Öppna Läxspelet", lambda: _oppna(port), default=True),
         pystray.MenuItem("Koppla en mobil", lambda: _oppna(port, "/app/koppla")),
         pystray.MenuItem("Inställningar", lambda: _oppna(port, "/app/installning")),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Avsluta Skolan", avsluta),
+        pystray.MenuItem("Avsluta Läxspelet", avsluta),
     )
-    pystray.Icon("Skolan", bild, "Skolan", meny).run()
+    pystray.Icon("Skolan", bild, "Läxspelet", meny).run()
 
 
 def main() -> None:

@@ -88,7 +88,7 @@ class SkolanFlow(config_entries.ConfigFlow, domain=DOMAIN):
         tjanster = _notistjanster(self.hass)
         if user_input is not None:
             self._data["foralder_notify"] = {uid: user_input[uid] for uid in self._data["foraldrar"] if user_input.get(uid)}
-            return self.async_create_entry(title="Skolan", data=self._data)
+            return self.async_create_entry(title="Läxspelet", data=self._data)
         schema = {vol.Optional(uid, description={"suggested_value": None}): _val(tjanster) for uid in self._data["foraldrar"]}
         return self.async_show_form(step_id="notiser", data_schema=vol.Schema(schema),
                                     description_placeholders={"namn": ", ".join(anv.get(u, u) for u in self._data["foraldrar"])})

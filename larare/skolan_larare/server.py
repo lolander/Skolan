@@ -1,4 +1,4 @@
-"""Skolan Lärare: en liten server på lärarens dator.
+"""Läxspelet Lärare: en liten server på lärarens dator.
 
 - Läraren använder sidan på datorn (http://localhost:8770). Bara datorn själv får ändra något.
 - Eleverna ansluter på lektionen från sin mobil: http://<datorns adress>:8770/elev. Elevens Skolan-app skickar
@@ -82,17 +82,17 @@ def vecka_nu() -> str:
 def normal_lank(text: str) -> str:
     m = LANK_RE.search(str(text or ""))
     if not m:
-        raise ValueError("Det där är ingen klasslänk från Skolan.")
+        raise ValueError("Det där är ingen klasslänk från Läxspelet.")
     host = urlparse(m.group(0)).hostname or ""
     try:
         ip = ipaddress.ip_address(host)
         if ip.is_private or ip.is_loopback or ip.is_link_local:
-            raise ValueError("Klasslänken måste gå till elevens Skolan på internet.")
+            raise ValueError("Klasslänken måste gå till elevens Läxspelet på internet.")
     except ValueError as err:
         if "internet" in str(err):
             raise
     if "." not in host or host.endswith((".local", ".lan", ".home", ".internal")):
-        raise ValueError("Klasslänken måste gå till elevens Skolan på internet.")
+        raise ValueError("Klasslänken måste gå till elevens Läxspelet på internet.")
     return m.group(0)
 
 
@@ -180,15 +180,15 @@ class Klass:
             async with session.post(lank, json=body, timeout=ClientTimeout(total=20), allow_redirects=False) as r:
                 svar = json.loads(await r.content.read(65536) or b"{}")
                 if r.status == 404:
-                    raise ValueError("Elevens Skolan svarar inte på klasslänken (är skolfunktionerna på där?).")
+                    raise ValueError("Läxspelet hos eleven svarar inte på klasslänken (är skolfunktionerna på där?).")
                 if r.status != 200:
-                    raise ValueError(svar.get("fel") or f"Elevens Skolan svarade {r.status}.")
+                    raise ValueError(svar.get("fel") or f"Läxspelet hos eleven svarade {r.status}.")
         except ValueError as err:
             e["fel"] = str(err)
             self.spara()
             raise
         except Exception as err:  # noqa: BLE001
-            e["fel"] = "Kunde inte nå elevens Skolan."
+            e["fel"] = "Kunde inte nå elevens Läxspelet."
             self.spara()
             raise ValueError(e["fel"]) from err
         e.update({"namn": str(svar.get("namn") or "?")[:40], "foralder": {k: bool((svar.get("foralder") or {}).get(k)) for k in FUNKTIONER},
@@ -371,7 +371,7 @@ async def huvud(port: int = STD_PORT, nar_klar=None) -> None:
     runner = web.AppRunner(bygg_app(klass))
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", port).start()
-    _LOGGER.info("Skolan Lärare %s på port %s", VERSION, port)
+    _LOGGER.info("Läxspelet Lärare %s på port %s", VERSION, port)
     if nar_klar:
         nar_klar()
     await asyncio.Event().wait()

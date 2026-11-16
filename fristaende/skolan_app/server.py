@@ -354,7 +354,7 @@ class App:
         u = self.anvandare(request)
         if not u:
             raise web.HTTPUnauthorized
-        await self.push.skicka(tjanst(u.id), {"title": "🔔 Skolan", "message": "Notiserna fungerar!", "data": {"url": "/skolan"}})
+        await self.push.skicka(tjanst(u.id), {"title": "🔔 Läxspelet", "message": "Notiserna fungerar!", "data": {"url": "/skolan"}})
         return web.json_response({"ok": True})
 
     # ---------- körning ----------

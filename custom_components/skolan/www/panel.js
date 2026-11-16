@@ -533,9 +533,9 @@ function ritaDjur(art, humor, steg, x = {}) {
 
 const DJUR_HUMOR = {
   glad: (n) => `😄 ${n} är mätt och glad!`,
-  nojd: (n) => `🙂 ${n} väntar på dagens mat. Gör något i Skolan idag!`,
-  hungrig: (n) => `😟 ${n} är hungrig! Gör något i Skolan för att mata ${n}.`,
-  ledsen: (n) => `😢 ${n} saknar dig… Kom tillbaka och gör något i Skolan.`,
+  nojd: (n) => `🙂 ${n} väntar på dagens mat. Gör något i Läxspelet idag!`,
+  hungrig: (n) => `😟 ${n} är hungrig! Gör något i Läxspelet för att mata ${n}.`,
+  ledsen: (n) => `😢 ${n} saknar dig… Kom tillbaka och gör något i Läxspelet.`,
 };
 
 // "2026-11-21" -> { text: "fre 21 nov", kvar: "om 3 dagar", dagar: 3 }
@@ -703,7 +703,7 @@ class SkolanPanel extends HTMLElement {
     try {
       const q = barn ? `?barn=${encodeURIComponent(barn)}` : this._s ? `?barn=${encodeURIComponent(this._s.barn)}` : "";
       const res = await this._hass.fetchWithAuth(`/api/skolan/state${q}`);
-      if (res.status === 403) throw new Error("Den här sidan är bara för barnen i Skolan och deras föräldrar.");
+      if (res.status === 403) throw new Error("Den här sidan är bara för barnen i Läxspelet och deras föräldrar.");
       const body = await res.json();
       if (!res.ok) throw new Error(body.message || res.statusText);
       this._s = body;
@@ -921,7 +921,7 @@ class SkolanPanel extends HTMLElement {
     const r = this.shadowRoot;
     const s = this._s;
     const v = this._view;
-    let title = "Skolan";
+    let title = "Läxspelet";
     let body = "";
     let back = null;
 
@@ -1357,7 +1357,7 @@ class SkolanPanel extends HTMLElement {
     const v = this._view;
     return `
       <p>Skicka ett förhör på <b>${esc(g.namn)}</b> (${g.par.length} ord) till <b>${esc(this._s.namn)}</b>.
-      ${esc(this._s.namn)} får en notis och svarar i Skolan. Du får en notis med resultatet.</p>
+      ${esc(this._s.namn)} får en notis och svarar i Läxspelet. Du får en notis med resultatet.</p>
       ${stavLista(g) ? `<div class="forhor-kort">🔊 Det här är stavningsord. Orden läses upp ett i taget och ${esc(this._s.namn)} skriver dem utan att se dem, som en diktamen.</div>` : `<div class="list">
         ${[0, 1, 2]
           .map(
@@ -1759,7 +1759,7 @@ class SkolanPanel extends HTMLElement {
       ${k.inkorg?.length ? `<h3>📬 Veckobrev från läraren</h3><ul class="lista">${k.inkorg.map((x) => `<li><b>${esc(x.titel)}</b>${x.vecka ? ` · v.${esc(x.vecka)}` : ""}
           <button class="mini primary" data-ink-granska="${x.id}">👀 Granska och lägg in</button> <button class="mini" data-ink-avvisa="${x.id}">🗑️</button></li>`).join("")}</ul>` : ""}
       <details class="card"><summary><b>📧 E-post (SMTP)</b> ${sm.har_losen ? "✅ inställd" : "– behövs för rapport via e-post"}</summary>
-        <div class="small muted">Home Assistant har ingen e-posttjänst, så Skolan skickar själv. För Gmail: server smtp.gmail.com, port 587 och ett <b>applösenord</b> (inte ditt vanliga lösenord). Lösenordet sparas bara i din Home Assistant.</div>
+        <div class="small muted">Home Assistant har ingen e-posttjänst, så Läxspelet skickar själv. För Gmail: server smtp.gmail.com, port 587 och ett <b>applösenord</b> (inte ditt vanliga lösenord). Lösenordet sparas bara i din Home Assistant.</div>
         <label class="small">Server <input id="smtp-server" value="${esc(sm.server || "smtp.gmail.com")}"></label>
         <label class="small">Port <input id="smtp-port" type="number" value="${esc(sm.port || 587)}"></label>
         <label class="small">Användare <input id="smtp-anv" value="${esc(sm.anvandare || "")}" autocomplete="off"></label>
@@ -2055,11 +2055,11 @@ class SkolanPanel extends HTMLElement {
         : `<p class="muted">Ingen att utmana än.</p>`}
       ${(this._vanner?.vanner || []).length ? `<h3>🤝 Vänner</h3><ul class="lista arena-lista">${this._vanner.vanner.map((x) => {
           const ver = x.arena_ver || 0;
-          const hinder = !ver ? "Har en äldre Skolan" : ver < a.ver ? "Behöver uppdatera Skolan" : ver > a.ver ? "Du behöver uppdatera Skolan" : "";
+          const hinder = !ver ? "Har en äldre Läxspelet" : ver < a.ver ? "Behöver uppdatera Läxspelet" : ver > a.ver ? "Du behöver uppdatera Läxspelet" : "";
           return `<li><span class="van-djur">${x.art ? ritaDjur(x.art, "glad", Math.max(1, x.steg || 1), {}) : "🥚"}</span>
             <span><b>${esc(x.smeknamn)}</b><br><span class="small">${hinder ? `⚠️ ${hinder}` : `🗺️ ${x.niva}`}</span></span>
             ${barn && x.art && !a.pagar && !hinder ? `<button class="mini primary" data-arena-van="${esc(x.kod)}" ${k.energi >= 1 && !this._busy ? "" : "disabled"}>Utmana · 1⚡</button>` : ""}</li>`;
-        }).join("")}</ul><p class="small muted">Vänner i andra hem behöver samma version av Skolan för att ni ska kunna strida.</p>` : ""}
+        }).join("")}</ul><p class="small muted">Vänner i andra hem behöver samma version av Läxspelet för att ni ska kunna strida.</p>` : ""}
       <p class="small muted">Arenan kostar 1 ⚡. Striden tar inget riktigt liv. Vinst ger ${10} 🏆 och XP, förlust ${2} 🏆. Varje tur får man 1 stridsenergi, och starka attacker kostar mer.</p>
       <h3>🏆 Arenans topplista</h3>
       <ol class="lista">${tabell.map((t) => `<li>${esc(t.namn)} · ${t.karta.arena_poang || 0} 🏆</li>`).join("")}</ol>
@@ -2567,10 +2567,10 @@ class SkolanPanel extends HTMLElement {
     const kort = (ikon, rubrik, rader) => `<div class="info-kort"><h3>${ikon} ${rubrik}</h3>${rader.map((r) => `<div class="info-rad">${r}</div>`).join("")}</div>`;
     const p = (n) => `<b class="plus">+${n} ⭐</b>`;
     return `
-      <p>I Skolan får du <b>meriter ⭐</b> när du gör dina läxor. Ju tidigare och noggrannare du gör dem, desto fler meriter. Varje vecka finns det också en <b>tävling</b> där alla har lika stor chans att vinna.</p>
+      <p>I Läxspelet får du <b>meriter ⭐</b> när du gör dina läxor. Ju tidigare och noggrannare du gör dem, desto fler meriter. Varje vecka finns det också en <b>tävling</b> där alla har lika stor chans att vinna.</p>
 
       ${kort("📥", "Lägg in läxan", [
-        `Lägg in läxan i Skolan samma dag den kommer eller dagen efter: ${p(20)}`,
+        `Lägg in läxan i Läxspelet samma dag den kommer eller dagen efter: ${p(20)}`,
         `Senare samma vecka: ${p(5)}`,
         `Du får en påminnelse kl. 17.15 den dagen läxan brukar komma.`,
       ])}
@@ -2618,14 +2618,14 @@ class SkolanPanel extends HTMLElement {
       ])}
 
       ${kort("🔥", "Sviten", [
-        `Gör något i Skolan <b>varje dag</b>, även på helgen. Varje dag i rad blir en stjärna på förstasidan.`,
+        `Gör något i Läxspelet <b>varje dag</b>, även på helgen. Varje dag i rad blir en stjärna på förstasidan.`,
         `Dag 2 i rad: ${p(2)}, dag 3: ${p(3)} och så vidare upp till ${p(10)} per dag när du har 10 stjärnor.`,
         `Missar du en dag börjar sviten om från början, om du inte har ett 🛡️ svitskydd.`,
       ])}
 
       ${kort("🐾", "Ditt husdjur", [
         `Välj ett husdjur på förstasidan. Det börjar som ett ägg och <b>växer</b> när du samlar meriter: Ägg → Bebis → Liten → Stor → Jätte → Legend 👑.`,
-        `Husdjuret äter när du gör något i Skolan. Gör du inget på ett par dagar blir det <b>hungrigt</b> och ledset.`,
+        `Husdjuret äter när du gör något i Läxspelet. Gör du inget på ett par dagar blir det <b>hungrigt</b> och ledset.`,
         `🛍️ I <b>Husdjursbutiken</b> kan du köpa hattar, bakgrunder och effekter för dina stjärnor. Djuret växer ändå, för storleken räknas på alla meriter du har tjänat.`,
         `🎉 Inför högtider (jul, påsk, Halloween, sommarlov med flera) finns specialsaker i 2 veckor. Det du köper får du behålla för alltid.`,
       ])}
@@ -2656,7 +2656,7 @@ class SkolanPanel extends HTMLElement {
       ])}
 
       ${kort("⚔️", "Så strider du mot bossen", [
-        `<b>1.</b> Öppna Skolan. Bosskortet med monstret och dess ❤️ livmätare finns på startsidan.`,
+        `<b>1.</b> Öppna Läxspelet. Bosskortet med monstret och dess ❤️ livmätare finns på startsidan.`,
         `<b>2.</b> Tryck <b>⚔️ Till strid</b>. Då öppnas stridsscenen där du väljer attack eller öppnar 🎒 ryggsäcken.`,
         `Du kan också attackera direkt med attackknapparna under bossen.`,
         `Det här behöver du: ett kläckt husdjur, minst en attack från 🛍️ Butiken och ⚡ energi (du får energi när du pluggar).`,
@@ -2753,7 +2753,7 @@ class SkolanPanel extends HTMLElement {
       ? `🔥 ${n} dag${n === 1 ? "" : "ar"} i rad. Kom tillbaka imorgon för +${Math.min(max, n + 1)} ⭐`
       : n
       ? `🔥 ${n} dag${n === 1 ? "" : "ar"} i rad. Gör något idag för +${Math.min(max, n + 1)} ⭐!`
-      : `Gör något i Skolan idag och starta en svit!`;
+      : `Gör något i Läxspelet idag och starta en svit!`;
     const skydd = m.skydd ? ` <span class="skydd">${"🛡️".repeat(m.skydd)}</span>` : "";
     const radda = m.skydd_raddar ? `<div class="small"><b>🛡️ Svitskyddet räddar din svit på ${m.skydd_raddar} dagar om du gör något idag!</b></div>` : "";
     return `<div class="svit"><div class="svit-stj">${stjarnor}${skydd}</div><div class="small">${text}</div>${radda}</div>`;
@@ -2891,7 +2891,7 @@ class SkolanPanel extends HTMLElement {
         <div>🔥 Öva svåra ord: räknas för sviten (meriter får du när du övar hela läxan)</div>
         <div>🐦 Öva minst 2 dagar före förhöret: <b>+${p.tidigt}</b> extra</div>
         <div>📋 Förhör: <b>+${p.forhor_ratt}</b> per rätt ord, alla rätt <b>+${p.forhor_alla}</b></div>
-        <div>🔥 Gör något i Skolan varje dag, även helger: dag 2 i rad <b>+2</b>, dag 3 <b>+3</b> … upp till <b>+10</b> per dag. Missar du en dag börjar sviten om.</div>
+        <div>🔥 Gör något i Läxspelet varje dag, även helger: dag 2 i rad <b>+2</b>, dag 3 <b>+3</b> … upp till <b>+10</b> per dag. Missar du en dag börjar sviten om.</div>
         <div>🗣️ Högläsning som mamma eller pappa godkänner: <b>+6</b> per dag, alla dagar <b>+20</b> extra</div>
         <div>✍️ Läxboken klar i tid: <b>+25</b></div>
         <div>🏅 Varje ny medalj: <b>+${p.medalj}</b></div>
@@ -4655,8 +4655,8 @@ class SkolanPanel extends HTMLElement {
       this._render();
     });
     on("#van-dela", async () => {
-      const text = `Bli min vän i Skolan! 🤝`;
-      if (navigator.share) { try { await navigator.share({ title: "Skolan", text, url: this._vanner.kod }); } catch (e) { /* avbröt */ } }
+      const text = `Bli min vän i Läxspelet! 🤝`;
+      if (navigator.share) { try { await navigator.share({ title: "Läxspelet", text, url: this._vanner.kod }); } catch (e) { /* avbröt */ } }
       else { try { await navigator.clipboard.writeText(this._vanner.kod); this._msg = { type: "ok", text: "Vänlänken är kopierad! 📋" }; this._render(); } catch (e) { prompt("Kopiera vänlänken:", this._vanner.kod); } }
     });
     r.querySelectorAll("[data-van-ut]").forEach((b) => b.addEventListener("click", () => this._vanOp("svar_utgaende", { kod: b.dataset.vanUt, ja: !!b.dataset.ja })));

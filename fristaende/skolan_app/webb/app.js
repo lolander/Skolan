@@ -24,9 +24,9 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").cat
 
 async function start() {
   let info;
-  try { info = await api("/app/start"); } catch (e) { return visaFel("Kan inte nå Skolan på datorn. Är den igång?"); }
+  try { info = await api("/app/start"); } catch (e) { return visaFel("Kan inte nå Läxspelet på datorn. Är den igång?"); }
   const vag = location.pathname;
-  if (!info.installerad) return info.fran_datorn ? forstaStart() : visaFel("Skolan är inte inställd än. Starta den på familjens dator först.");
+  if (!info.installerad) return info.fran_datorn ? forstaStart() : visaFel("Läxspelet är inte inställd än. Starta den på familjens dator först.");
   if (vag === "/app/koppla" && info.adresser) return koppla(info);
   if (!info.anvandare) return valjPerson(info);
   if (vag === "/app/installning") return info.anvandare.is_admin ? installning(info) : (location.href = "/skolan");
@@ -35,7 +35,7 @@ async function start() {
 }
 
 function visaFel(text) {
-  rot.innerHTML = `<div class="mitt"><h1>📚 Skolan</h1><div class="kort">${esc(text)}</div><button class="primar" onclick="location.reload()">Försök igen</button></div>`;
+  rot.innerHTML = `<div class="mitt"><h1>📚 Läxspelet</h1><div class="kort">${esc(text)}</div><button class="primar" onclick="location.reload()">Försök igen</button></div>`;
 }
 
 // ---------- inloggning ----------
@@ -85,18 +85,18 @@ async function loggaUt() {
 function forstaStart() {
   const personer = [];
   const rita = (fel = "") => {
-    rot.innerHTML = `<div class="mitt"><h1>📚 Välkommen till Skolan!</h1>
+    rot.innerHTML = `<div class="mitt"><h1>📚 Välkommen till Läxspelet!</h1>
       <div class="kort"><p>Lägg till familjen. Varje person får en egen PIN-kod (4–8 siffror) som används för att logga in.</p>
         <ul class="lista">${personer.map((p, i) => `<li>${p.roll === "foralder" ? "👩‍👧" : "🧒"} <b>${esc(p.namn)}</b> (${p.roll === "foralder" ? "förälder" : "barn"}) <button data-bort="${i}">✕</button></li>`).join("") || "<li class='liten'>Ingen än</li>"}</ul>
         <div class="rad"><input id="namn" placeholder="Namn" maxlength="30"><select id="roll"><option value="barn">Barn</option><option value="foralder">Förälder</option></select></div>
         <div class="rad"><input id="pin1" placeholder="PIN-kod" inputmode="numeric" maxlength="8"><button id="lagg">Lägg till</button></div>
       </div>
       <div class="kort"><h2 style="margin-top:0">🤖 AI-nyckel (rekommenderas)</h2>
-        <p class="liten">Skolan använder Googles AI Gemini för att läsa glosor från foton, göra förhör och e-böcker. Nyckeln är gratis:
+        <p class="liten">Läxspelet använder Googles AI Gemini för att läsa glosor från foton, göra förhör och e-böcker. Nyckeln är gratis:
         gå till <b>aistudio.google.com/apikey</b>, logga in med ett Google-konto och tryck "Create API key". Du kan lägga in den senare också.</p>
         <input id="gemini" placeholder="Klistra in nyckeln (valfritt)"></div>
       <div class="fel">${esc(fel)}</div>
-      <button class="primar" id="klar">Klart, starta Skolan</button></div>`;
+      <button class="primar" id="klar">Klart, starta Läxspelet</button></div>`;
     $("#lagg").addEventListener("click", () => {
       const namn = $("#namn").value.trim(), p = $("#pin1").value.trim();
       if (!namn) return rita("Skriv ett namn.");
@@ -108,7 +108,7 @@ function forstaStart() {
     $("#klar").addEventListener("click", async () => {
       try {
         await api("/app/installera", { personer, gemini: $("#gemini").value.trim() });
-        rot.innerHTML = `<div class="mitt"><h1>🎉 Klart!</h1><p>Skolan startar…</p></div>`;
+        rot.innerHTML = `<div class="mitt"><h1>🎉 Klart!</h1><p>Läxspelet startar…</p></div>`;
         setTimeout(() => location.reload(), 2500);
       } catch (e) { rita(e.message); }
     });
@@ -123,12 +123,12 @@ function koppla(info) {
   rot.innerHTML = `<div class="mitt"><h1>📱 Koppla en mobil</h1>
     <div class="kort"><h2 style="margin-top:0">🏠 Hemma (samma wifi)</h2>
       ${a.lokala?.length ? `${qr(a.lokala[0])}<p class="center"><code>${esc(a.lokala[0])}</code></p>` : "<p>Hittar ingen adress i nätverket.</p>"}
-      <p class="liten">Skanna med mobilens kamera. Lägg sedan till Skolan på hemskärmen: iPhone: Dela → Lägg till på hemskärmen. Android: ⋮ → Installera app.</p></div>
+      <p class="liten">Skanna med mobilens kamera. Lägg sedan till Läxspelet på hemskärmen: iPhone: Dela → Lägg till på hemskärmen. Android: ⋮ → Installera app.</p></div>
     <div class="kort"><h2 style="margin-top:0">🌍 Överallt + notiser</h2>
       ${a.fjarr ? `${qr(a.fjarr)}<p class="center"><code>${esc(a.fjarr)}</code></p>
         <p class="liten">Den här adressen fungerar även utanför hemmet och behövs för notiser på iPhone. Den byts när datorn startas om, skanna då igen.</p>`
         : `<p class="liten">Fjärråtkomst är ${a.fjarr_status === "av" ? "avstängd" : esc(a.fjarr_status)}. En förälder kan slå på den under <a href="/app/installning">Inställningar</a>.</p>`}
-    </div><a href="/skolan">← Till Skolan</a></div>`;
+    </div><a href="/skolan">← Till Läxspelet</a></div>`;
 }
 
 // ---------- inställningar (föräldrar) ----------
@@ -142,29 +142,29 @@ async function installning(info) {
           <button data-pin="${esc(p.id)}">Byt PIN</button> <button data-bort="${esc(p.id)}">Ta bort</button></li>`).join("")}</ul>
         <div class="rad"><input id="namn" placeholder="Namn" maxlength="30"><select id="roll"><option value="barn">Barn</option><option value="foralder">Förälder</option></select></div>
         <div class="rad"><input id="pin1" placeholder="PIN-kod" inputmode="numeric" maxlength="8"><button id="lagg">Lägg till</button></div>
-        <p class="liten">Att lägga till eller ta bort någon startar om Skolan (några sekunder).</p></div>
+        <p class="liten">Att lägga till eller ta bort någon startar om Läxspelet (några sekunder).</p></div>
       <div class="kort"><h2 style="margin-top:0">🤖 AI-nyckel</h2><p>${s.ai ? "✅ Inlagd" : "❌ Saknas: glosor från foton, förhör och e-böcker fungerar inte."}</p>
         <div class="rad"><input id="nyckel" placeholder="Ny Gemini-nyckel från aistudio.google.com/apikey"><button id="spara-ai">Spara</button></div></div>
       <div class="kort"><h2 style="margin-top:0">🌍 Fjärråtkomst</h2>
-        <p class="liten">Gör Skolan nåbar utanför hemmet med en gratis, krypterad Cloudflare-tunnel. Behövs för notiser på iPhone och för vänner.</p>
+        <p class="liten">Gör Läxspelet nåbar utanför hemmet med en gratis, krypterad Cloudflare-tunnel. Behövs för notiser på iPhone och för vänner.</p>
         <p>Status: <b>${esc(s.fjarr_status)}</b>${s.fjarr_adress ? `<br><code>${esc(s.fjarr_adress)}</code>` : ""}</p>
         <button id="fjarr" class="${s.fjarr ? "" : "primar"}">${s.fjarr ? "Stäng av" : "Slå på"}</button></div>
       <div class="kort"><h2 style="margin-top:0">🆕 Uppdateringar</h2>
         <p>Du har version <b>${esc(up.version)}</b>. ${up.ny ? `<b>Version ${esc(up.senaste)} finns!</b>` : up.senaste ? "Det är den senaste ✅" : ""}</p>
-        ${up.steg === "laddar" ? `<p>⏳ Laddar ner uppdateringen…</p>` : up.steg === "installerar" ? `<p>⏳ Installerar. Svara <b>Ja</b> om Windows frågar. Skolan startar om av sig själv.</p>` : ""}
+        ${up.steg === "laddar" ? `<p>⏳ Laddar ner uppdateringen…</p>` : up.steg === "installerar" ? `<p>⏳ Installerar. Svara <b>Ja</b> om Windows frågar. Läxspelet startar om av sig själv.</p>` : ""}
         ${up.ny && !up.steg ? (up.kan_installera ? `<button id="upp-nu" class="primar">⬇️ Uppdatera nu</button> ` : "") + `<a href="${esc(up.sida)}" target="_blank" rel="noopener">Ladda ner från GitHub</a>` : ""}
         <div class="rad" style="margin-top:10px"><label><input type="radio" name="upp-lage" value="manuell" ${up.lage === "manuell" ? "checked" : ""}> <b>Manuell</b>: jag väljer själv när</label></div>
-        <div class="rad"><label><input type="radio" name="upp-lage" value="automatisk" ${up.lage === "automatisk" ? "checked" : ""}> <b>Automatisk</b>: installera när ingen har använt Skolan på 15 minuter</label></div>
+        <div class="rad"><label><input type="radio" name="upp-lage" value="automatisk" ${up.lage === "automatisk" ? "checked" : ""}> <b>Automatisk</b>: installera när ingen har använt Läxspelet på 15 minuter</label></div>
         <p class="liten">Appen kollar efter nya versioner var 6:e timme. Windows frågar alltid om lov på datorn innan en uppdatering installeras. Läxor och inställningar finns kvar.</p>
         <button id="upp-kolla">🔍 Sök efter uppdatering</button>${up.kollad ? ` <span class="liten">Senast kollat ${new Date(up.kollad * 1000).toLocaleString("sv-SE", { dateStyle: "short", timeStyle: "short" })}</span>` : ""}
         ${up.fel ? `<p class="fel">${esc(up.fel)}</p>` : ""}</div>
       <div class="kort"><h2 style="margin-top:0">🔔 Notiser på den här enheten</h2><button id="notiser">Slå på notiser</button> <button id="testa">Skicka test</button></div>
       <div class="ok">${esc(meddelande)}</div><div class="fel">${esc(fel)}</div>
-      <p><a href="/app/koppla">📱 Koppla en mobil</a> · <a href="/skolan">← Till Skolan</a></p></div>`;
+      <p><a href="/app/koppla">📱 Koppla en mobil</a> · <a href="/skolan">← Till Läxspelet</a></p></div>`;
     const andra = async (body, ok) => {
       try {
         const d = await api("/app/installningar", body);
-        if (d.omstart) { rot.innerHTML = `<div class="mitt"><p>Startar om Skolan…</p></div>`; return setTimeout(() => location.reload(), 4000); }
+        if (d.omstart) { rot.innerHTML = `<div class="mitt"><p>Startar om Läxspelet…</p></div>`; return setTimeout(() => location.reload(), 4000); }
         ladda(ok);
       } catch (e) { ladda("", e.message); }
     };
@@ -183,7 +183,7 @@ async function installning(info) {
     };
     $("#upp-kolla").addEventListener("click", () => upp({ op: "kolla" }, "Klart."));
     $("#upp-nu")?.addEventListener("click", () => {
-      if (confirm(`Uppdatera till version ${up.senaste}? Skolan stängs en kort stund. Svara Ja om Windows frågar.`)) {
+      if (confirm(`Uppdatera till version ${up.senaste}? Läxspelet stängs en kort stund. Svara Ja om Windows frågar.`)) {
         upp({ op: "installera" }, "Uppdateringen har startat.");
         setTimeout(() => ladda(), 3000);
       }
@@ -202,10 +202,10 @@ const b64 = (s) => { const p = "=".repeat((4 - (s.length % 4)) % 4); const r = a
 async function slaPaNotiser() {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     throw new Error(/iPhone|iPad/.test(navigator.userAgent)
-      ? "På iPhone: lägg först till Skolan på hemskärmen (via fjärradressen med https) och öppna den därifrån."
+      ? "På iPhone: lägg först till Läxspelet på hemskärmen (via fjärradressen med https) och öppna den därifrån."
       : "Den här webbläsaren kan inte ta emot notiser.");
   }
-  if (location.protocol !== "https:" && location.hostname !== "localhost") throw new Error("Notiser kräver fjärradressen (https). Slå på fjärråtkomst och öppna Skolan via den.");
+  if (location.protocol !== "https:" && location.hostname !== "localhost") throw new Error("Notiser kräver fjärradressen (https). Slå på fjärråtkomst och öppna Läxspelet via den.");
   if ((await Notification.requestPermission()) !== "granted") throw new Error("Notiser är inte tillåtna.");
   const reg = await navigator.serviceWorker.ready;
   const { nyckel } = await api("/app/push/nyckel");
@@ -215,7 +215,7 @@ async function slaPaNotiser() {
 
 // ---------- Skolans panel ----------
 async function visaSkolan(info) {
-  if (!info.panel) return visaFel("Skolan startar fortfarande. Försök igen om en stund.");
+  if (!info.panel) return visaFel("Läxspelet startar fortfarande. Försök igen om en stund.");
   await import(info.panel.modul);
   const el = document.createElement(info.panel.komponent);
   const u = info.anvandare;
