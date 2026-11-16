@@ -983,7 +983,7 @@ class SkolanPanel extends HTMLElement {
       body = this._hem();
     } else if (v.name === "uppdrag_ny") {
       title = v.typ === "prov" ? "📝 Nytt prov" : "📖 Ny läsläxa";
-      back = { name: "hem" };
+      back = v.guide ? { name: "laxa", steg: "typ", amne: v.amne } : { name: "hem" };
       body = this._uppdragNyView();
     } else if (v.name === "uppdrag") {
       const u = (s.data.uppdrag || []).find((x) => x.id === v.id);
@@ -1056,9 +1056,13 @@ class SkolanPanel extends HTMLElement {
       title = "🛍️ Husdjursbutik";
       back = { name: "hem" };
       body = this._djurbutikView();
+    } else if (v.name === "laxa") {
+      title = "📥 Lägg in läxa";
+      back = v.steg === "typ" ? { name: "laxa", steg: "amne" } : v.steg === "uppgift" ? { name: "laxa", steg: "typ", amne: v.amne } : { name: "hem" };
+      body = this._laxaView();
     } else if (v.name === "amne-form") {
       title = v.amne ? "✏️ Redigera ämnet" : "＋ Nytt ämne";
-      back = v.amne ? { name: "amne", amne: v.amne } : { name: "hem" };
+      back = v.amne ? { name: "amne", amne: v.amne } : v.franLaxa ? { name: "laxa", steg: "amne" } : { name: "hem" };
       body = this._amneFormView();
     } else if (v.name === "info") {
       title = "ℹ️ Så funkar det";
@@ -1137,7 +1141,7 @@ class SkolanPanel extends HTMLElement {
         body = this._glosorView(a, g);
       } else if (v.name === "redigera") {
         title = LISTTYP[v.typ || "glosor"].titel[v.glosor ? 1 : 0];
-        back = v.glosor ? { name: "glosor", amne: a.id, glosor: v.glosor } : { name: "amne", amne: a.id };
+        back = v.glosor ? { name: "glosor", amne: a.id, glosor: v.glosor } : v.guide ? { name: "laxa", steg: "typ", amne: a.id } : { name: "amne", amne: a.id };
         body = this._redigeraView(a);
       } else if (v.name === "rekord") {
         const g = a.glosor.find((x) => x.id === v.glosor);
@@ -2625,6 +2629,7 @@ class SkolanPanel extends HTMLElement {
       <p>I Läxspelet får du <b>meriter ⭐</b> när du gör dina läxor. Ju tidigare och noggrannare du gör dem, desto fler meriter. Varje vecka finns det också en <b>tävling</b> där alla har lika stor chans att vinna.</p>
 
       ${kort("📥", "Lägg in läxan", [
+        `Tryck <b>📥 Lägg in läxa</b> på startsidan. Välj ämne och vad du ska göra, så frågar Läxspelet resten.`,
         `Lägg in läxan i Läxspelet samma dag den kommer eller dagen efter: ${p(20)}`,
         `Senare samma vecka: ${p(5)}`,
         `Du får en påminnelse kl. 17.15 den dagen läxan brukar komma.`,
@@ -2981,10 +2986,57 @@ class SkolanPanel extends HTMLElement {
     return `
       <h3>📖 Veckans läxor & prov</h3>
       ${kort}
-      <div class="actions" style="margin-top:4px">
-        <button class="ghost" data-nytt-uppdrag="las">＋ Läsläxa</button>
-        <button class="ghost" data-nytt-uppdrag="prov">＋ Prov</button>
-      </div>`;
+      <button class="primary laxa-knapp" id="ny-laxa">📥 Lägg in läxa</button>`;
+  }
+
+  // Guidad inläggning av alla sorters läxor: ämne → vad ska göras → frågor för just den läxan.
+  _laxaView() {
+    const v = this._view;
+    const amnen = this._s.data.amnen || [];
+    if (v.steg === "amne" || !v.steg) {
+      return `
+        <p class="guide-fraga">Vilket ämne är läxan i?</p>
+        <div class="grid">
+          ${amnen.map((a) => `<button class="card amne" style="--c:${a.farg}" data-laxa-amne="${a.id}"><div class="amne-namn">${esc(a.namn)}</div></button>`).join("")}
+          <button class="card add" id="laxa-nytt-amne">＋ Nytt ämne</button>
+        </div>`;
+    }
+    const a = this._amne(v.amne);
+    if (!a) return `<p class="muted">Ämnet finns inte längre.</p>`;
+    if (v.steg === "typ") {
+      const d = delarFor(a);
+      const val = [
+        { id: "glosor", del: "glosor", ikon: "🗣️", text: "Lära mig glosor", besk: "Ord på ett annat språk, eller veckans ord" },
+        { id: "formler", del: "formler", ikon: "📐", text: "Lära mig formler", besk: "T.ex. v = s / t eller arean av en cirkel" },
+        { id: "begrepp", del: "begrepp", ikon: "💡", text: "Lära mig begrepp", besk: "Ord och vad de betyder, t.ex. fotosyntes" },
+        { id: "las", del: "bocker", ikon: "📖", text: "Läsa i boken", besk: "Sidor eller kapitel som ska läsas" },
+        { id: "prov", del: null, ikon: "📝", text: "Plugga till ett prov", besk: "Provdatum, vad som ingår och plugga varje dag" },
+        { id: "uppgift", del: "uppgifter", ikon: "✅", text: "Göra en uppgift", besk: "Räkna, skriva, lösa, ta med något…" },
+      ];
+      const passar = val.filter((x) => !x.del || d.includes(x.del));
+      const andra = val.filter((x) => x.del && !d.includes(x.del));
+      const knapp = (x) => `<button class="row guide-val" data-laxa-typ="${x.id}"><span>${x.ikon} <b>${esc(x.text)}</b><br><span class="muted small">${esc(x.besk)}</span></span><span>›</span></button>`;
+      return `
+        <p class="guide-fraga">Vad ska du göra i <b>${esc(a.namn)}</b>?</p>
+        <div class="list">${passar.map(knapp).join("")}</div>
+        ${andra.length ? `<p class="small muted" style="margin-top:14px">Annat</p><div class="list">${andra.map(knapp).join("")}</div>` : ""}`;
+    }
+    if (v.steg === "uppgift") {
+      const idag = idagISO();
+      const fredag = plusDagar(idag, ((4 - ((new Date(`${idag}T12:00:00`).getDay() + 6) % 7)) + 7) % 7 || 7);
+      const snabb = [["Imorgon", plusDagar(idag, 1)], ["Om 2 dagar", plusDagar(idag, 2)], ["Fredag", fredag], ["Om en vecka", plusDagar(idag, 7)]];
+      return `
+        <p class="guide-fraga">Vad ska du göra?</p>
+        <input id="lx-text" class="guide-input" maxlength="200" placeholder="t.ex. Räkna s. 34 uppg. 1–10" value="${esc(v.text || "")}">
+        <p class="guide-fraga">När ska det vara klart?</p>
+        <div class="snabb-datum">
+          ${snabb.map(([n, d]) => `<button class="${v.datum === d ? "primary" : "ghost"}" data-lx-datum="${d}">${n}<br><span class="small">${esc(veckodag(d))}</span></button>`).join("")}
+          <button class="${v.datum === "" ? "primary" : "ghost"}" data-lx-datum="">Inget datum</button>
+        </div>
+        <label class="small">…eller välj dag <input id="lx-datum" type="date" value="${esc(v.datum || "")}"></label>
+        <div class="actions"><button class="primary" id="lx-spara" ${this._busy ? "disabled" : ""}>✅ Spara uppgiften</button></div>`;
+    }
+    return "";
   }
 
   _uppdragNyView() {
@@ -4352,7 +4404,7 @@ class SkolanPanel extends HTMLElement {
           if (await this._act("amne_andra", { amne: v.amne, namn: v.namn, delar: v.delar })) this._go({ name: "amne", amne: v.amne });
         } else if (await this._act("add_amne", { namn: v.namn, delar: v.delar })) {
           const ny = (this._s.data.amnen || []).find((x) => x.namn.toLowerCase() === v.namn.trim().toLowerCase());
-          this._go(ny ? { name: "amne", amne: ny.id } : { name: "hem" });
+          this._go(ny ? (v.franLaxa ? { name: "laxa", steg: "typ", amne: ny.id } : { name: "amne", amne: ny.id }) : { name: "hem" });
         }
       });
     }
@@ -4637,9 +4689,36 @@ class SkolanPanel extends HTMLElement {
     r.querySelectorAll("[data-open-uppdrag]").forEach((b) =>
       b.addEventListener("click", () => this._go({ name: "uppdrag", id: b.dataset.openUppdrag, amne: b.dataset.amne }))
     );
-    r.querySelectorAll("[data-nytt-uppdrag]").forEach((b) =>
-      b.addEventListener("click", () => this._go({ name: "uppdrag_ny", typ: b.dataset.nyttUppdrag }))
-    );
+    on("#ny-laxa", () => this._go({ name: "laxa", steg: "amne" }));
+    if (v.name === "laxa") {
+      r.querySelectorAll("[data-laxa-amne]").forEach((b) => b.addEventListener("click", () => this._go({ name: "laxa", steg: "typ", amne: b.dataset.laxaAmne })));
+      on("#laxa-nytt-amne", () => this._go({ name: "amne-form", namn: "", delar: ["bocker", "uppgifter"], valt: false, franLaxa: true }));
+      r.querySelectorAll("[data-laxa-typ]").forEach((b) =>
+        b.addEventListener("click", () => {
+          const typ = b.dataset.laxaTyp;
+          if (LISTTYP[typ]) return this._go({ name: "redigera", amne: v.amne, typ, namn: "", sprak: [...LISTTYP[typ].sprak], par: [], guide: true });
+          if (typ === "las" || typ === "prov") return this._go({ name: "uppdrag_ny", typ, amne: v.amne, guide: true });
+          this._go({ name: "laxa", steg: "uppgift", amne: v.amne, text: "", datum: null });
+        })
+      );
+      $("#lx-text")?.addEventListener("input", (e) => { v.text = e.target.value; });
+      $("#lx-datum")?.addEventListener("change", (e) => { v.datum = e.target.value; this._render(); });
+      r.querySelectorAll("[data-lx-datum]").forEach((b) => b.addEventListener("click", () => { v.text = $("#lx-text")?.value ?? v.text; v.datum = b.dataset.lxDatum; this._render(); }));
+      if (v.steg === "uppgift" && !v.text) setTimeout(() => $("#lx-text")?.focus(), 0);
+      on("#lx-spara", async () => {
+        v.text = $("#lx-text")?.value ?? v.text;
+        if (!v.text.trim()) {
+          this._msg = { type: "error", text: "Skriv vad du ska göra." };
+          return this._render();
+        }
+        if (await this._act("uppgift_ny", { amne: v.amne, text: v.text, datum: v.datum || null })) {
+          const amne = v.amne;
+          this._go({ name: "amne", amne });
+          this._msg = { type: "ok", text: "Uppgiften är sparad! ✅" };
+          this._render();
+        }
+      });
+    }
     const uSync = () => {
       if (v.name !== "uppdrag_ny") return;
       v.namn = $("#u-namn")?.value ?? v.namn;
@@ -5514,6 +5593,11 @@ const CSS = `
   .msg { padding:12px 14px; border-radius:10px; margin-bottom:14px; }
   .exempel { background:rgba(3,169,244,.10); border-radius:10px; padding:8px 10px; margin:6px 0; text-align:left; display:grid; gap:4px; }
   .ex-mening { font-size:1.05em; } .exempel .mini { justify-self:start; } .ex-knapp { width:36px; text-align:right; } .ex-rad td { padding-top:0; }
+  .laxa-knapp { width:100%; margin-top:6px; padding:14px; font-size:1.05em; }
+  .guide-fraga { font-size:1.15em; font-weight:600; margin:14px 0 8px; }
+  .guide-input { width:100%; box-sizing:border-box; font-size:1.05em; padding:12px; }
+  .snabb-datum { display:grid; grid-template-columns:repeat(auto-fit, minmax(92px, 1fr)); gap:6px; margin-bottom:8px; }
+  .snabb-datum button { padding:10px 6px; line-height:1.25; }
   .del-val { cursor:pointer; } .del-val.vald-rad .muted { font-weight:400; } .del-val input { width:22px; height:22px; flex:none; }
   .uppg { gap:8px; } .uppg.klar .uppg-text span { text-decoration:line-through; opacity:.6; }
   .uppg-text { display:flex; gap:10px; align-items:flex-start; flex:1; cursor:pointer; } .uppg-text input { width:20px; height:20px; margin-top:2px; flex:none; }

@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.41.0"
+VERSION = "1.42.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -58,6 +58,12 @@ def _delar(a: dict) -> list[str]:
     if isinstance(a.get("delar"), list):
         return [d for d in DELAR if d in a["delar"]]
     return ["bocker", "glosor"]  # ämnen från före delarna
+
+
+def _sla_pa_del(a: dict, del_: str) -> None:
+    """Något läggs in i en del som är avslagen (t.ex. via Lägg in läxa): slå på den så att det syns."""
+    if del_ not in _delar(a):
+        a["delar"] = [d for d in DELAR if d in _delar(a) + [del_]]
 
 
 def _rensa_delar(x) -> list[str]:
@@ -1231,6 +1237,7 @@ def _apply(data: dict, body: dict) -> list[str]:
         if len(u) >= 200:
             raise ValueError("Ta bort några gamla uppgifter först.")
         u.append({"id": _new_id(), "text": text, "datum": datum or None, "klar": None, "skapad": dt_util.now().date().isoformat()})
+        _sla_pa_del(a, "uppgifter")
         return []
     if op == "uppgift_klar":
         u = _find(a.get("uppgifter", []), body.get("uppgift"))
@@ -1260,6 +1267,7 @@ def _apply(data: dict, body: dict) -> list[str]:
         else:
             ny_g = {"id": _new_id(), "namn": namn, "sprak": sprak, "par": par, "forhor": forhor or None, "skapad": dt_util.now().date().isoformat(), "typ": typ}
             a["glosor"].append(ny_g)
+            _sla_pa_del(a, typ)
             if body.get("_barn"):
                 meriter.lagt_in(data, a["id"], "glosor", ny_g)
         return []
