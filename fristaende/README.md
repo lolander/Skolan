@@ -13,6 +13,15 @@ Skillnaden är ett litet "låtsas-Home Assistant" runt den:
 | Molnröst för uppläsning | Telefonens/webbläsarens egen röst |
 | Resten (`hass`, tidsstyrning, vyer) | `skolan_app/varden.py` + `ha_shim/` |
 
+## Uppdateringar
+
+Appen kollar var 6:e timme om det finns en nyare Skolan-Setup på GitHub. Under ⚙️ Inställningar → 🆕 Uppdateringar väljer en förälder:
+
+- **Manuell**: en 🆕-knapp visas för föräldrarna, och de trycker "Uppdatera nu" när det passar.
+- **Automatisk**: uppdateringen installeras när ingen har använt Skolan på 15 minuter.
+
+Windows frågar alltid "Vill du tillåta…" på datorn innan installationen körs. Läxor och inställningar (i `%APPDATA%\Skolan`) finns kvar.
+
 ## Köra från källkoden
 
 ```

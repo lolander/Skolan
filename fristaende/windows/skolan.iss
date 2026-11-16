@@ -40,9 +40,24 @@ Name: "{userstartup}\Skolan"; Filename: "{app}\Skolan.exe"; Parameters: "--tyst"
 
 [Run]
 ; Låt mobiler i hemmanätverket nå Skolan (bara privata nätverk, inte publika wifi).
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Skolan"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Skolan"" dir=in action=allow program=""{app}\Skolan.exe"" enable=yes profile=private"; Flags: runhidden
 Filename: "{app}\Skolan.exe"; Description: "Starta Skolan nu"; Flags: nowait postinstall skipifsilent runasoriginaluser
+; Uppdatering inifrån appen (tyst installation): starta Skolan igen när den är klar.
+Filename: "{app}\Skolan.exe"; Parameters: "--tyst"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Skolan"""; Flags: runhidden; RunOnceId: "brandvagg"
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM Skolan.exe"; Flags: runhidden; RunOnceId: "stoppa"
+
+[Code]
+// Stäng Skolan (ikonen vid klockan) innan filerna byts. Körs först när Windows har sagt ja,
+// så om någon säger nej fortsätter Skolan som vanligt.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  R: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM Skolan.exe', '', SW_HIDE, ewWaitUntilTerminated, R);
+  Sleep(1500);
+  Result := '';
+end;

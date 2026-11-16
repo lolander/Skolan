@@ -25,6 +25,7 @@ from . import ai as ai_mod  # noqa: E402
 from .konto import COOKIE, Konto  # noqa: E402
 from .push import Push, tjanst  # noqa: E402
 from .tunnel import Tunnel  # noqa: E402
+from .uppdatera import Uppdaterare  # noqa: E402
 from .varden import Varden  # noqa: E402
 
 _LOGGER = logging.getLogger("skolan_app")
@@ -59,6 +60,15 @@ def lokala_adresser(port: int) -> list[str]:
     return ut
 
 
+def _version() -> str:
+    try:
+        import skolan  # custom_components/skolan
+
+        return str(skolan.VERSION)
+    except Exception:  # noqa: BLE001
+        return "0"
+
+
 def _fran_datorn(request: web.Request) -> bool:
     return (request.remote or "") in ("127.0.0.1", "::1") and "cf-connecting-ip" not in {k.lower() for k in request.headers}
 
@@ -81,6 +91,7 @@ class App:
         if (inst.get("gemini") or {}).get("nyckel"):
             self.hass.ai = ai_mod.Gemini(inst["gemini"]["nyckel"], inst["gemini"].get("modell", ""), self.hass.http_session)
         self.tunnel = Tunnel(mapp, port, self.hass.http_session)
+        self.uppd = Uppdaterare(mapp, self.hass.http_session, _version(), inst, self.konto.spara)
 
     # ---------- Skolans integration ----------
     def skolan_conf(self) -> dict:
@@ -128,6 +139,16 @@ class App:
         r.add_get("/app/push/nyckel", self.push_nyckel)
         r.add_post("/app/push/prenumerera", self.push_prenumerera)
         r.add_post("/app/push/test", self.push_test)
+        r.add_get("/app/uppdatering", self.uppdatering)
+        r.add_post("/app/uppdatering", self.andra_uppdatering)
+
+        @web.middleware
+        async def aktivitet(request, handler):
+            if request.path.startswith("/api/skolan/"):
+                self.uppd.aktiv()  # automatisk uppdatering väntar tills ingen använder Skolan
+            return await handler(request)
+
+        self.app.middlewares.append(aktivitet)
 
         @web.middleware
         async def signerat(request, handler):
@@ -159,6 +180,8 @@ class App:
             "anvandare": {"id": u.id, "name": u.name, "is_admin": u.is_admin} if u else None,
             "panel": {"modul": panel.get("module_url"), "komponent": panel.get("webcomponent_name")} if panel else None,
             "ai": bool(self.hass.ai),
+            "uppdatering": {"ny": self.uppd.ny, "senaste": self.uppd.senaste and self.uppd.senaste["version"], "lage": self.uppd.lage}
+            if u and u.is_admin else None,
             "adresser": {"lokala": lokala_adresser(self.port), "fjarr": self.tunnel.adress, "fjarr_status": self.tunnel.status}
             if _fran_datorn(request) or (u and u.is_admin) else None,
         })
@@ -268,6 +291,32 @@ class App:
             self.omstart.set()
         return web.json_response({"ok": True, "omstart": omstart})
 
+    async def uppdatering(self, request: web.Request) -> web.Response:
+        self.kraver_foralder(request)
+        return web.json_response(self.uppd.status())
+
+    async def andra_uppdatering(self, request: web.Request) -> web.Response:
+        self.kraver_foralder(request)
+        body = await request.json()
+        op = body.get("op")
+        try:
+            if op == "lage":
+                self.uppd.satt_lage(str(body.get("lage") or ""))
+            elif op == "kolla":
+                await self.uppd.kolla()
+            elif op == "installera":
+                if not self.uppd.ny:
+                    raise ValueError("Det finns ingen nyare version.")
+                if os.name != "nt":
+                    raise ValueError("Uppdateringen kan bara installeras automatiskt i Windows. Ladda ner den från GitHub.")
+                asyncio.get_running_loop().create_task(self.uppd.installera())
+                await asyncio.sleep(0.2)
+            else:
+                raise ValueError("Okänd ändring.")
+        except ValueError as err:
+            return web.json_response({"message": str(err)}, status=400)
+        return web.json_response(self.uppd.status())
+
     def _ny_adress(self, adress: str) -> None:
         self.hass.config.external_url = adress
 
@@ -318,10 +367,12 @@ class App:
         await runner.setup()
         await web.TCPSite(runner, "0.0.0.0", self.port).start()
         await self.hass.starta()
+        self.uppd.starta()
         if self.konto.inst.get("fjarr"):
             await self.tunnel.starta(self._ny_adress)
         _LOGGER.info("Skolan körs på http://localhost:%s", self.port)
         await self.omstart.wait()
+        await self.uppd.stoppa()
         await self.tunnel.stoppa()
         await self.hass.stoppa()
         await runner.cleanup()
