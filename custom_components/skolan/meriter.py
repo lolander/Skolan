@@ -879,6 +879,24 @@ def prov_resultat(data: dict, u: dict, res: dict | None) -> int:
     return diff
 
 
+P_TIPS = 1  # ett tips i en övning (nästa bokstav) kostar så här många meriter
+
+
+def kop_tips(data: dict) -> None:
+    m = _m(data)
+    if m.get("saldo", 0) < P_TIPS:
+        raise ValueError(f"Du behöver {P_TIPS} ⭐ för ett tips.")
+    nu = dt_util.now().isoformat(timespec="minutes")
+    sista = m["logg"][-1] if m["logg"] else None
+    if sista and sista.get("ikon") == "💡" and sista["tid"][:13] == nu[:13]:  # samla tipsen samma timme på en rad
+        sista["p"] -= P_TIPS
+        sista["n"] = sista.get("n", 1) + 1
+        sista["orsak"] = f"💡 {sista['n']} tips i övningar"
+        m["saldo"] = m.get("saldo", 0) - P_TIPS
+    else:
+        ge(data, -P_TIPS, "💡 Tips i en övning", None, "💡")
+
+
 def registrerat(data: dict, u: dict) -> None:
     idag = dt_util.now().date()
     try:

@@ -102,6 +102,38 @@ const las_upp = (text, sprak, hass) => {
   return true;
 };
 
+// Stavningsord: samma språk på båda sidor (t.ex. svenska veckans ord). Då förhörs orden genom uppläsning.
+const stavLista = (g) => {
+  const sp = (g?.sprak || []).map((x) => String(x || "").toLowerCase().trim());
+  const par = g?.par || [];
+  return (sp[0] && sp[0] === sp[1]) || (par.length > 0 && par.every((p) => !String(p[1] || "").trim() || String(p[0]).trim().toLowerCase() === String(p[1]).trim().toLowerCase()));
+};
+
+// Läser upp ordet i ett förhör utan att ordet skickas till barnets skärm.
+const las_upp_forhor = (hass, barn, forhor, i, sprak) => {
+  const kod = SPRAK_KOD[String(sprak || "").toLowerCase().trim()] || "sv-SE";
+  const nyckel = `${forhor}#${i}`;
+  const igen = las_upp_forhor.senast === nyckel && Date.now() - las_upp_forhor.tid < 15000;
+  las_upp_forhor.senast = nyckel; las_upp_forhor.tid = Date.now();
+  if (!_ljud) _ljud = new Audio();
+  try { _ljud.pause(); _ljud.src = TYST_LJUD; _ljud.play().catch(() => {}); } catch (e) { /* ignorera */ }
+  hass.fetchWithAuth(`/api/skolan/uttal?barn=${encodeURIComponent(barn)}&forhor=${encodeURIComponent(forhor)}&i=${i}&sprak=${kod}`)
+    .then(async (r) => {
+      if (r.ok) {
+        const b = await r.blob();
+        if (_ljud._url) URL.revokeObjectURL(_ljud._url);
+        _ljud._url = URL.createObjectURL(b);
+        _ljud.src = _ljud._url;
+        _ljud.playbackRate = igen ? 0.7 : 0.9;
+        _ljud.defaultPlaybackRate = _ljud.playbackRate;
+        return _ljud.play();
+      }
+      const j = await r.json().catch(() => ({}));
+      if (j.text) las_upp_lokalt(j.text, kod, igen); // ingen molnröst: telefonens röst
+    })
+    .catch(() => {});
+};
+
 // Ordpar som har både ord och översättning (krävs för Glosrekord)
 const spelbaraPar = (g) => (g?.par || []).filter((p) => p.length > 1 && String(p[0]).trim() && String(p[1]).trim());
 
@@ -1141,11 +1173,14 @@ class SkolanPanel extends HTMLElement {
       }
       return `
         <div class="progress"><div style="width:${(i / n) * 100}%"></div></div>
-        <div class="muted small center">Fråga ${i + 1} av ${n}</div>
+        <div class="muted small center">${q.dikt ? "Ord" : "Fråga"} ${i + 1} av ${n}</div>
         <div class="flash">
-          <div class="muted small">${esc(q.fran)}</div>
-          <div class="word">${esc(q.fraga)}</div>
-          <input id="fh-svar" placeholder="Skriv på ${esc((q.till || "").toLowerCase() || "det andra språket")}" autocomplete="off" autocapitalize="off" spellcheck="false">
+          ${q.dikt
+            ? `<button class="lyssna" id="fh-lyssna">🔊</button>
+               <div class="muted small">Lyssna och stava ordet. Tryck igen för att höra det långsammare.</div>`
+            : `<div class="muted small">${esc(q.fran)}</div>
+          <div class="word">${esc(q.fraga)}</div>`}
+          <input id="fh-svar" placeholder="${q.dikt ? "Skriv ordet" : `Skriv på ${esc((q.till || "").toLowerCase() || "det andra språket")}`}" autocomplete="off" autocapitalize="off" spellcheck="false">
           <button class="primary" id="fh-svara">${i === n - 1 ? "Lämna in ✓" : "Nästa →"}</button>
         </div>`;
     }
@@ -1285,7 +1320,7 @@ class SkolanPanel extends HTMLElement {
     return `
       <p>Skicka ett förhör på <b>${esc(g.namn)}</b> (${g.par.length} ord) till <b>${esc(this._s.namn)}</b>.
       ${esc(this._s.namn)} får en notis och svarar i Skolan. Du får en notis med resultatet.</p>
-      <div class="list">
+      ${stavLista(g) ? `<div class="forhor-kort">🔊 Det här är stavningsord. Orden läses upp ett i taget och ${esc(this._s.namn)} skriver dem utan att se dem, som en diktamen.</div>` : `<div class="list">
         ${[0, 1, 2]
           .map(
             (r) => `<button class="row ${v.riktning === r ? "vald-rad" : ""}" data-riktning="${r}">${
@@ -1293,7 +1328,7 @@ class SkolanPanel extends HTMLElement {
             }${v.riktning === r ? " ✓" : ""}</button>`
           )
           .join("")}
-      </div>
+      </div>`}
       <div class="form" style="margin-top:14px">
         <label>Meddelande (valfritt) <input id="fh-medd" maxlength="200" placeholder="t.ex. Lycka till! /Pappa" value="${esc(v.meddelande || "")}"></label>
       </div>
@@ -2105,6 +2140,8 @@ class SkolanPanel extends HTMLElement {
         `Öva på <b>hela</b> glosläxan: ${p(5)} varje gång (högst 3 gånger per läxa och dag)`,
         `Alla rätt på första försöket: ${p(5)} extra`,
         `Öva minst 2 dagar före förhöret: ${p(10)} extra (en gång per dag)`,
+        `💡 Fastnar du? Köp ett <b>tips</b> för 1 ⭐. Då visas nästa bokstav. Ordet räknas inte som rätt på första försöket. Tips finns bara när du övar, aldrig i förhör.`,
+        `🔊 <b>Svenska veckans ord</b> övar du genom att lyssna och stava, eller titta, gömma och skriva. I förhöret läses orden upp och du stavar dem.`,
         `🔥 <b>Öva svåra ord</b> hjälper dig att lära dig orden du ofta gör fel på. Det räknas för sviten men ger inga meriter.`,
         `✍️ Har du övat på papper, till exempel i glosboken? Tryck på <b>Jag har övat på papper idag</b> och visa mamma eller pappa. När de godkänner får du samma meriter som om du övat i appen.`,
       ])}
@@ -3486,6 +3523,15 @@ class SkolanPanel extends HTMLElement {
 
   _ovaView(a, g) {
     const o = this._view.ova;
+    if (!o && stavLista(g)) {
+      return `
+        ${this._view.svara ? `<p><b>🔥 Svåra ord (${this._svara(g).length} st)</b></p>` : ""}
+        <p>Hur vill du öva på stavningen?</p>
+        <div class="list">
+          <button class="row" data-start="3">🔊 Lyssna och stava<br><span class="muted small">Ordet läses upp, du skriver det utan att se det</span></button>
+          <button class="row" data-start="4">👀 Titta, göm och skriv<br><span class="muted small">Titta på ordet, sedan göms det och du skriver det</span></button>
+        </div>`;
+    }
     if (!o) {
       return `
         ${this._view.svara ? `<p><b>🔥 Svåra ord (${this._svara(g).length} st)</b></p>` : ""}
@@ -3512,10 +3558,12 @@ class SkolanPanel extends HTMLElement {
     }
     const k = o.kvar[0];
     const diktamen = k.fran === -1;
-    const fraga = diktamen ? g.par[k.i][1] : g.par[k.i][k.fran];
-    const svar = diktamen ? g.par[k.i][0] : g.par[k.i][1 - k.fran];
-    const fran = diktamen ? g.sprak[1] || "" : g.sprak[k.fran] || "";
-    const till = diktamen ? g.sprak[0] || "" : g.sprak[1 - k.fran] || "";
+    const titta = k.fran === -2;
+    const fraga = titta ? g.par[k.i][0] : diktamen ? g.par[k.i][1] : g.par[k.i][k.fran];
+    const svar = diktamen || titta ? g.par[k.i][0] : g.par[k.i][1 - k.fran];
+    const fran = diktamen ? g.sprak[1] || "" : titta ? g.sprak[0] || "" : g.sprak[k.fran] || "";
+    const till = diktamen || titta ? g.sprak[0] || "" : g.sprak[1 - k.fran] || "";
+    const betyder = fraga && String(fraga).trim().toLowerCase() !== String(svar).trim().toLowerCase();
     const klara = o.totalt - o.kvar.length;
     let rattning = "";
     if (o.visat === "fel" && o.skrev.trim()) {
@@ -3529,24 +3577,34 @@ class SkolanPanel extends HTMLElement {
       <div class="muted small center">${klara} av ${o.totalt} klara</div>
       <div class="flash">
         ${
-          diktamen
+          titta
+            ? o.tittar && !o.visat
+              ? `<div class="muted small">Titta noga på ordet</div><div class="word">${esc(fraga)}</div>
+                 <button class="primary" id="gom">🙈 Göm och skriv</button>`
+              : `<div class="muted small">Skriv ordet du just såg</div><div class="word gomt">🙈</div>`
+            : diktamen
             ? `<button class="lyssna" id="lyssna">🔊</button>
-               <div class="muted small">Lyssna och skriv ordet på ${esc(till.toLowerCase())}${fraga ? ` (betyder: <b>${esc(fraga)}</b>)` : ""}</div>`
+               <div class="muted small">Lyssna och skriv ordet på ${esc(till.toLowerCase())}${betyder ? ` (betyder: <b>${esc(fraga)}</b>)` : ""}</div>`
             : `<div class="muted small">${esc(fran)}</div>
                <div class="word">${esc(fraga)}</div>`
         }
         ${
-          o.visat
+          titta && o.tittar && !o.visat
+            ? ""
+            : o.visat
             ? `<div class="answer ${o.visat}">${o.visat === "ratt" ? "✓ Rätt!" : o.visat === "fel" ? "✗ Rätt svar:" : "Svar:"} <b>${esc(svar)}</b></div>
                ${o.skrev && o.visat === "fel" ? `<div class="muted small">Du skrev: ${esc(o.skrev)}</div>` : ""}
                ${rattning}
                <button class="primary" id="nasta">Nästa →</button>
                ${o.visat !== "ratt" ? `<button class="ghost" id="hade-ratt">Jag hade rätt</button>` : ""}`
-            : `<input id="svar" placeholder="Skriv på ${esc(till.toLowerCase() || "det andra språket")}" autocomplete="off" autocapitalize="off" spellcheck="false">
+            : `${o.tips?.[k.i] ? `<div class="tips-rad">💡 ${[...String(svar)].map((c, j) => (j < o.tips[k.i] || c === " " ? esc(c) : "_")).join("&#8203;")}</div>` : ""}
+               <input id="svar" placeholder="Skriv på ${esc(till.toLowerCase() || "det andra språket")}" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(o.utkast || "")}">
                <div class="actions center">
                  <button class="primary" id="kolla">Kolla</button>
+                 ${(o.tips?.[k.i] || 0) < [...String(svar)].length - 1 ? `<button class="ghost" id="tips" ${this._busy ? "disabled" : ""}>💡 Tips (${this._s.kan_valja ? "gratis" : "1 ⭐"})</button>` : ""}
                  <button class="ghost" id="visa">Visa svaret</button>
-               </div>`
+               </div>
+               ${o.tips?.[k.i] ? `<div class="muted small">Med tips räknas ordet inte som rätt på första försöket.</div>` : ""}`
         }
       </div>`;
   }
@@ -3786,8 +3844,15 @@ class SkolanPanel extends HTMLElement {
     r.querySelectorAll("[data-open-forhor]").forEach((b) =>
       b.addEventListener("click", () => this._go({ name: "forhor", forhor: b.dataset.openForhor, franLogg: v.name === "fhlogg" }))
     );
+    const fhLas = () => {
+      const f = (this._s.data.forhor || []).find((x) => x.id === v.forhor);
+      const i = f ? f.svar.length : -1;
+      if (f && f.fragor[i]?.dikt) las_upp_forhor(this._hass, this._s.barn, f.id, i, f.fragor[i].fran);
+    };
+    on("#fh-lyssna", fhLas);
     on("#fh-start", () => {
       v.startad = true;
+      fhLas(); // första uppläsningen i klicket (krävs på iPhone)
       this._forhorAct("starta", { forhor: v.forhor }); // föräldern får en notis
       // Riktig helskärm där det går (Android, dator, iPad). iPhone använder bara helskärmsvyn.
       try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch (e) { /* ok */ }
@@ -4298,6 +4363,7 @@ class SkolanPanel extends HTMLElement {
       const svar = $("#fh-svar")?.value || "";
       if (!svar.trim() && !confirm("Du har inte skrivit något. Gå vidare ändå?")) return;
       const ok = await this._forhorAct("svara", { forhor: f.id, index: i, svar });
+      if (ok && !sista) fhLas();
       if (ok && sista) {
         this._msg = { type: "ok", text: "Inlämnat! Här är ditt resultat." };
         try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { /* ok */ }
@@ -4396,7 +4462,7 @@ class SkolanPanel extends HTMLElement {
       const g = this._amne(v.amne).glosor.find((x) => x.id === v.glosor);
       const k = o.kvar[0];
       const skrev = $("#svar")?.value || "";
-      const facit = k.fran === -1 ? g.par[k.i][0] : g.par[k.i][1 - k.fran];
+      const facit = k.fran < 0 ? g.par[k.i][0] : g.par[k.i][1 - k.fran];
       const ratt = answers(facit);
       const ok = ratt.includes(norm(skrev)) || (ratt.length > 1 && norm(skrev) === norm(facit));
       o.skrev = skrev;
@@ -4417,6 +4483,21 @@ class SkolanPanel extends HTMLElement {
       this._next();
     });
     on("#nasta", () => this._next());
+    on("#tips", async () => {
+      const o = v.ova;
+      const k = o.kvar[0];
+      const saldo = this._s.data.meriter?.saldo ?? 0;
+      if (!this._s.kan_valja && saldo < 1) { this._msg = { type: "error", text: "Du behöver 1 ⭐ för ett tips." }; this._render(); return; }
+      o.utkast = $("#svar")?.value || "";
+      if (await this._act("ova_tips")) {
+        o.tips = o.tips || {};
+        o.tips[k.i] = (o.tips[k.i] || 0) + 1;
+        o.fel.add(k.i); // med tips räknas det inte som rätt på första försöket
+        if (!(k.i in o.forsta)) o.forsta[k.i] = false;
+      }
+      this._render();
+    });
+    on("#gom", () => { clearTimeout(this._gomTimer); v.ova.tittar = false; this._render(); });
     on("#lyssna", () => {
       const g = this._amne(v.amne).glosor.find((x) => x.id === v.glosor);
       las_upp(g.par[v.ova.kvar[0].i][0], g.sprak[0], this._hass);
@@ -4433,10 +4514,21 @@ class SkolanPanel extends HTMLElement {
       const s = this._svara(g);
       if (s.length) index = s;
     }
-    const kvar = shuffle(index.map((i) => ({ i, fran: lage === 3 ? -1 : lage === 2 ? Math.round(Math.random()) : lage })));
+    const kvar = shuffle(index.map((i) => ({ i, fran: lage === 4 ? -2 : lage === 3 ? -1 : lage === 2 ? Math.round(Math.random()) : lage })));
     v.ova = { lage, kvar, totalt: kvar.length, forstaRatt: 0, fel: new Set(), forsta: {}, visat: null, skrev: "" };
+    if (lage === 4) this._tittaStart();
     this._render();
     if (lage === 3) las_upp(g.par[kvar[0].i][0], g.sprak[0], this._hass); // första uppläsningen i klicket (krävs på iPhone)
+  }
+
+  _tittaStart() {
+    // Titta, göm och skriv: ordet syns i 4 sekunder och göms sedan.
+    const o = this._view.ova;
+    o.tittar = true;
+    clearTimeout(this._gomTimer);
+    this._gomTimer = setTimeout(() => {
+      if (this._view.ova === o && o.tittar) { o.tittar = false; this._render(); }
+    }, 4000);
   }
 
   _next() {
@@ -4452,6 +4544,7 @@ class SkolanPanel extends HTMLElement {
     }
     o.visat = null;
     o.skrev = "";
+    o.utkast = "";
     if (!o.kvar.length) {
       const g = this._amne(v.amne).glosor.find((x) => x.id === v.glosor);
       const ord = Object.entries(o.forsta).map(([i, r]) => ({ o: g.par[i][0], r }));
@@ -4459,6 +4552,7 @@ class SkolanPanel extends HTMLElement {
     } else {
       this._render();
       const n = o.kvar[0];
+      if (n.fran === -2) { this._tittaStart(); this._render(); }
       if (n.fran === -1) {
         const g = this._amne(v.amne).glosor.find((x) => x.id === v.glosor);
         las_upp(g.par[n.i][0], g.sprak[0], this._hass);
@@ -4600,6 +4694,8 @@ const CSS = `
   .prov-form input[type=number] { width:90px; font-size:18px; padding:6px; }
   .prov-form #pr-komm { font-size:16px; padding:8px; }
   .pf-betyg { font-size:18px; font-weight:700; }
+  .word.gomt { opacity:.5; }
+  .tips-rad { font-size:26px; letter-spacing:4px; font-weight:700; font-family:monospace; margin:6px 0; color:#ffb300; word-break:break-all; }
   .fh-omprov { background:rgba(224,96,58,.15); border-radius:10px; padding:8px 12px; font-weight:600; }
   .forhor-nytt { display:block; width:100%; text-align:left; border:none; border-radius:16px; padding:16px; margin-bottom:14px; cursor:pointer;
                  background:linear-gradient(135deg, #e0603a, #f7a14f); color:#fff; box-shadow:0 3px 10px rgba(224,96,58,.4); }

@@ -43,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.31.0"
+VERSION = "1.32.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -829,6 +829,10 @@ def _apply(data: dict, body: dict) -> list[str]:
     """Utför en ändring i barnets data. Returnerar filer som ska raderas."""
     op = body.get("op")
     amnen = data.setdefault("amnen", [])
+    if op == "ova_tips":
+        if body.get("_barn"):  # föräldrar som provar övningen betalar inget
+            meriter.kop_tips(data)
+        return []
     if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
@@ -1132,9 +1136,20 @@ class UttalView(HomeAssistantView):
         from homeassistant.components import tts
 
         hass: HomeAssistant = request.app["hass"]
-        _barn_for(hass, request, request.query.get("barn"))  # bara inloggade Skolan-användare
+        barn = _barn_for(hass, request, request.query.get("barn"))  # bara inloggade Skolan-användare
         text = (request.query.get("text") or "").strip()[:200]
         sprak = (request.query.get("sprak") or "en-GB").strip()[:10]
+        dikt = False
+        if request.query.get("forhor"):  # diktamen i ett förhör: ordet hämtas här, barnet ser det aldrig
+            data = await hass.async_add_executor_job(_load, _dir(hass, barn))
+            try:
+                f = _find(data.get("forhor", []), request.query.get("forhor"))
+                q = f["fragor"][int(request.query.get("i", -1))]
+            except (ValueError, IndexError, TypeError) as err:
+                raise web.HTTPNotFound from err
+            if not q.get("dikt"):
+                raise web.HTTPBadRequest
+            text, dikt = str(q["fraga"]).strip()[:200], True
         if not text or not re.fullmatch(r"[a-z]{2}-[A-Z]{2}", sprak):
             raise web.HTTPBadRequest
         mapp = Path(hass.config.path("skolan", "uttal"))
@@ -1145,6 +1160,8 @@ class UttalView(HomeAssistantView):
                 _ext, ljud = await tts.async_get_media_source_audio(hass, mid)
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("Uppläsning misslyckades: %s", err)
+                if dikt:  # ingen molnröst (t.ex. Windowsappen): telefonens egen röst får läsa
+                    return self.json({"text": text}, status_code=503)
                 raise web.HTTPServiceUnavailable from err
 
             def _spara() -> None:
@@ -1906,7 +1923,8 @@ def _publik_forhor(f: dict, foralder: bool) -> dict:
     """Barnet ser inte facit förrän förhöret är inlämnat."""
     if foralder or f.get("status") == "klart":
         return f
-    return {**f, "fragor": [{k: v for k, v in q.items() if k != "facit"} for q in f["fragor"]]}
+    # Diktamen: ordet läses upp från servern och skickas aldrig till barnets skärm.
+    return {**f, "fragor": [{k: ("" if k == "fraga" and q.get("dikt") else v) for k, v in q.items() if k != "facit"} for q in f["fragor"]]}
 
 
 GODKANT_GRANS = 0.8  # minst 80 % rätt för godkänt (föräldern kan ändra beslutet)
@@ -1918,7 +1936,21 @@ def _forslag(f: dict) -> str:
     return "godkant" if n and ratt >= math.ceil(n * GODKANT_GRANS - 1e-9) else "ej_godkant"
 
 
+def _stavord(g: dict) -> bool:
+    """Samma språk på båda sidor (t.ex. svenska veckans ord): förhörs som diktamen."""
+    sp = [str(x or "").lower().strip() for x in g.get("sprak", [])] + ["", ""]
+    par = g.get("par", [])
+    return bool(sp[0] and sp[0] == sp[1]) or bool(par) and all(
+        len(p) < 2 or not str(p[1]).strip() or str(p[0]).strip().lower() == str(p[1]).strip().lower() for p in par
+    )
+
+
 def _fragor(g: dict, riktning: int) -> list[dict]:
+    if _stavord(g):
+        sp = g["sprak"][0] or "Svenska"
+        fragor = [{"fraga": p[0], "facit": p[0], "fran": sp, "till": sp, "dikt": True} for p in g["par"] if str(p[0]).strip()]
+        random.shuffle(fragor)
+        return fragor
     fragor = []
     for p in g["par"]:
         fran = riktning if riktning in (0, 1) else (0 if uuid.uuid4().int % 2 else 1)
