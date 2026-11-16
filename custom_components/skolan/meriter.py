@@ -58,6 +58,8 @@ MEDALJER = [
     ("aventyrare", "🗺️", "Äventyrare", "Klarat 10 nivåer på kartan", "nivaer", 10),
     ("kartans_hjalte", "🏆", "Kartans hjälte", "Klarat 50 nivåer på kartan", "nivaer", 50),
     ("arenamastare", "🏟️", "Arenamästare", "Vunnit 10 strider i arenan", "arena_vinster", 10),
+    ("lagspelare", "🏳️", "Lagspelare", "Besegrat 3 lagbossar med ditt lag", "lagbossar", 3),
+    ("lagkapten", "🤝", "Lagkapten", "Vunnit 5 lagstrider", "lagstrid_vinster", 5),
 ]
 
 P_LAS_I_TID = 30  # läsläxan läst och kontrollfrågorna klarade före slutdatum
@@ -1323,7 +1325,7 @@ BOSS_MAL_BAS = 100  # svit, dagens utmaning m.m. en vanlig vecka
 BOSS_LAXA = {"glosor": 90, "bok": 45}  # ungefär vad en läxa i schemat ger en vecka man gör den ordentligt
 BOSS_LAXA_ANNAN = 50
 BOSS_ATTACK_TILLAGG = 1.15  # attackerna ger extra skada, så monstren har lite mer liv
-EJ_SKADA = ("🎟️", "👾", "🗺️")  # belöningar gör ingen skada och ger ingen pass-XP
+EJ_SKADA = ("🎟️", "👾", "🗺️", "🏳️")  # belöningar gör ingen skada och ger ingen pass-XP
 P_NIVA_STJARNA = 5  # meriter per stjärna när en nivå klaras
 P_VARLDSBOSS = 50
 ENERGI_MAX = 15
@@ -1517,7 +1519,7 @@ def karta_kort(data: dict) -> dict:
     d = _m(data).get("djur") or {}
     return {"niva": k["niva"], "stjarnor": sum(k["stjarnor"].values()), "art": d.get("art"), "djur": d.get("namn"),
             "steg": _djur_steg(data), "repriser": [repris(r) for r in k.get("repriser", [])[-3:]],
-            "djur_niva": djur_niva(data)["niva"], "cp": djur_cp(data), "def": djur_def(data),
+            "djur_niva": djur_niva(data)["niva"], "cp": djur_cp(data), "def": djur_def(data), "traning": traning(data),
             "skold": (skold(data) or {}).get("ikon", ""), "arena_poang": k.get("arena_poang", 0),
             "arena_hist": k.get("arena_hist", [])[-3:]}
 
@@ -1600,7 +1602,8 @@ def djur_niva(data: dict) -> dict:
 
 
 def djur_kraft(data: dict) -> float:
-    return 1 + (djur_niva(data)["niva"] - 1) * KRAFT_PER_NIVA
+    """Skadefaktor: +2 % per nivå och lagbonus (+5 % per lagmedlem som pluggat idag)."""
+    return (1 + (djur_niva(data)["niva"] - 1) * KRAFT_PER_NIVA) * (1 + lag_bonus(data))
 
 
 def djur_cp(data: dict) -> int:
@@ -1906,7 +1909,50 @@ ARENA_VINST, ARENA_FORLUST = 10, 2  # arenapoäng 🏆
 ARENA_XP_VINST, ARENA_XP_FORLUST = 15, 5
 # Arenaversion för strider mellan vänner i olika hem. Höj den när regler, drag eller skada ändras
 # så att en strid mot en annan version skulle bli fel. Båda hemmen måste ha samma version för att strida.
-ARENA_VER = 2  # 2: sköldar och försvar
+ARENA_VER = 3  # 2: sköldar och försvar, 3: försvarsträning
+
+# Försvarsträning: när någon annan utmanar ditt husdjur styr datorn det. Tränar du det slåss det
+# smartare och tar i mer (bara när det försvarar sig, inte när du själv anfaller).
+TRANING = [  # (pris ⭐, namn)
+    (0, "Otränad"), (50, "Nybörjare"), (120, "Kämpe"), (250, "Krigare"), (400, "Mästare"), (600, "Stormästare"),
+]
+TRANING_LIV, TRANING_SKADA = 0.04, 0.03  # per nivå när husdjuret försvarar sig
+
+
+def traning(data: dict) -> int:
+    return max(0, min(len(TRANING) - 1, int(_m(data).get("traning", 0) or 0)))
+
+
+def traning_kop(data: dict) -> int:
+    m = _m(data)
+    d = m.get("djur")
+    if not d:
+        raise ValueError("Du behöver ett husdjur först.")
+    t = traning(data)
+    if t >= len(TRANING) - 1:
+        raise ValueError(f"{d['namn']} är redan fullt tränad 🎓.")
+    pris, namn = TRANING[t + 1]
+    if m.get("saldo", 0) < pris:
+        raise ValueError(f"Du behöver {pris} ⭐ (du har {m.get('saldo', 0)}).")
+    ge(data, -pris, f"🎓 {d['namn']} tränade försvar: {namn}", None, "🛍️")
+    m["traning"] = t + 1
+    return t + 1
+
+
+def traning_status(data: dict) -> dict:
+    t = traning(data)
+    return {"niva": t, "namn": TRANING[t][1], "max": len(TRANING) - 1, "liv": round(t * TRANING_LIV * 100), "skada": round(t * TRANING_SKADA * 100),
+            "nasta": {"niva": t + 1, "namn": TRANING[t + 1][1], "pris": TRANING[t + 1][0], "liv": round((t + 1) * TRANING_LIV * 100),
+                      "skada": round((t + 1) * TRANING_SKADA * 100)} if t + 1 < len(TRANING) else None}
+
+
+def _forsvarare(k: dict) -> dict:
+    """Ett utmanat husdjur som datorn styr får sin träning: mer liv och mer skada."""
+    t = max(0, min(len(TRANING) - 1, int(k.get("traning", 0) or 0)))
+    if t:
+        mx = round(k["max"] * (1 + t * TRANING_LIV))
+        k.update({"max": mx, "liv": mx, "drag": {a: max(1, round(v * (1 + t * TRANING_SKADA))) for a, v in k["drag"].items()}})
+    return k
 
 
 def _kampe(data: dict, agare: str) -> dict:
@@ -1921,7 +1967,7 @@ def _kampe(data: dict, agare: str) -> dict:
     sk = skold(data)
     return {"agare": agare, "namn": d.get("namn", "?"), "art": d.get("art"), "steg": _djur_steg(data),
             "niva": djur_niva(data)["niva"], "cp": djur_cp(data), "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag,
-            "skold": sk["id"] if sk else "", "def": sk["def"] if sk else 0}
+            "skold": sk["id"] if sk else "", "def": sk["def"] if sk else 0, "traning": traning(data)}
 
 
 def _drag_info(at_id: str) -> dict:
@@ -1933,7 +1979,7 @@ def arena_kampe(data: dict) -> dict | None:
     if not _m(data).get("djur"):
         return None
     k = _kampe(data, "")
-    return {x: k[x] for x in ("namn", "art", "steg", "niva", "cp", "max", "drag", "skold")}
+    return {x: k[x] for x in ("namn", "art", "steg", "niva", "cp", "max", "drag", "skold", "traning")}
 
 
 def _int(v, lo: int, hi: int) -> int:
@@ -1948,7 +1994,7 @@ def rensa_kampe(k: dict, agare: str) -> tuple[dict, int]:
     får vara större än vad som går att få i Skolan. Returnerar (kämpe, antal borttagna drag)."""
     if not isinstance(k, dict) or not isinstance(k.get("drag"), dict):
         raise ValueError("Vännens husdjur gick inte att läsa.")
-    kraft_max = 1 + (DJUR_NIVA_MAX - 1) * 0.02
+    kraft_max = (1 + (DJUR_NIVA_MAX - 1) * 0.02) * (1 + LAG_BONUS_PER * LAG_MAX)
     kanda = {"knuff": KNUFF, **{x["id"]: x for x in ATTACKER}}
     drag, okanda = {}, 0
     for at_id, varde in list(k["drag"].items())[:30]:
@@ -1964,7 +2010,8 @@ def rensa_kampe(k: dict, agare: str) -> tuple[dict, int]:
     sk = SKOLD.get(k.get("skold") if isinstance(k.get("skold"), str) else "")  # DEF räknas här, vännens siffra används inte
     return {"agare": str(agare)[:16], "namn": str(k.get("namn") or "?")[:20], "art": str(k.get("art") or "")[:8],
             "steg": _int(k.get("steg"), 0, len(DJUR_STEG) - 1), "niva": _int(k.get("niva"), 1, DJUR_NIVA_MAX), "cp": _int(k.get("cp"), 0, 10**6),
-            "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag, "skold": sk["id"] if sk else "", "def": sk["def"] if sk else 0}, okanda
+            "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag, "skold": sk["id"] if sk else "", "def": sk["def"] if sk else 0,
+            "traning": _int(k.get("traning"), 0, len(TRANING) - 1)}, okanda
 
 
 def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict | None = None, de: dict | None = None) -> dict:
@@ -1974,10 +2021,12 @@ def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict
     if de is None and not _m(mot_data).get("djur"):
         raise ValueError(f"{mot_namn} har inget husdjur än.")
     k = _karta(data)
+    if k.get("lagstrid"):
+        raise ValueError("Gör klart lagstriden först.")
     if k.get("energi", 0) < 1:
         raise ValueError("Du behöver 1 ⚡ energi för att gå in i arenan. Plugga så laddas den!")
     k["energi"] -= 1
-    k["arena"] = {"mot": mot_id, "mot_namn": mot_namn, "jag": _kampe(data, jag), "de": de or _kampe(mot_data, mot_namn),
+    k["arena"] = {"mot": mot_id, "mot_namn": mot_namn, "jag": _kampe(data, jag), "de": _forsvarare(de or _kampe(mot_data, mot_namn)),
                   "turer": [], "start": dt_util.now().isoformat(timespec="seconds")}
     return k["arena"]
 
@@ -2002,9 +2051,19 @@ def _slag(kampe: dict, at_id: str, mal: dict) -> dict:
     return {"skada": sk["skada"], "miss": False, "skydd": sk["skydd"], "tillbaka": sk["tillbaka"]}
 
 
-def _ai_val(de: dict) -> str:
+def _ai_val(de: dict, mal: dict | None = None) -> str:
+    """Datorns val av drag. Tränade husdjur väljer smartare."""
+    t = max(0, min(len(TRANING) - 1, int(de.get("traning", 0) or 0)))
     kan = [a for a in de["drag"] if _drag_info(a)["energi"] <= de["ap"]]
-    if random.random() < 0.7:
+    if mal and t >= 2:  # kan den slå ut motståndaren nu tar den det billigaste draget som räcker
+        racker = [a for a in kan if de["drag"][a] >= mal["liv"]]
+        if racker:
+            return min(racker, key=lambda a: _drag_info(a)["energi"])
+    if t >= 4:  # sparar energi till sitt starkaste drag om det går nästa tur
+        basta = max(de["drag"], key=lambda a: de["drag"][a])
+        if basta not in kan and de["ap"] + ARENA_AP_TUR >= _drag_info(basta)["energi"]:
+            return "knuff"
+    if random.random() < 0.7 + 0.06 * t:
         return max(kan, key=lambda a: de["drag"][a])
     return random.choice(kan)
 
@@ -2025,7 +2084,7 @@ def arena_drag(data: dict, at_id: str) -> dict:
     x = _slag(jag, at_id, de)
     tur.update({"skada": x["skada"], "miss": x["miss"], "skydd": x["skydd"], "tillbaka": x["tillbaka"]})
     if de["liv"] > 0 and jag["liv"] > 0:
-        mot = _ai_val(de)
+        mot = _ai_val(de, jag)
         de["ap"] -= _drag_info(mot)["energi"]
         tur["mot_at"] = mot
         y = _slag(de, mot, jag)
@@ -2066,7 +2125,7 @@ def arena_status(data: dict) -> dict:
     k = _karta(data)
     a = k.get("arena")
     n = djur_niva(data)
-    return {"niva": n, "cp": djur_cp(data), "def": djur_def(data), "kraft": round(djur_kraft(data), 2), "poang": k.get("arena_poang", 0),
+    return {"niva": n, "cp": djur_cp(data), "def": djur_def(data), "traning": traning_status(data), "kraft": round(djur_kraft(data), 2), "poang": k.get("arena_poang", 0),
             "vinster": _m(data)["raknare"].get("arena_vinster", 0), "pagar": a, "hist": k.get("arena_hist", [])[-5:],
             "knuff": KNUFF, "ap_max": ARENA_AP_MAX, "ver": ARENA_VER, "drag": {x["id"]: {y: x[y] for y in ("ikon", "namn", "typ", "energi")} for x in [KNUFF, *ATTACKER]}}
 
@@ -2166,3 +2225,184 @@ def titel(data: dict) -> str | None:
     r = m["raknare"]
     f = sorted(_former(data), key=lambda f: -(r.get(f[4], 0) / f[5]))
     return f[0][3] if f else None
+
+
+# ---------- lag: lagboss, lagbonus och lagstrid 2 mot 2 ----------
+# Föräldrarna skapar lagen (lag.json). Ett barn är med i högst ett lag.
+LAG_MARKEN = ["🏳️", "🦁", "🐺", "🦅", "🐉", "⚡", "🔥", "🌊", "⭐", "🚀", "🛡️", "👑"]
+LAG_MAX = 4
+LAG_BONUS_PER = 0.05  # +5 % skada för varje lagmedlem som har pluggat idag (även en själv)
+LAGBOSSAR = [
+    {"ikon": "🐲", "namn": "Läxdraken Maxi"}, {"ikon": "🦖", "namn": "Glos-Rex"}, {"ikon": "🐙", "namn": "Kraken Glömska"},
+    {"ikon": "👹", "namn": "Jätten Slarv"}, {"ikon": "🤖", "namn": "Megaroboten"}, {"ikon": "🧊", "namn": "Isjätten"},
+    {"ikon": "🌋", "namn": "Lavamonstret"}, {"ikon": "👻", "namn": "Spökkungen"},
+]
+LAGBOSS_ANDEL = 0.7  # lagbossens liv = 70 % av vad lagmedlemmarna brukar plugga tillsammans en vecka
+LAGBOSS_MIN = 150
+LAGBOSS_BELONING = 40  # ⭐ till varje lagmedlem när bossen är besegrad
+LAGSTRID_VINST, LAGSTRID_FORLUST = 15, 3  # arenapoäng 🏆
+LAGSTRID_XP_VINST, LAGSTRID_XP_FORLUST = 20, 6
+UTMANARE = ["Skuggan", "Blixten", "Klon-Kalle", "Vilda Vera", "Turbo", "Mörkermyran", "Kapten Kaos", "Gnistan"]
+
+
+def _dag_poang(data: dict, iso: str) -> int:
+    return sum(x["p"] for x in _m(data)["logg"] if x["p"] > 0 and x.get("ikon") not in EJ_SKADA and x["tid"][:10] == iso)
+
+
+def _vecka_nu() -> str:
+    return "{}-W{:02d}".format(*dt_util.now().date().isocalendar()[:2])
+
+
+def lag_satt(data: dict, lag: dict | None, bonus: int) -> None:
+    """Spara barnets lag och dagens lagbonus i barnets data (läses av djur_kraft)."""
+    m = _m(data)
+    if not lag:
+        m.pop("lag", None)
+        return
+    m["lag"] = {"id": lag["id"], "namn": lag["namn"], "marke": lag["marke"], "dag": dt_util.now().date().isoformat(), "bonus": int(bonus)}
+
+
+def lag_bonus(data: dict) -> float:
+    lag = _m(data).get("lag")
+    if not lag or lag.get("dag") != dt_util.now().date().isoformat():
+        return 0.0
+    return LAG_BONUS_PER * max(0, min(LAG_MAX, int(lag.get("bonus", 0))))
+
+
+def lag_status(lag: dict, medlemmar: list[tuple[str, str, dict]]) -> dict:
+    """Lagets läge. medlemmar = [(barn-id, namn, data)]."""
+    idag = dt_util.now().date().isoformat()
+    vecka = _vecka_nu()
+    ar, v = int(vecka[:4]), int(vecka[-2:])
+    boss = LAGBOSSAR[(ar * 53 + v) % len(LAGBOSSAR)]
+    hp = max(LAGBOSS_MIN, round(sum(boss_mal_vecka(d) for _i, _n, d in medlemmar) * LAGBOSS_ANDEL))
+    folk = []
+    for bid, namn, d in medlemmar:
+        dj = _m(d).get("djur") or {}
+        folk.append({"id": bid, "namn": namn, "art": dj.get("art"), "djur": dj.get("namn"), "steg": _djur_steg(d),
+                     "cp": djur_cp(d) if dj else 0, "def": djur_def(d), "idag": _dag_poang(d, idag) > 0,
+                     "vecka": _vecko_poang(d).get(vecka, 0)})
+    skada = sum(x["vecka"] for x in folk)
+    idag_n = sum(1 for x in folk if x["idag"])
+    slut = dt_util.now().date() + timedelta(days=6 - dt_util.now().date().weekday())
+    return {"id": lag["id"], "namn": lag["namn"], "marke": lag["marke"], "medlemmar": folk,
+            "bonus": idag_n, "bonus_pct": round(idag_n * LAG_BONUS_PER * 100), "bonus_per": round(LAG_BONUS_PER * 100),
+            "boss": {**boss, "hp": hp, "skada": min(skada, hp), "klar": skada >= hp, "vecka": vecka,
+                     "slut": slut.isoformat(), "beloning": LAGBOSS_BELONING}}
+
+
+def lagboss_belona(data: dict, st: dict) -> bool:
+    """Ge lagbossens belöning till barnet en gång per vecka när laget har besegrat den."""
+    b = st["boss"]
+    if not b["klar"]:
+        return False
+    if ge(data, LAGBOSS_BELONING, f"{st['marke']} Laget {st['namn']} besegrade {b['namn']} {b['ikon']}!", f"lagboss:{b['vecka']}", "🏳️"):
+        _rakna(data, "lagbossar")
+        return True
+    return False
+
+
+def _utmanarlag(lag: list[dict]) -> list[dict]:
+    """Ett datorstyrt lag som är ungefär lika starkt som barnens."""
+    namn = random.sample(UTMANARE, len(lag))
+    arter = random.sample([x for x in DJUR if x not in {k.get("art") for k in lag}] or DJUR, len(lag))
+    ut = []
+    for i, k in enumerate(lag):
+        f = random.uniform(0.92, 1.05)
+        sk = random.choice([x for x in SKOLDAR if x["def"] <= max(5, k.get("def", 0) + 5)] + [None])
+        mx = max(10, round(k["max"] * f))
+        ut.append({"agare": "ai", "namn": namn[i], "art": arter[i], "steg": k["steg"], "niva": k["niva"], "cp": round(k["cp"] * f),
+                   "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": {a: max(1, round(v * f)) for a, v in k["drag"].items()},
+                   "skold": sk["id"] if sk else "", "def": sk["def"] if sk else 0})
+    return ut
+
+
+def lagstrid_start(data: dict, jag: str, lag_namn: str, kampar: list[dict], de: list[dict] | None = None, de_namn: str = "") -> dict:
+    """kampar[0] är barnets eget husdjur (styrs av barnet), resten styrs av datorn."""
+    m = _m(data)
+    if not m.get("djur"):
+        raise ValueError("Du behöver ett husdjur först.")
+    if len(kampar) < 2:
+        raise ValueError("Laget behöver minst två husdjur för en lagstrid.")
+    k = _karta(data)
+    if k.get("arena") or k.get("lagstrid"):
+        raise ValueError("Du har redan en strid som pågår.")
+    if k.get("energi", 0) < 1:
+        raise ValueError("Du behöver 1 ⚡ energi för en lagstrid. Plugga så laddas den!")
+    k["energi"] -= 1
+    k["lagstrid"] = {"jag": jag, "lag_namn": lag_namn, "lag": kampar, "de": de or _utmanarlag(kampar),
+                     "de_namn": de_namn or "Utmanarlaget", "turer": [], "start": dt_util.now().isoformat(timespec="seconds")}
+    return k["lagstrid"]
+
+
+def _levande(lista: list[dict]) -> list[int]:
+    return [i for i, x in enumerate(lista) if x["liv"] > 0]
+
+
+def _ls_slag(sida: str, i: int, kampe: dict, at_id: str, mal_sida: str, mal_lista: list[dict], mal_i: int) -> dict:
+    kampe["ap"] -= _drag_info(at_id)["energi"]
+    x = _slag(kampe, at_id, mal_lista[mal_i])
+    return {"sida": sida, "i": i, "at": at_id, "mal_sida": mal_sida, "mal": mal_i, **x}
+
+
+def lagstrid_drag(data: dict, at_id: str, mal: int) -> dict:
+    k = _karta(data)
+    s = k.get("lagstrid")
+    if not s:
+        raise ValueError("Ingen lagstrid pågår.")
+    lag, de = s["lag"], s["de"]
+    h = []
+    jag = lag[0]
+    if jag["liv"] > 0:
+        if at_id not in jag["drag"]:
+            raise ValueError("Det draget kan ditt husdjur inte.")
+        if _drag_info(at_id)["energi"] > jag["ap"]:
+            raise ValueError(f"Du behöver {_drag_info(at_id)['energi']} ⚡ i striden. Använd Knuff 🐾 och vänta en tur.")
+        lev = _levande(de)
+        h.append(_ls_slag("lag", 0, jag, at_id, "de", de, mal if mal in lev else lev[0]))
+    for i, x in enumerate(lag[1:], 1):  # lagkamraterna (datorn styr) anfaller den svagaste
+        lev = _levande(de)
+        if x["liv"] > 0 and lev:
+            m_i = min(lev, key=lambda j: de[j]["liv"])
+            h.append(_ls_slag("lag", i, x, _ai_val(x, de[m_i]), "de", de, m_i))
+    for i, x in enumerate(de):  # motståndarna anfaller någon i laget
+        lev = _levande(lag)
+        if x["liv"] > 0 and lev:
+            m_i = random.choice(lev)
+            h.append(_ls_slag("de", i, x, _ai_val(x, lag[m_i]), "lag", lag, m_i))
+    for x in lag + de:
+        x["ap"] = min(ARENA_AP_MAX, x["ap"] + ARENA_AP_TUR)
+    tur = {"h": h, "liv_lag": [x["liv"] for x in lag], "liv_de": [x["liv"] for x in de]}
+    s["turer"].append(tur)
+    if not _levande(de) or not _levande(lag) or len(s["turer"]) >= 30:
+        vann = not _levande(de) and bool(_levande(lag))
+        tur["slut"] = "vinst" if vann else "forlust"
+        _lagstrid_slut(data, vann)
+    return tur
+
+
+def lagstrid_ge_upp(data: dict) -> None:
+    if _karta(data).get("lagstrid"):
+        _lagstrid_slut(data, False, gav_upp=True)
+
+
+def _lagstrid_slut(data: dict, vann: bool, gav_upp: bool = False) -> None:
+    k = _karta(data)
+    s = k.pop("lagstrid")
+    k["arena_poang"] = k.get("arena_poang", 0) + (LAGSTRID_VINST if vann else 0 if gav_upp else LAGSTRID_FORLUST)
+    _djur_xp(data, 0)
+    k["djur_xp"] += LAGSTRID_XP_VINST if vann else 0 if gav_upp else LAGSTRID_XP_FORLUST
+    if vann:
+        _rakna(data, "lagstrid_vinster")
+        kolla_medaljer(data)
+    kort = lambda x: {y: x.get(y) for y in ("namn", "art", "steg", "niva", "max", "skold", "def")}  # noqa: E731
+    k["lagstrid_hist"] = (k.get("lagstrid_hist", []) + [{
+        "lag_namn": s["lag_namn"], "de_namn": s["de_namn"], "vann": vann, "gav_upp": gav_upp,
+        "tid": dt_util.now().isoformat(timespec="seconds"), "lag": [kort(x) for x in s["lag"]], "de": [kort(x) for x in s["de"]],
+        "turer": s["turer"][-30:]}])[-5:]
+
+
+def lagstrid_status(data: dict) -> dict:
+    k = _karta(data)
+    return {"pagar": k.get("lagstrid"), "hist": k.get("lagstrid_hist", [])[-3:], "vinster": _m(data)["raknare"].get("lagstrid_vinster", 0),
+            "vinst": LAGSTRID_VINST, "forlust": LAGSTRID_FORLUST}

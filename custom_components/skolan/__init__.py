@@ -43,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.35.0"
+VERSION = "1.36.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -678,6 +678,51 @@ def _ok_file(mime: str) -> bool:
 # ---------- vyer ----------
 
 
+def _lag_fil(hass: HomeAssistant) -> Path:
+    return hass.data[DOMAIN]["base"] / "lag.json"
+
+
+def _lag_las(hass: HomeAssistant, barn: str, data: dict) -> tuple[dict | None, list]:
+    """Barnets lag och lagmedlemmarnas data [(id, namn, data)]. Sätter dagens lagbonus i allas data (bara i minnet
+    för de andra; barnets egen data sparas av den som anropar)."""
+    lagen = _load_fil(_lag_fil(hass)).get("lag", [])
+    lag = next((x for x in lagen if barn in x.get("medlemmar", [])), None)
+    if not lag:
+        meriter.lag_satt(data, None, 0)
+        return None, []
+    namn = {b["id"]: b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"]}
+    medl = [(b, namn[b], data if b == barn else _load(_dir(hass, b))) for b in lag["medlemmar"] if b in namn]
+    st = meriter.lag_status(lag, medl)
+    for _b, _n, d in medl:
+        meriter.lag_satt(d, lag, st["bonus"])
+    return lag, medl
+
+
+def _lag_andra(hass: HomeAssistant, body: dict) -> list:
+    f = _lag_fil(hass)
+    allt = _load_fil(f)
+    lagen = allt.setdefault("lag", [])
+    barn = {b["id"] for b in hass.data[DOMAIN]["conf"]["barn"]}
+    if body.get("op") == "lag_ta_bort":
+        allt["lag"] = [x for x in lagen if x["id"] != body.get("id")]
+    else:
+        medl = [b for b in dict.fromkeys(body.get("medlemmar") or []) if b in barn]
+        if len(medl) < 2:
+            raise ValueError("Ett lag behöver minst två barn.")
+        lag = next((x for x in lagen if x["id"] == body.get("id")), None) if body.get("id") else None
+        if not lag:
+            lag = {"id": _new_id()}
+            lagen.append(lag)
+        for x in lagen:  # ett barn kan bara vara med i ett lag
+            if x is not lag:
+                x["medlemmar"] = [b for b in x.get("medlemmar", []) if b not in medl]
+        lag.update({"namn": _name(body.get("namn") or "Laget"), "marke": body.get("marke") if body.get("marke") in meriter.LAG_MARKEN else "🏳️",
+                    "medlemmar": medl[: meriter.LAG_MAX]})
+        allt["lag"] = [x for x in lagen if len(x.get("medlemmar", [])) >= 2]
+    _save_fil(f, allt)
+    return allt["lag"]
+
+
 class StateView(HomeAssistantView):
     url = "/api/skolan/state"
     name = "api:skolan:state"
@@ -689,6 +734,16 @@ class StateView(HomeAssistantView):
         user = request["hass_user"]
         parent = user.id in conf["foraldrar"]
         data = await hass.async_add_executor_job(_load, _dir(hass, barn))
+        lag, medl = await hass.async_add_executor_job(_lag_las, hass, barn, data)
+        lag_st = meriter.lag_status(lag, medl) if lag else None
+        if lag_st and lag_st["boss"]["klar"] and f"lagboss:{lag_st['boss']['vecka']}" not in meriter._m(data)["nycklar"]:
+            async with hass.data[DOMAIN]["locks"][barn]:  # lagbossen besegrad: belöning till barnet en gång
+                d2 = await hass.async_add_executor_job(_load, _dir(hass, barn))
+                if meriter.lagboss_belona(d2, lag_st):
+                    meriter.lag_satt(d2, lag, lag_st["bonus"])
+                    await hass.async_add_executor_job(_save, _dir(hass, barn), d2)
+                data = d2
+                meriter.lag_satt(data, lag, lag_st["bonus"])
 
         def _topp() -> list[dict]:
             ut = []
@@ -713,6 +768,9 @@ class StateView(HomeAssistantView):
                 "djurbutik": meriter.butik_lista(),
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data),
+                "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
+                "lag_lista": (await hass.async_add_executor_job(_load_fil, _lag_fil(hass))).get("lag", []) if parent else None,
+                "barn_lista": [{"id": b["id"], "namn": b["namn"]} for b in conf["barn"]] if parent else None,
                 "rum_platser": meriter.RUM_PLATSER,
                 "varianter": meriter.VARIANTER,
                 "titel": meriter.titel(data),
@@ -779,6 +837,14 @@ class ActionView(HomeAssistantView):
                 return self.json_message("Den motståndaren finns inte.", 400)
             jag = next(b for b in conf["barn"] if b["id"] == barn)
             body["_mot"] = (mot["id"], mot["namn"], await hass.async_add_executor_job(_load, _dir(hass, mot["id"])), jag["namn"])
+        if op in ("lag_spara", "lag_ta_bort"):
+            if not foralder:
+                raise web.HTTPForbidden
+            try:
+                lagen = await hass.async_add_executor_job(_lag_andra, hass, body)
+            except ValueError as err:
+                return self.json_message(str(err), 400)
+            return self.json({"lag_lista": lagen})
         if op.startswith("butik_"):
             f = hass.data[DOMAIN]["base"] / "butik.json"
             butik = await hass.async_add_executor_job(_load_fil, f)
@@ -794,6 +860,7 @@ class ActionView(HomeAssistantView):
             return self.json({"butik": butik})
         async with hass.data[DOMAIN]["locks"][barn]:
             data = await hass.async_add_executor_job(_load, path)
+            body["_lag"] = await hass.async_add_executor_job(_lag_las, hass, barn, data)
             try:
                 if op == "los_in":
                     butik = await hass.async_add_executor_job(_load_fil, hass.data[DOMAIN]["base"] / "butik.json")
@@ -858,7 +925,7 @@ def _apply(data: dict, body: dict) -> list[str]:
         if body.get("_barn"):  # föräldrar som provar övningen betalar inget
             meriter.kop_tips(data, "forsok" if op == "ova_forsok" else "tips")
         return []
-    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
+    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "traning_kop", "lagstrid_start", "lagstrid_drag", "lagstrid_ge_upp", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
         if op == "djur":
@@ -881,6 +948,8 @@ def _apply(data: dict, body: dict) -> list[str]:
             meriter.energi_kop(data, int(body.get("n") or 1))
         elif op == "skold_kop":
             meriter.skold_kop(data, str(body.get("skold") or ""))
+        elif op == "traning_kop":
+            meriter.traning_kop(data)
         elif op == "skold_pa":
             meriter.skold_pa(data, str(body.get("skold") or "") or None)
         elif op == "dryck":
@@ -896,6 +965,18 @@ def _apply(data: dict, body: dict) -> list[str]:
                 raise ValueError("Välj en motståndare.")
         elif op == "arena_drag":
             meriter.arena_drag(data, str(body.get("drag") or ""))
+        elif op == "lagstrid_start":
+            lag, medl = body.get("_lag") or (None, [])
+            if not lag:
+                raise ValueError("Du är inte med i något lag än. Be en förälder skapa ett lag.")
+            jag = next(x for x in medl if x[2] is data)
+            andra = [x for x in medl if x[2] is not data and (x[2].get("meriter") or {}).get("djur")]
+            kampar = [meriter._kampe(data, jag[1])] + [meriter._kampe(d, n) for _i, n, d in andra]
+            meriter.lagstrid_start(data, jag[1], f"{lag['marke']} {lag['namn']}", kampar)
+        elif op == "lagstrid_drag":
+            meriter.lagstrid_drag(data, str(body.get("drag") or ""), int(body.get("mal") or 0))
+        elif op == "lagstrid_ge_upp":
+            meriter.lagstrid_ge_upp(data)
         elif op == "arena_ge_upp":
             meriter.arena_ge_upp(data)
         else:

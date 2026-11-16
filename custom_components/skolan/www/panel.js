@@ -971,6 +971,14 @@ class SkolanPanel extends HTMLElement {
       title = "🤝 Vänner";
       back = { name: "hem" };
       body = this._vannerView();
+    } else if (v.name === "lag") {
+      title = this._s.lag ? `${this._s.lag.marke} ${this._s.lag.namn}` : "🏳️ Lag";
+      back = { name: "hem" };
+      body = this._lagView();
+    } else if (v.name === "lagstrid") {
+      title = "⚔️ Lagstrid";
+      back = { name: "lag" };
+      body = this._lagstridView();
     } else if (v.name === "arena") {
       title = "🏟️ Arenan";
       back = { name: "hem" };
@@ -1621,8 +1629,19 @@ class SkolanPanel extends HTMLElement {
         ${d ? `<button class="mini primary strid-knapp" id="till-strid">${barn ? "⚔️ Till strid" : "👀 Se striden"}</button>` : ""}
         ${attacker}
         ${this._reprisRad()}
-        <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${d ? ` <button class="mini karta-knapp" id="open-arena">🏟️ Arenan${this._s.arena?.pagar ? " ⚔️" : ""}</button>` : ""}${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
+        <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${d ? ` <button class="mini karta-knapp" id="open-arena">🏟️ Arenan${this._s.arena?.pagar ? " ⚔️" : ""}</button>` : ""}${this._s.lag || this._s.lag_lista ? ` <button class="mini karta-knapp" id="open-lag">${this._s.lag ? `${this._s.lag.marke} Laget${this._s.lag.bonus ? ` · +${this._s.lag.bonus_pct} %` : ""}${this._s.lagstrid?.pagar ? " ⚔️" : ""}` : "🏳️ Lag"}</button>` : ""}${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
       </div></div>`;
+  }
+
+  _traningKort(a, d, barn) {
+    const t = a.traning;
+    if (!t) return "";
+    const saldo = this._s.meriter?.saldo ?? 0, n = t.nasta;
+    return `<div class="card traning-kort"><b>🎓 Försvarsträning: ${esc(t.namn)} (${t.niva}/${t.max})</b>
+      <div class="small">När någon annan utmanar ${esc(d.namn)} styr datorn hen. Tränade husdjur slåss smartare och tar i mer${t.niva ? `: <b>+${t.liv} % liv och +${t.skada} % skada</b> när ${esc(d.namn)} försvarar sig` : ""}. Den som anfaller kan förlora!</div>
+      ${n ? `<div class="small muted">Nästa: ${esc(n.namn)} · +${n.liv} % liv, +${n.skada} % skada${n.niva >= 2 ? " · ser när den kan slå ut" : ""}${n.niva >= 4 ? " · sparar energi till starkaste draget" : ""}</div>
+        ${barn ? `<button class="mini ${saldo >= n.pris ? "primary" : ""}" id="traning-kop" ${saldo >= n.pris && !this._busy ? "" : "disabled"}>🎓 Träna · ${n.pris} ⭐</button>` : `<span class="small muted">${n.pris} ⭐</span>`}`
+        : `<div class="small">🏅 Fullt tränad!</div>`}</div>`;
   }
 
   _defText(f) {
@@ -1653,6 +1672,134 @@ class SkolanPanel extends HTMLElement {
       <div class="sak-rutnat">${f.skoldar.map(kort).join("")}</div>`;
   }
 
+  // ---------- lag ----------
+  _lagView() {
+    const s = this._s, L = s.lag, barn = !s.kan_valja, k = s.karta;
+    const fmt = (iso) => new Date(iso.length === 10 ? iso + "T12:00" : iso).toLocaleDateString("sv-SE", { day: "numeric", month: "short" });
+    let html = "";
+    if (L) {
+      const b = L.boss, kvar = Math.max(0, b.hp - b.skada);
+      html += `<div class="card lag-kort">
+        <h3 style="margin:0">${L.marke} ${esc(L.namn)}</h3>
+        <div class="lag-folk">${L.medlemmar.map((x) => `<div class="lag-pers"><div class="lag-djur">${x.art ? ritaDjur(x.art, "glad", Math.max(1, x.steg), {}) : "🥚"}</div>
+          <b>${esc(x.namn)}</b><span class="small">${x.djur ? esc(x.djur) : "Inget husdjur"}</span>
+          <span class="small">💪 ${x.cp} · 🛡️ ${x.def}</span><span class="small">${x.idag ? "✅ Pluggat idag" : "⏳ Inte pluggat idag"}</span>
+          <span class="small muted">${x.vecka} ⭐ i veckan</span></div>`).join("")}</div>
+        <div class="small">💪 <b>Lagbonus idag: +${L.bonus_pct} % skada</b> för alla i laget (+${L.bonus_per} % för varje lagmedlem som har pluggat idag).</div></div>
+      <div class="card lagboss ${b.klar ? "klar" : ""}">
+        <div class="lagboss-figur">${b.klar ? "🏆" : b.ikon}</div>
+        <div><h3 style="margin:0">Veckans lagboss: ${b.ikon} ${esc(b.namn)}</h3>
+          <div class="progress boss-hp"><div style="width:${Math.round((kvar / b.hp) * 100)}%"></div></div>
+          <div class="small">${b.klar ? `🎉 Besegrad! Alla i laget fick <b>${b.beloning} ⭐</b>.` : `❤️ ${kvar} av ${b.hp} liv kvar · besegra den senast söndag ${fmt(b.slut)}`}</div>
+          <div class="small muted">Allt som någon i laget pluggar den här veckan gör skada. ${b.klar ? "" : `Belöning: <b>${b.beloning} ⭐</b> till var och en.`}</div>
+          <div class="lag-bidrag">${L.medlemmar.map((x) => `<span>${esc(x.namn)}: <b>${x.vecka}</b></span>`).join("")}</div></div></div>`;
+      const ls = s.lagstrid || {}, medDjur = L.medlemmar.filter((x) => x.art).length;
+      html += `<h3>⚔️ Lagstrid ${L.medlemmar.length} mot ${L.medlemmar.length}</h3>
+        <p class="small muted">Hela laget mot ett datorstyrt utmanarlag. Du styr ditt husdjur och datorn styr lagkamraterna. Kostar 1 ⚡. Vinst ger ${ls.vinst} 🏆 och XP, förlust ${ls.forlust} 🏆.</p>
+        ${ls.pagar && barn ? `<button class="primary" id="lagstrid-fortsatt">⚔️ Fortsätt lagstriden</button>`
+          : ls.pagar ? `<p class="small">⚔️ En lagstrid pågår.</p>` : barn ? `<button class="primary" id="lagstrid-start" ${medDjur >= 2 && s.meriter?.djur && k.energi >= 1 && !this._busy ? "" : "disabled"}>⚔️ Starta lagstrid · 1⚡ (du har ${k.energi})</button>${medDjur < 2 ? `<div class="small muted">Alla i laget behöver ett husdjur.</div>` : ""}`
+          : `<p class="small muted">Barnen startar lagstrider själva.</p>`}
+        ${(ls.hist || []).length ? `<ul class="lista">${ls.hist.slice().reverse().map((h) => `<li>${h.vann ? "🥇 Vinst" : h.gav_upp ? "🏳️ Gav upp" : "💔 Förlust"} mot ${esc(h.de_namn)} <span class="small muted">${fmt(h.tid)}</span></li>`).join("")}</ul>` : ""}`;
+    } else if (!s.lag_lista) {
+      html += `<p class="muted">Du är inte med i något lag än. Fråga mamma eller pappa!</p>`;
+    }
+    if (s.lag_lista) html += this._lagAdmin();
+    return html;
+  }
+
+  _lagAdmin() {
+    const s = this._s, red = this._lagRed || "", lag = s.lag_lista.find((x) => x.id === red);
+    const namn = (id) => s.barn_lista.find((b) => b.id === id)?.namn || id;
+    return `<h3>👨‍👩‍👧 Lag (bara föräldrar)</h3>
+      ${s.lag_lista.length ? `<ul class="lista">${s.lag_lista.map((x) => `<li>${x.marke} <b>${esc(x.namn)}</b>: ${x.medlemmar.map((b) => esc(namn(b))).join(", ")}
+        <button class="mini" data-lag-redigera="${x.id}">✏️</button> <button class="mini" data-lag-bort="${x.id}">🗑️</button></li>`).join("")}</ul>` : `<p class="small muted">Inga lag än.</p>`}
+      <div class="card"><b>${lag ? "Ändra laget" : "Nytt lag"}</b>
+        <label class="small">Namn <input id="lag-namn" maxlength="40" value="${esc(lag?.namn || "")}" placeholder="t.ex. Drakarna"></label>
+        <div class="small">Märke</div><div class="lag-marken">${s.lag_marken.map((m, i) => `<label><input type="radio" name="lag-marke" value="${m}" ${(lag ? lag.marke === m : i === 0) ? "checked" : ""}> ${m}</label>`).join("")}</div>
+        <div class="small">Barn i laget (minst 2, ett barn kan bara vara med i ett lag)</div>
+        ${s.barn_lista.map((b) => `<label class="kap-rad"><input type="checkbox" data-lag-barn="${b.id}" ${lag ? (lag.medlemmar.includes(b.id) ? "checked" : "") : "checked"}> ${esc(b.namn)}</label>`).join("")}
+        <button class="primary" id="lag-spara">${lag ? "💾 Spara" : "➕ Skapa lag"}</button>${lag ? ` <button class="mini" data-lag-redigera="">Avbryt</button>` : ""}</div>
+      <p class="small muted">Laget får en lagboss varje vecka som alla skadar när de pluggar, lagbonus (+5 % skada per lagmedlem som pluggat idag) och lagstrider i arenan.</p>`;
+  }
+
+  async _lagSpara(bort = null) {
+    const r = this.shadowRoot || this;
+    const args = bort ? { op: "lag_ta_bort", id: bort } : {
+      op: "lag_spara", id: this._lagRed || "", namn: r.querySelector("#lag-namn")?.value || "",
+      marke: r.querySelector("input[name=lag-marke]:checked")?.value || "🏳️",
+      medlemmar: [...r.querySelectorAll("[data-lag-barn]")].filter((x) => x.checked).map((x) => x.dataset.lagBarn) };
+    if (bort && !confirm("Ta bort laget?")) return;
+    try {
+      const res = await this._hass.fetchWithAuth("/api/skolan/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...args }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || res.statusText);
+      this._lagRed = null;
+      this._msg = { type: "ok", text: bort ? "Laget är borttaget." : "Laget är sparat 🏳️" };
+      await this._load();
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+    }
+    this._render();
+  }
+
+  async _lagstridStart() {
+    if (this._busy) return;
+    if (!(await this._act("lagstrid_start"))) return;
+    await this._load();
+    this._lsMal = 0;
+    this._lsTur = null;
+    this._go({ name: "lagstrid" });
+  }
+
+  async _lagstridDrag(drag) {
+    if (this._busy) return;
+    if (!(await this._act("lagstrid_drag", { drag, mal: this._lsMal || 0 }))) return;
+    const k = this._s.data?.meriter?.karta || {};
+    const p = k.lagstrid || (k.lagstrid_hist || []).at(-1);
+    this._lsTur = p?.turer?.at(-1) || null;
+    if (!k.lagstrid) this._lsSlut = { ...p, vann: this._lsTur?.slut === "vinst" };
+    await this._load();
+    this._render();
+  }
+
+  _lagstridView() {
+    const s = this._s, info = s.arena?.drag || {}, p = s.lagstrid?.pagar || this._lsSlut;
+    if (!p) return `<p class="muted">Ingen lagstrid pågår.</p><button id="ls-klar">⬅️ Tillbaka</button>`;
+    const tur = this._lsTur, slut = !s.lagstrid?.pagar;
+    const traffad = new Set((tur?.h || []).filter((x) => !x.miss && x.skada > 0).map((x) => `${x.mal_sida}${x.mal}`));
+    const skoldIk = (id) => (s.karta?.forsvar?.skoldar || []).find((x) => x.id === id)?.ikon || "";
+    const pers = (x, sida, i) => {
+      const liv = slut && tur ? tur[`liv_${sida}`][i] : x.liv, ute = liv <= 0;
+      const val = sida === "de" && !slut && !ute && (this._lsMal || 0) === i;
+      return `<div class="ls-pers ${ute ? "ute" : ""} ${val ? "mal" : ""} ${traffad.has(sida + i) ? "traff" : ""}" ${sida === "de" && !slut && !ute ? `data-ls-mal="${i}"` : ""}>
+        <div class="ls-djur">${x.art ? ritaDjur(x.art, ute ? "hungrig" : "glad", Math.max(1, x.steg), {}) : "🐾"}${x.skold ? `<span class="ls-skold">${skoldIk(x.skold)}</span>` : ""}</div>
+        <b class="small">${esc(x.namn)}${sida === "lag" && i === 0 ? " (du)" : ""}</b>
+        <div class="progress ls-liv"><div style="width:${Math.round((Math.max(0, liv) / x.max) * 100)}%"></div></div>
+        <span class="small">${ute ? "😵" : `❤️ ${liv}/${x.max}`}${!slut && !ute ? ` · ⚡${x.ap}` : ""}</span>${val ? `<span class="small">🎯 Mål</span>` : ""}</div>`;
+    };
+    const namn = (sida, i) => esc((sida === "lag" ? p.lag : p.de)[i]?.namn || "?");
+    const skyddT = { bubbla: " 🫧 bubblan tog träffen", block: " 🛡️ blockerad", spegel: " 🪞 speglad tillbaka", tagg: " 🦔 taggar", typ: " 🛡️ typskydd" };
+    const logg = (tur?.h || []).map((x) => {
+      const at = info[x.at] || { ikon: "⚔️", namn: x.at };
+      return `<li class="${x.sida}">${namn(x.sida, x.i)} ${at.ikon} ${esc(at.namn)} → ${namn(x.mal_sida, x.mal)}: ${x.miss ? "MISS" : `<b>−${x.skada}</b>`}${skyddT[x.skydd] || ""}${x.tillbaka ? ` (−${x.tillbaka} tillbaka)` : ""}</li>`;
+    }).join("");
+    const jag = p.lag[0], ute = jag.liv <= 0;
+    const knappar = slut ? `<div class="ls-slut ${this._lsSlut?.vann ? "vinst" : ""}">${this._lsSlut?.vann ? `🥇 VINST! +${s.lagstrid.vinst} 🏆` : `💔 Förlust · +${s.lagstrid.forlust} 🏆 · bra kämpat!`}</div><button class="primary" id="ls-klar">⬅️ Till laget</button>`
+      : ute ? `<p class="small">😵 Ditt husdjur är utmattat. Lagkamraterna kämpar vidare!</p><button class="primary" id="ls-vidare" ${this._busy ? "disabled" : ""}>➡️ Nästa runda</button>`
+      : `<div class="small">Tryck på en motståndare för att välja mål, sedan attack.</div><div class="attack-rad">${Object.keys(jag.drag).map((id) => {
+          const at = info[id] || {}, kan = at.energi <= jag.ap && !this._busy;
+          return `<button class="attack-knapp" data-ls-drag="${id}" ${kan ? "" : "disabled"}><span class="ai">${at.ikon}</span><b>${jag.drag[id]}</b><small>${at.energi}⚡</small></button>`;
+        }).join("")}</div>`;
+    return `<div class="ls-plan">
+        <div class="ls-sida"><div class="small"><b>${esc(p.de_namn)}</b></div><div class="ls-rad">${p.de.map((x, i) => pers(x, "de", i)).join("")}</div></div>
+        <div class="ls-vs">VS</div>
+        <div class="ls-sida"><div class="ls-rad">${p.lag.map((x, i) => pers(x, "lag", i)).join("")}</div><div class="small"><b>${esc(p.lag_namn)}</b></div></div>
+      </div>
+      ${logg ? `<ul class="ls-logg">${logg}</ul>` : ""}
+      ${knappar}
+      ${slut ? "" : `<button class="mini" id="lagstrid-ge-upp">🏳️ Ge upp</button>`}`;
+  }
+
   // ---------- arenan ----------
   _arenaView() {
     const s = this._s, a = s.arena, d = s.meriter?.djur, barn = !s.kan_valja;
@@ -1678,10 +1825,11 @@ class SkolanPanel extends HTMLElement {
           <div class="progress"><div style="width:${pct}%"></div></div>
           <div class="small muted">${n.till ? `${n.xp - n.fran} av ${n.till - n.fran} XP till nivå ${n.niva + 1}. Allt du pluggar ger XP.` : "Högsta nivån!"}</div>
           <div class="small">🏆 ${a.poang} arenapoäng · ${a.vinster} vinster · ⚡ ${k.energi}</div></div></div>
+      ${this._traningKort(a, d, barn)}
       ${a.pagar ? `<button class="primary" id="arena-fortsatt">⚔️ Fortsätt striden mot ${esc(a.pagar.mot_namn)}</button>` : ""}
       <h3>⚔️ Utmana</h3>
       ${andra.length ? `<ul class="lista arena-lista">${andra.map((t) => `<li><span class="van-djur">${t.karta.art ? ritaDjur(t.karta.art, "glad", Math.max(1, t.karta.steg || 1), {}) : "🥚"}</span>
-          <span><b>${esc(t.namn)}</b>${t.karta.djur ? ` · ${esc(t.karta.djur)}` : ""}<br><span class="small">⬆️ ${t.karta.djur_niva || 1} · 💪 CP ${t.karta.cp || 0} · ${t.karta.skold || "🛡️"} DEF ${t.karta.def || 0}</span></span>
+          <span><b>${esc(t.namn)}</b>${t.karta.djur ? ` · ${esc(t.karta.djur)}` : ""}<br><span class="small">⬆️ ${t.karta.djur_niva || 1} · 💪 CP ${t.karta.cp || 0} · ${t.karta.skold || "🛡️"} DEF ${t.karta.def || 0}${t.karta.traning ? ` · 🎓 ${t.karta.traning}` : ""}</span></span>
           ${barn && t.karta.art && !a.pagar ? `<button class="mini primary" data-arena-mot="${esc(t.id)}" ${k.energi >= 1 && !this._busy ? "" : "disabled"}>Utmana · 1⚡</button>` : ""}</li>`).join("")}</ul>`
         : `<p class="muted">Ingen att utmana än.</p>`}
       ${(this._vanner?.vanner || []).length ? `<h3>🤝 Vänner</h3><ul class="lista arena-lista">${this._vanner.vanner.map((x) => {
@@ -2309,6 +2457,19 @@ class SkolanPanel extends HTMLElement {
         `Vissa sköldar har något extra: blockera helt, skicka tillbaka skada, läka eller halv skada från en typ (🔥 🌊 ❄️ ⚡ 🍃).`,
         `Monstren slår med sin världs typ, till exempel 🔥 i Drakvulkanen. Rätt typsköld tar halva skadan.`,
         `Skölden gäller både mot bossarna och i arenan.`,
+      ])}
+
+      ${kort("🎓", "Försvarsträning", [
+        `När någon utmanar ditt husdjur i arenan styr datorn det. I arenan kan du köpa träning för stjärnor (5 nivåer).`,
+        `Ett tränat husdjur får mer ❤️ liv och gör mer skada när det försvarar sig. Det väljer också smartare drag.`,
+        `Träningen hjälper bara när du blir utmanad, inte när du själv anfaller.`,
+      ])}
+
+      ${kort("🏳️", "Lag", [
+        `En förälder skapar laget under <b>🏳️ Lag</b> på bosskortet. Där väljer ni namn och märke.`,
+        `<b>Lagboss:</b> varje vecka finns en stor lagboss. Allt som någon i laget pluggar gör skada. Besegrar ni den före söndag får <b>alla</b> i laget 40 ⭐.`,
+        `<b>Lagbonus:</b> +5 % skada för varje lagmedlem som har pluggat idag. Peppa varandra!`,
+        `<b>Lagstrid:</b> hela laget mot ett datorstyrt utmanarlag. Du styr ditt husdjur och väljer mål, datorn styr lagkamraterna. Kostar 1 ⚡.`,
       ])}
 
       ${kort("🏟️", "Arenan", [
@@ -4194,6 +4355,23 @@ class SkolanPanel extends HTMLElement {
     on("#open-djurbutik", () => this._go({ name: "djurbutik" }));
     on("#open-karta", () => this._go({ name: "karta" }));
     on("#open-arena", () => this._go({ name: "arena" }));
+    on("#open-lag", () => this._go({ name: "lag" }));
+    on("#traning-kop", async () => {
+      const n = this._s.arena?.traning?.nasta;
+      if (!n || !confirm(`Träna ${this._s.meriter?.djur?.namn || "husdjuret"} till ${n.namn} för ${n.pris} ⭐?`)) return;
+      if (await this._act("traning_kop")) { this._msg = { type: "ok", text: `🎓 ${n.namn}! Nu försvarar sig husdjuret bättre.` }; await this._load(); }
+      this._render();
+    });
+    on("#lagstrid-start", () => this._lagstridStart());
+    on("#lagstrid-fortsatt", () => this._go({ name: "lagstrid" }));
+    on("#lagstrid-ge-upp", async () => { if (confirm("Ge upp lagstriden?") && (await this._act("lagstrid_ge_upp"))) { await this._load(); this._go({ name: "lag" }); } });
+    r.querySelectorAll("[data-ls-mal]").forEach((b) => b.addEventListener("click", () => { this._lsMal = Number(b.dataset.lsMal); this._render(); }));
+    r.querySelectorAll("[data-ls-drag]").forEach((b) => b.addEventListener("click", () => this._lagstridDrag(b.dataset.lsDrag)));
+    r.querySelector("#ls-vidare")?.addEventListener("click", () => this._lagstridDrag(""));
+    r.querySelector("#ls-klar")?.addEventListener("click", () => { this._lsSlut = null; this._go({ name: "lag" }); });
+    r.querySelector("#lag-spara")?.addEventListener("click", () => this._lagSpara());
+    r.querySelectorAll("[data-lag-bort]").forEach((b) => b.addEventListener("click", () => this._lagSpara(b.dataset.lagBort)));
+    r.querySelectorAll("[data-lag-redigera]").forEach((b) => b.addEventListener("click", () => { this._lagRed = b.dataset.lagRedigera; this._render(); }));
     r.querySelectorAll("[data-arena-mot]").forEach((b) => b.addEventListener("click", () => this._arenaStart(b.dataset.arenaMot)));
     r.querySelectorAll("[data-arena-van]").forEach((b) => b.addEventListener("click", () => this._arenaStart(null, b.dataset.arenaVan)));
     r.querySelector("#arena-fortsatt")?.addEventListener("click", () => this._arenaVisa());
@@ -5077,6 +5255,31 @@ const CSS = `
   .attack-knapp:disabled { opacity:.4; cursor:default; }
   .attack-sak.svag { outline:2px solid #fbc02d; }
   .sak-kort.svag { outline:2px solid #fbc02d; }
+  .lag-folk { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0; }
+  .lag-pers { flex:1 1 120px; display:flex; flex-direction:column; align-items:center; gap:2px; background:rgba(127,127,127,.08); border-radius:12px; padding:8px; text-align:center; }
+  .lag-djur, .ls-djur { width:64px; height:64px; position:relative; font-size:44px; }
+  .lag-djur svg, .ls-djur svg { width:100%; height:100%; }
+  .lagboss { display:flex; gap:12px; align-items:center; }
+  .lagboss-figur { font-size:56px; }
+  .lagboss.klar { outline:2px solid #fbc02d; }
+  .lag-bidrag { display:flex; gap:10px; flex-wrap:wrap; font-size:13px; margin-top:4px; }
+  .lag-marken { display:flex; flex-wrap:wrap; gap:8px; font-size:20px; }
+  .ls-plan { background:linear-gradient(#311b92,#4a148c 55%,#1a237e); color:#fff; border-radius:16px; padding:10px; display:flex; flex-direction:column; gap:6px; }
+  .ls-rad { display:flex; justify-content:center; gap:10px; }
+  .ls-pers { display:flex; flex-direction:column; align-items:center; gap:2px; padding:6px; border-radius:12px; min-width:92px; background:rgba(255,255,255,.08); transition:opacity .3s; }
+  .ls-pers[data-ls-mal] { cursor:pointer; }
+  .ls-pers.mal { outline:2px solid #ffeb3b; }
+  .ls-pers.ute { opacity:.4; }
+  .ls-pers.traff .ls-djur { animation:lsTraff .5s ease-out 2; }
+  @keyframes lsTraff { 0%,100% { transform:none; filter:none; } 30% { transform:translateX(-6px); filter:brightness(2) saturate(0); } 60% { transform:translateX(6px); } }
+  .ls-skold { position:absolute; right:-8px; bottom:-4px; font-size:22px; }
+  .ls-liv { width:80px; height:8px; }
+  .ls-liv div { background:linear-gradient(90deg,#00c853,#b2ff59); }
+  .ls-vs { text-align:center; font-weight:900; font-size:20px; color:#ffeb3b; }
+  .ls-logg { list-style:none; padding:8px; margin:8px 0; font-size:13px; background:rgba(127,127,127,.1); border-radius:10px; }
+  .ls-logg li.de { color:#e57373; }
+  .ls-slut { font-size:22px; font-weight:800; text-align:center; margin:10px 0; }
+  .ls-slut.vinst { color:#f9a825; animation:lsTraff .6s; }
   .sak-kort.vald { outline:3px solid #42a5f5; box-shadow:0 0 10px rgba(66,165,245,.5); }
   .liv-rad { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:13px; }
   .liv-rad .djur-liv { flex:1; height:10px; margin:0; } .liv-rad .djur-liv div { background:linear-gradient(90deg,#00c853,#69f0ae); }
