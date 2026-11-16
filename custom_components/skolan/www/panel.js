@@ -1495,6 +1495,13 @@ class SkolanPanel extends HTMLElement {
     const attackHtml = am ? `<h3>⚔️ Attacker för kartan</h3>
       <div class="small muted">Attackerna laddas med ⚡ energi när du pluggar. Varje monster är svagt mot en typ och tar då dubbel skada.</div>
       <div class="sak-rutnat">${am.attacker.map(attackKort).join("")}</div>
+      <h3>⚡ Energi</h3>
+      <div class="small muted">Du har ⚡ ${am.energi} av ${am.energi_max}. Pluggar du får du 1 ⚡ per ${am.p_energi} ⭐ och behåller stjärnorna. Du kan också köpa energi, högst ${am.energi_kop_kvar ?? 0} till idag.</div>
+      <div class="sak-rutnat">${[1, 3].map((n) => {
+        const pris = n * am.energi_pris, kan = saldo >= pris && am.energi + n <= am.energi_max && (am.energi_kop_kvar ?? 0) >= n;
+        return `<div class="sak-kort"><div class="sak-ikon">⚡</div><div class="small"><b>${n} energi</b></div>
+          ${titta ? `<span class="small muted">${pris} ⭐</span>` : `<button class="mini ${kan ? "primary" : ""}" data-energi-kop="${n}" ${kan && !this._busy ? "" : "disabled"}>${pris} ⭐</button>`}</div>`;
+      }).join("")}</div>
       <h3>🧪 Livdrycker</h3>
       <div class="small muted">❤️ ${am.liv} av ${am.liv_max} liv. Monstren slår tillbaka när ${esc(d.namn)} attackerar. Plugga (1 ❤️ per ${am.p_liv} ⭐) eller drick en livdryck. Dryckerna hamnar i ryggsäcken 🎒.</div>
       <div class="sak-rutnat">${(am.drycker || []).map((x) => {
@@ -1641,6 +1648,13 @@ class SkolanPanel extends HTMLElement {
           <span><b>${esc(t.namn)}</b>${t.karta.djur ? ` · ${esc(t.karta.djur)}` : ""}<br><span class="small">⬆️ ${t.karta.djur_niva || 1} · 💪 CP ${t.karta.cp || 0}</span></span>
           ${barn && t.karta.art && !a.pagar ? `<button class="mini primary" data-arena-mot="${esc(t.id)}" ${k.energi >= 1 && !this._busy ? "" : "disabled"}>Utmana · 1⚡</button>` : ""}</li>`).join("")}</ul>`
         : `<p class="muted">Ingen att utmana än.</p>`}
+      ${(this._vanner?.vanner || []).length ? `<h3>🤝 Vänner</h3><ul class="lista arena-lista">${this._vanner.vanner.map((x) => {
+          const ver = x.arena_ver || 0;
+          const hinder = !ver ? "Har en äldre Skolan" : ver < a.ver ? "Behöver uppdatera Skolan" : ver > a.ver ? "Du behöver uppdatera Skolan" : "";
+          return `<li><span class="van-djur">${x.art ? ritaDjur(x.art, "glad", Math.max(1, x.steg || 1), {}) : "🥚"}</span>
+            <span><b>${esc(x.smeknamn)}</b><br><span class="small">${hinder ? `⚠️ ${hinder}` : `🗺️ ${x.niva}`}</span></span>
+            ${barn && x.art && !a.pagar && !hinder ? `<button class="mini primary" data-arena-van="${esc(x.kod)}" ${k.energi >= 1 && !this._busy ? "" : "disabled"}>Utmana · 1⚡</button>` : ""}</li>`;
+        }).join("")}</ul><p class="small muted">Vänner i andra hem behöver samma version av Skolan för att ni ska kunna strida.</p>` : ""}
       <p class="small muted">Arenan kostar 1 ⚡. Striden tar inget riktigt liv. Vinst ger ${10} 🏆 och XP, förlust ${2} 🏆. Varje tur får man 1 stridsenergi, och starka attacker kostar mer.</p>
       <h3>🏆 Arenans topplista</h3>
       <ol class="lista">${tabell.map((t) => `<li>${esc(t.namn)} · ${t.karta.arena_poang || 0} 🏆</li>`).join("")}</ol>
@@ -1664,9 +1678,9 @@ class SkolanPanel extends HTMLElement {
     if (a) this._strid(this._arenaO(a, null, { idle: true, live: true }));
   }
 
-  async _arenaStart(mot) {
+  async _arenaStart(mot, van = null) {
     if (this._busy) return;
-    if (!(await this._act("arena_start", { mot }))) return this._render();
+    if (!(await this._act("arena_start", van ? { van } : { mot }))) return this._render();
     await this._load();
     this._arenaVisa();
   }
@@ -2236,6 +2250,7 @@ class SkolanPanel extends HTMLElement {
 
       ${kort("❤️", "Husdjurets liv och nivå", [
         `Husdjuret får tillbaka 1 ❤️ liv för varje 3 ⭐ du tjänar.`,
+        `⚡ Energi kan du också köpa i butiken: <b>20 ⭐</b> per ⚡, högst 5 per dag.`,
         `🧪 Livdrycker köper du i butiken och har i ryggsäcken (högst 5 av varje). 🪶 Fenixfjädern väcker ett utmattat husdjur.`,
         `Allt du tjänar ger husdjuret XP. Ny nivå ger mer ❤️ liv och starkare attacker. <b>CP</b> visar hur starkt husdjuret är.`,
       ])}
@@ -4123,6 +4138,7 @@ class SkolanPanel extends HTMLElement {
     on("#open-karta", () => this._go({ name: "karta" }));
     on("#open-arena", () => this._go({ name: "arena" }));
     r.querySelectorAll("[data-arena-mot]").forEach((b) => b.addEventListener("click", () => this._arenaStart(b.dataset.arenaMot)));
+    r.querySelectorAll("[data-arena-van]").forEach((b) => b.addEventListener("click", () => this._arenaStart(null, b.dataset.arenaVan)));
     r.querySelector("#arena-fortsatt")?.addEventListener("click", () => this._arenaVisa());
     r.querySelectorAll("[data-arena-repris]").forEach((b) => b.addEventListener("click", () => this._arenaRepris(b.dataset.arenaRepris)));
     on("#open-vanner", () => this._go({ name: "vanner" }));
@@ -4186,6 +4202,14 @@ class SkolanPanel extends HTMLElement {
         if (!x || !confirm(`Lära ${this._s.meriter?.djur?.namn || "husdjuret"} ${x.namn} ${x.ikon} för ${x.pris} ⭐?`)) return;
         if (await this._act("attack_kop", { attack: x.id })) { this._msg = { type: "ok", text: `${x.ikon} ${x.namn} är inlärd! Använd den på bossen.` }; await this._load(); }
         this._render();
+      })
+    );
+    r.querySelectorAll("[data-energi-kop]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        if (await this._act("energi_kop", { n: Number(b.dataset.energiKop) })) {
+          this._msg = { type: "ok", text: `+${b.dataset.energiKop} ⚡ energi!` };
+          this._load();
+        }
       })
     );
     r.querySelectorAll("[data-dryck-kop]").forEach((b) =>

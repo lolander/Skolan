@@ -10,6 +10,7 @@ så att samma sak aldrig ger meriter två gånger.
 
 from __future__ import annotations
 
+import math
 import random
 from datetime import date, datetime, timedelta
 
@@ -1494,7 +1495,8 @@ def karta_status(data: dict) -> dict:
     return {"niva": n, "hp": k["hp"], "skada": min(k["skada"], k["hp"]), "monster": info, "dagar": niva_dagar(n),
             "liv": djur_liv(data)[0], "liv_max": djur_liv(data)[1], "p_liv": P_LIV,
             "drycker": [{**x, "antal": k.get("drycker", {}).get(x["id"], 0)} for x in DRYCKER], "dryck_max": DRYCK_MAX,
-            "energi": k.get("energi", 0), "energi_max": ENERGI_MAX, "p_energi": P_ENERGI, "attacker": lista, "typer": TYPER,
+            "energi": k.get("energi", 0), "energi_max": ENERGI_MAX, "p_energi": P_ENERGI,
+            "energi_pris": ENERGI_PRIS, "energi_kop_kvar": ENERGI_KOP_DAG - _energi_kopt(k), "attacker": lista, "typer": TYPER,
             "super_anvand": k.get("super") == vecka, "senaste": k.get("senaste"), "karta": karta,
             "stjarnor_tot": sum(k["stjarnor"].values()), "klara": k.get("klara", [])[-3:], "laxor": laxor, "prov": prov}
 
@@ -1638,6 +1640,34 @@ def dryck_kop(data: dict, dryck_id: str) -> None:
     lager[dryck_id] = lager.get(dryck_id, 0) + 1
 
 
+ENERGI_PRIS = 20  # ⭐ per köpt ⚡ (pluggar man får man 1 ⚡ per 25 ⭐ och behåller stjärnorna)
+ENERGI_KOP_DAG = 5  # högst så många ⚡ köpta per dag, så att plugget är det viktiga
+
+
+def _energi_kopt(k: dict) -> int:
+    idag = dt_util.now().date().isoformat()
+    x = k.get("energi_kopt") or {}
+    return x.get("n", 0) if x.get("dag") == idag else 0
+
+
+def energi_kop(data: dict, n: int) -> None:
+    m, k = _m(data), _karta(data)
+    if not m.get("djur"):
+        raise ValueError("Du behöver ett husdjur först.")
+    n = max(1, min(ENERGI_KOP_DAG, int(n or 1)))
+    if k.get("energi", 0) + n > ENERGI_MAX:
+        raise ValueError(f"Du får bara ha {ENERGI_MAX} ⚡ (du har {k.get('energi', 0)}).")
+    kopt = _energi_kopt(k)
+    if kopt + n > ENERGI_KOP_DAG:
+        raise ValueError(f"Du kan köpa högst {ENERGI_KOP_DAG} ⚡ per dag ({ENERGI_KOP_DAG - kopt} kvar idag). Plugga så laddas den!")
+    pris = n * ENERGI_PRIS
+    if m.get("saldo", 0) < pris:
+        raise ValueError(f"Du behöver {pris} ⭐ (du har {m.get('saldo', 0)}).")
+    ge(data, -pris, f"⚡ Köpte {n} energi", None, "🛍️")
+    k["energi"] = k.get("energi", 0) + n
+    k["energi_kopt"] = {"dag": dt_util.now().date().isoformat(), "n": kopt + n}
+
+
 def dryck(data: dict, dryck_id: str) -> dict:
     """Husdjuret dricker en dryck ur ryggsäcken."""
     m = _m(data)
@@ -1744,6 +1774,9 @@ ARENA_MISS = 0.1
 ARENA_GANGER = 3  # arenan går snabbare än kartan
 ARENA_VINST, ARENA_FORLUST = 10, 2  # arenapoäng 🏆
 ARENA_XP_VINST, ARENA_XP_FORLUST = 15, 5
+# Arenaversion för strider mellan vänner i olika hem. Höj den när regler, drag eller skada ändras
+# så att en strid mot en annan version skulle bli fel. Båda hemmen måste ha samma version för att strida.
+ARENA_VER = 1
 
 
 def _kampe(data: dict, agare: str) -> dict:
@@ -1763,17 +1796,55 @@ def _drag_info(at_id: str) -> dict:
     return KNUFF if at_id == "knuff" else next(x for x in ATTACKER if x["id"] == at_id)
 
 
-def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict) -> dict:
+def arena_kampe(data: dict) -> dict | None:
+    """Det en vän i ett annat hem får veta om husdjuret för att kunna utmana det."""
+    if not _m(data).get("djur"):
+        return None
+    k = _kampe(data, "")
+    return {x: k[x] for x in ("namn", "art", "steg", "niva", "cp", "max", "drag")}
+
+
+def _int(v, lo: int, hi: int) -> int:
+    try:
+        return max(lo, min(hi, int(v)))
+    except (TypeError, ValueError):
+        return lo
+
+
+def rensa_kampe(k: dict, agare: str) -> tuple[dict, int]:
+    """Kontrollera en väns husdjur från ett annat hem. Drag vi inte känner till tas bort, och inga värden
+    får vara större än vad som går att få i Skolan. Returnerar (kämpe, antal borttagna drag)."""
+    if not isinstance(k, dict) or not isinstance(k.get("drag"), dict):
+        raise ValueError("Vännens husdjur gick inte att läsa.")
+    kraft_max = 1 + (DJUR_NIVA_MAX - 1) * 0.02
+    kanda = {"knuff": KNUFF, **{x["id"]: x for x in ATTACKER}}
+    drag, okanda = {}, 0
+    for at_id, varde in list(k["drag"].items())[:30]:
+        at = kanda.get(at_id)
+        if not at:
+            okanda += 1
+            continue
+        tak = math.ceil((at["skada"] * 2 + 3) * kraft_max * ARENA_GANGER * 1.2)
+        drag[at_id] = _int(varde, 1, tak)
+    drag.setdefault("knuff", KNUFF["skada"] * ARENA_GANGER)
+    liv_tak = LIV_MAX[-1] + (DJUR_NIVA_MAX - 1) * 4
+    mx = _int(k.get("max"), 1, liv_tak)
+    return {"agare": str(agare)[:16], "namn": str(k.get("namn") or "?")[:20], "art": str(k.get("art") or "")[:8],
+            "steg": _int(k.get("steg"), 0, 4), "niva": _int(k.get("niva"), 1, DJUR_NIVA_MAX), "cp": _int(k.get("cp"), 0, 10**6),
+            "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag}, okanda
+
+
+def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict | None = None, de: dict | None = None) -> dict:
     m = _m(data)
     if not m.get("djur"):
         raise ValueError("Du behöver ett husdjur först.")
-    if not _m(mot_data).get("djur"):
+    if de is None and not _m(mot_data).get("djur"):
         raise ValueError(f"{mot_namn} har inget husdjur än.")
     k = _karta(data)
     if k.get("energi", 0) < 1:
         raise ValueError("Du behöver 1 ⚡ energi för att gå in i arenan. Plugga så laddas den!")
     k["energi"] -= 1
-    k["arena"] = {"mot": mot_id, "mot_namn": mot_namn, "jag": _kampe(data, jag), "de": _kampe(mot_data, mot_namn),
+    k["arena"] = {"mot": mot_id, "mot_namn": mot_namn, "jag": _kampe(data, jag), "de": de or _kampe(mot_data, mot_namn),
                   "turer": [], "start": dt_util.now().isoformat(timespec="seconds")}
     return k["arena"]
 
@@ -1848,7 +1919,7 @@ def arena_status(data: dict) -> dict:
     n = djur_niva(data)
     return {"niva": n, "cp": djur_cp(data), "kraft": round(djur_kraft(data), 2), "poang": k.get("arena_poang", 0),
             "vinster": _m(data)["raknare"].get("arena_vinster", 0), "pagar": a, "hist": k.get("arena_hist", [])[-5:],
-            "knuff": KNUFF, "ap_max": ARENA_AP_MAX, "drag": {x["id"]: {y: x[y] for y in ("ikon", "namn", "typ", "energi")} for x in [KNUFF, *ATTACKER]}}
+            "knuff": KNUFF, "ap_max": ARENA_AP_MAX, "ver": ARENA_VER, "drag": {x["id"]: {y: x[y] for y in ("ikon", "namn", "typ", "energi")} for x in [KNUFF, *ATTACKER]}}
 
 
 # ---------- husdjurets rum ----------

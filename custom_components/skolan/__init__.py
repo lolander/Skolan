@@ -43,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.33.1"
+VERSION = "1.34.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -483,6 +483,9 @@ class VanPublikView(HomeAssistantView):
         k = await hass.async_add_executor_job(_vanner_kort, hass, b["id"], v)
         if not k:
             raise web.HTTPNotFound
+        if request.query.get("arena"):  # en vän vill strida: husdjurets stridsvärden + versioner
+            data = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
+            return self.json({"v": 1, "arena_ver": meriter.ARENA_VER, "skolan": VERSION, "kampe": meriter.arena_kampe(data)})
         if request.query.get("json"):
             return self.json(k)
         lank = html.escape(str(request.url.with_query(None)))
@@ -743,6 +746,9 @@ class ActionView(HomeAssistantView):
     async def post(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
         body = await request.json()
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest
+        body = {k: v for k, v in body.items() if not str(k).startswith("_")}  # _-fält sätts bara av servern
         barn = _barn_for(hass, request, body.get("barn"))
         foralder = _ar_foralder(hass, request)
         body["_barn"] = not foralder  # meriter bara när barnet själv gör något
@@ -750,7 +756,23 @@ class ActionView(HomeAssistantView):
         if op in FORALDER_OPS and not foralder:
             raise web.HTTPForbidden
         path = _dir(hass, barn)
-        if op == "arena_start":  # motståndarens data läses bara, ändras aldrig
+        if op == "arena_start" and body.get("van"):  # vän i ett annat hem
+            from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+            if not vanner.pa():
+                raise web.HTTPForbidden
+            v = await hass.async_add_executor_job(vanner.las, _dir(hass, barn))
+            van = next((x for x in v["vanner"] if x["kod"] == body.get("van")), None)
+            if not van:
+                return self.json_message("Den vännen finns inte.", 400)
+            try:
+                k = await vanner.hamta_kampe(async_get_clientsession(hass), van["kod"], van["smeknamn"])
+                de, _okanda = meriter.rensa_kampe(k, van["smeknamn"])
+            except ValueError as err:
+                return self.json_message(str(err), 400)
+            jag = next(b for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn)
+            body["_van"] = ("van:" + van["kod"].rsplit("/", 1)[-1][:12], van["smeknamn"], de, jag["namn"])
+        elif op == "arena_start":  # motståndarens data läses bara, ändras aldrig
             conf = hass.data[DOMAIN]["conf"]
             mot = next((b for b in conf["barn"] if b["id"] == body.get("mot") and b["id"] != barn), None)
             if not mot:
@@ -836,7 +858,7 @@ def _apply(data: dict, body: dict) -> list[str]:
         if body.get("_barn"):  # föräldrar som provar övningen betalar inget
             meriter.kop_tips(data)
         return []
-    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
+    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck", "energi_kop", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
         if op == "djur":
@@ -855,13 +877,19 @@ def _apply(data: dict, body: dict) -> list[str]:
             meriter.attack(data, str(body.get("attack") or ""))
         elif op == "dryck_kop":
             meriter.dryck_kop(data, str(body.get("dryck") or ""))
+        elif op == "energi_kop":
+            meriter.energi_kop(data, int(body.get("n") or 1))
         elif op == "dryck":
             meriter.dryck(data, str(body.get("dryck") or ""))
         elif op == "arena_start":
-            if "_mot" not in body:
+            if "_van" in body:
+                mot_id, mot_namn, de, jag_namn = body["_van"]
+                meriter.arena_start(data, jag_namn, mot_id, mot_namn, de=de)
+            elif "_mot" in body:
+                mot_id, mot_namn, mot_data, jag_namn = body["_mot"]
+                meriter.arena_start(data, jag_namn, mot_id, mot_namn, mot_data)
+            else:
                 raise ValueError("Välj en motståndare.")
-            mot_id, mot_namn, mot_data, jag_namn = body["_mot"]
-            meriter.arena_start(data, jag_namn, mot_id, mot_namn, mot_data)
         elif op == "arena_drag":
             meriter.arena_drag(data, str(body.get("drag") or ""))
         elif op == "arena_ge_upp":

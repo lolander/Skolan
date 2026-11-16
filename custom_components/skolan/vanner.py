@@ -103,7 +103,7 @@ def kort(v: dict, karta: dict, titel: str | None) -> dict | None:
         return None
     return {"v": 1, "smeknamn": v["smeknamn"], "art": karta.get("art"), "niva": karta.get("niva", 1),
             "stjarnor": karta.get("stjarnor", 0), "titel": titel or "", "steg": karta.get("steg", 0),
-            "attack": (karta.get("repriser") or [None])[-1]}
+            "attack": (karta.get("repriser") or [None])[-1], "arena_ver": meriter.ARENA_VER}
 
 
 def publik(v: dict, foralder: bool, bas: str) -> dict:
@@ -118,7 +118,8 @@ def _rensa_kort(k: dict) -> dict:
     return {"smeknamn": str(k.get("smeknamn") or "?")[:16], "art": str(k.get("art") or "")[:8],
             "niva": max(1, min(100000, int(k.get("niva") or 1))), "stjarnor": max(0, min(10**6, int(k.get("stjarnor") or 0))),
             "titel": str(k.get("titel") or "")[:40], "steg": max(0, min(4, int(k.get("steg") or 0))),
-            "attack": meriter.repris(k["attack"]) if isinstance(k.get("attack"), dict) else None}
+            "attack": meriter.repris(k["attack"]) if isinstance(k.get("attack"), dict) else None,
+            "arena_ver": max(0, min(10**6, int(k.get("arena_ver") or 0)))}  # 0 = vännens Skolan kan inte vänstrider
 
 
 # ---------- ändringar ----------
@@ -203,6 +204,34 @@ async def hamta_kort(session, kod: str) -> dict:
         raise
     except Exception as err:  # noqa: BLE001
         raise ValueError("Kunde inte nå kompisens Home Assistant just nu.") from err
+
+
+def arena_koll(svar: dict, namn: str) -> None:
+    """Versionskoll innan en vänstrid: båda hemmen måste ha samma arenaversion."""
+    deras = svar.get("arena_ver") if isinstance(svar, dict) else None
+    if not isinstance(deras, int) or "kampe" not in svar:
+        raise ValueError(f"{namn} har en äldre Skolan som inte kan vänstrider än. Be en förälder där uppdatera Skolan.")
+    if deras < meriter.ARENA_VER:
+        raise ValueError(f"{namn} har en äldre version av Skolan ({str(svar.get('skolan') or '?')[:12]}). Be en förälder där uppdatera, så kan ni strida.")
+    if deras > meriter.ARENA_VER:
+        raise ValueError(f"{namn} har en nyare version av Skolan ({str(svar.get('skolan') or '?')[:12]}). Be mamma eller pappa uppdatera din Skolan, så kan ni strida.")
+    if not svar.get("kampe"):
+        raise ValueError(f"{namn} har inget husdjur än.")
+
+
+async def hamta_kampe(session, kod: str, namn: str) -> dict:
+    """Hämta vännens husdjur för arenan direkt från vännens server, med versionskoll."""
+    try:
+        async with session.get(f"{kod}?json=1&arena=1", timeout=TIMEOUT, allow_redirects=False) as r:
+            if r.status != 200:
+                raise ValueError(f"{namn} går inte att nå just nu.")
+            svar = json.loads(await r.content.read(8192))
+    except ValueError:
+        raise
+    except Exception as err:  # noqa: BLE001
+        raise ValueError(f"Kunde inte nå {namn} just nu.") from err
+    arena_koll(svar, namn)
+    return svar["kampe"]
 
 
 async def skicka_forfragan(session, kod: str, egen: str, smeknamn: str) -> None:
