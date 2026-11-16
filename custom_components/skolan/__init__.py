@@ -42,7 +42,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.28.4"
+VERSION = "1.29.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -708,7 +708,7 @@ class StateView(HomeAssistantView):
                 "djurlista": meriter.DJUR,
                 "djurbutik": meriter.butik_lista(),
                 "pass": meriter.pass_status(data),
-                "karta": meriter.karta_status(data),
+                "karta": meriter.karta_status(data), "arena": meriter.arena_status(data),
                 "rum_platser": meriter.RUM_PLATSER,
                 "varianter": meriter.VARIANTER,
                 "titel": meriter.titel(data),
@@ -749,6 +749,13 @@ class ActionView(HomeAssistantView):
         if op in FORALDER_OPS and not foralder:
             raise web.HTTPForbidden
         path = _dir(hass, barn)
+        if op == "arena_start":  # motståndarens data läses bara, ändras aldrig
+            conf = hass.data[DOMAIN]["conf"]
+            mot = next((b for b in conf["barn"] if b["id"] == body.get("mot") and b["id"] != barn), None)
+            if not mot:
+                return self.json_message("Den motståndaren finns inte.", 400)
+            jag = next(b for b in conf["barn"] if b["id"] == barn)
+            body["_mot"] = (mot["id"], mot["namn"], await hass.async_add_executor_job(_load, _dir(hass, mot["id"])), jag["namn"])
         if op.startswith("butik_"):
             f = hass.data[DOMAIN]["base"] / "butik.json"
             butik = await hass.async_add_executor_job(_load_fil, f)
@@ -821,7 +828,7 @@ def _apply(data: dict, body: dict) -> list[str]:
     """Utför en ändring i barnets data. Returnerar filer som ska raderas."""
     op = body.get("op")
     amnen = data.setdefault("amnen", [])
-    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
+    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
         if op == "djur":
@@ -842,6 +849,15 @@ def _apply(data: dict, body: dict) -> list[str]:
             meriter.dryck_kop(data, str(body.get("dryck") or ""))
         elif op == "dryck":
             meriter.dryck(data, str(body.get("dryck") or ""))
+        elif op == "arena_start":
+            if "_mot" not in body:
+                raise ValueError("Välj en motståndare.")
+            mot_id, mot_namn, mot_data, jag_namn = body["_mot"]
+            meriter.arena_start(data, jag_namn, mot_id, mot_namn, mot_data)
+        elif op == "arena_drag":
+            meriter.arena_drag(data, str(body.get("drag") or ""))
+        elif op == "arena_ge_upp":
+            meriter.arena_ge_upp(data)
         else:
             meriter.djur_pa(data, str(body.get("typ") or ""), body.get("sak") or None)
         return []

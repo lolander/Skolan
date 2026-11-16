@@ -315,6 +315,9 @@ const STRID_CSS = `
 #skolan-strid.dricker .hjalte .kropp { animation:sDrick 1.2s ease-out; }
 #skolan-strid .laktal { top:-30%; left:50%; font-size:34px; color:#69f0ae; animation:sSeger .4s ease-out forwards; }
 @keyframes sDrick { 0% { filter:none; } 30% { filter:drop-shadow(0 0 18px #69f0ae) brightness(1.4); transform:translateY(-10px); } 100% { filter:none; transform:none; } }
+#skolan-strid .djur-fiende .figur { width:min(34vw,170px); height:min(34vw,170px); }
+#skolan-strid .djur-fiende .figur svg { width:100%; height:100%; }
+#skolan-strid .tal.jagmiss span { color:#e0e0e0; font-size:32px; }
 #skolan-strid .vem { position:absolute; top:calc(6% + 52px); left:50%; transform:translateX(-50%); font-size:14px; font-weight:700; background:rgba(0,0,0,.45); padding:3px 12px; border-radius:12px; white-space:nowrap; }
 #skolan-strid .fiende { position:absolute; left:4%; top:30%; width:44%; height:40%; display:flex; align-items:center; justify-content:center; }
 #skolan-strid .figur { font-size:min(28vw,150px); filter:drop-shadow(0 10px 8px rgba(0,0,0,.6)); animation:sFiendeIdle 2s ease-in-out infinite, sTraff calc(.55s*var(--f)) ease-out calc(1.7s*var(--f)); }
@@ -912,6 +915,10 @@ class SkolanPanel extends HTMLElement {
       title = "🤝 Vänner";
       back = { name: "hem" };
       body = this._vannerView();
+    } else if (v.name === "arena") {
+      title = "🏟️ Arenan";
+      back = { name: "hem" };
+      body = this._arenaView();
     } else if (v.name === "karta") {
       title = "🗺️ Äventyrskartan";
       back = { name: "hem" };
@@ -1415,7 +1422,16 @@ class SkolanPanel extends HTMLElement {
     const kvar = k.hp - k.skada, anim = this._attackAnim;
     let attacker = "";
     const ko = d && k.liv <= 0;
-    const livRad = d ? `<div class="liv-rad"><span>❤️ ${esc(d.namn)}</span><div class="progress djur-liv ${k.liv / k.liv_max < 0.3 ? "lag" : ""}"><div style="width:${Math.round((k.liv / k.liv_max) * 100)}%"></div></div><b>${k.liv}/${k.liv_max}</b></div>
+    const an = this._s.arena;
+    let upp = false;
+    if (an && d && barn) {
+      try {
+        const nyckel = `skolan_djurniva_${this._s.barn}`, sedd = Number(localStorage.getItem(nyckel) || 0);
+        if (sedd && an.niva.niva > sedd) upp = true;
+        if (!sedd || an.niva.niva > sedd) setTimeout(() => { try { localStorage.setItem(nyckel, an.niva.niva); } catch (e) { /* privat läge */ } }, 8000);
+      } catch (e) { /* privat läge */ }
+    }
+    const livRad = d ? `${upp ? `<div class="niva-upp">⬆️ ${esc(d.namn)} nådde nivå ${an.niva.niva}! Mer ❤️ liv och 💪 starkare attacker.</div>` : ""}${an ? `<div class="small djur-niva">⬆️ Nivå ${an.niva.niva} · 💪 CP ${an.cp}${an.niva.till ? ` · <span class="muted">${an.niva.xp - an.niva.fran}/${an.niva.till - an.niva.fran} XP</span>` : ""}</div>` : ""}<div class="liv-rad"><span>❤️ ${esc(d.namn)}</span><div class="progress djur-liv ${k.liv / k.liv_max < 0.3 ? "lag" : ""}"><div style="width:${Math.round((k.liv / k.liv_max) * 100)}%"></div></div><b>${k.liv}/${k.liv_max}</b></div>
       ${barn && (k.drycker || []).some((x) => x.antal) ? `<div class="attack-rad">🎒 ${(k.drycker || []).filter((x) => x.antal).map((x) => {
         const kan = !this._busy && (x.id === "d_fenix" ? ko : k.liv < k.liv_max);
         return `<button class="mini dryck-knapp" data-dryck="${x.id}" ${kan ? "" : "disabled"} title="${esc(x.namn)}: ${esc(x.info)}">${x.ikon} ×${x.antal}</button>`;
@@ -1447,8 +1463,97 @@ class SkolanPanel extends HTMLElement {
         ${d ? `<button class="mini primary strid-knapp" id="till-strid">${barn ? "⚔️ Till strid" : "👀 Se striden"}</button>` : ""}
         ${attacker}
         ${this._reprisRad()}
-        <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
+        <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${d ? ` <button class="mini karta-knapp" id="open-arena">🏟️ Arenan${this._s.arena?.pagar ? " ⚔️" : ""}</button>` : ""}${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
       </div></div>`;
+  }
+
+  // ---------- arenan ----------
+  _arenaView() {
+    const s = this._s, a = s.arena, d = s.meriter?.djur, barn = !s.kan_valja;
+    if (!a || !d) return `<p class="muted">Skaffa ett husdjur först.</p>`;
+    const n = a.niva, pct = n.till ? Math.round(((n.xp - n.fran) / (n.till - n.fran)) * 100) : 100;
+    const andra = (s.topplista || []).filter((t) => t.id !== s.barn && t.karta);
+    const mig = (s.topplista || []).find((t) => t.id === s.barn);
+    const tabell = [...(s.topplista || [])].filter((t) => t.karta).sort((x, y) => (y.karta.arena_poang || 0) - (x.karta.arena_poang || 0));
+    this._arenaHist = {};
+    const hist = [];
+    (a.hist || []).forEach((h, i) => { this._arenaHist[`jag${i}`] = { h, vem: barn ? "Du" : s.namn }; hist.push({ h, nyckel: `jag${i}`, text: `${barn ? "Du" : esc(s.namn)} mot ${esc(h.mot_namn)}`, vann: h.vann }); });
+    andra.forEach((t) => (t.karta.arena_hist || []).forEach((h, i) => {
+      if (h.mot !== s.barn) return;
+      this._arenaHist[`${t.id}${i}`] = { h, vem: t.namn };
+      hist.push({ h, nyckel: `${t.id}${i}`, text: `${esc(t.namn)} utmanade ${barn ? "dig" : esc(s.namn)}`, vann: !h.vann });
+    }));
+    hist.sort((x, y) => (y.h.tid || "").localeCompare(x.h.tid || ""));
+    const k = s.karta;
+    return `<div class="card arena-jag">
+        <div class="arena-djur">${ritaDjur(d.art, d.humor || "glad", Math.max(1, d.steg), {})}</div>
+        <div><h3 style="margin:0">${esc(d.namn)}</h3>
+          <div>⬆️ Nivå <b>${n.niva}</b> · 💪 CP <b>${a.cp}</b> · ❤️ ${k.liv_max}</div>
+          <div class="progress"><div style="width:${pct}%"></div></div>
+          <div class="small muted">${n.till ? `${n.xp - n.fran} av ${n.till - n.fran} XP till nivå ${n.niva + 1}. Allt du pluggar ger XP.` : "Högsta nivån!"}</div>
+          <div class="small">🏆 ${a.poang} arenapoäng · ${a.vinster} vinster · ⚡ ${k.energi}</div></div></div>
+      ${a.pagar ? `<button class="primary" id="arena-fortsatt">⚔️ Fortsätt striden mot ${esc(a.pagar.mot_namn)}</button>` : ""}
+      <h3>⚔️ Utmana</h3>
+      ${andra.length ? `<ul class="lista arena-lista">${andra.map((t) => `<li><span class="van-djur">${t.karta.art ? ritaDjur(t.karta.art, "glad", Math.max(1, t.karta.steg || 1), {}) : "🥚"}</span>
+          <span><b>${esc(t.namn)}</b>${t.karta.djur ? ` · ${esc(t.karta.djur)}` : ""}<br><span class="small">⬆️ ${t.karta.djur_niva || 1} · 💪 CP ${t.karta.cp || 0}</span></span>
+          ${barn && t.karta.art && !a.pagar ? `<button class="mini primary" data-arena-mot="${esc(t.id)}" ${k.energi >= 1 && !this._busy ? "" : "disabled"}>Utmana · 1⚡</button>` : ""}</li>`).join("")}</ul>`
+        : `<p class="muted">Ingen att utmana än.</p>`}
+      <p class="small muted">Arenan kostar 1 ⚡. Striden tar inget riktigt liv. Vinst ger ${10} 🏆 och XP, förlust ${2} 🏆. Varje tur får man 1 stridsenergi, och starka attacker kostar mer.</p>
+      <h3>🏆 Arenans topplista</h3>
+      <ol class="lista">${tabell.map((t) => `<li>${esc(t.namn)} · ${t.karta.arena_poang || 0} 🏆</li>`).join("")}</ol>
+      ${hist.length ? `<h3>📺 Senaste striderna</h3><ul class="lista">${hist.slice(0, 8).map((x) => `<li>${x.vann ? "🥇" : "💔"} ${x.text}
+          <button class="mini" data-arena-repris="${x.nyckel}">📺 Se</button></li>`).join("")}</ul>` : ""}
+      ${mig ? "" : ""}`;
+  }
+
+  _arenaO(a, tur, extra = {}) {
+    const info = this._s.arena?.drag || {};
+    const at = info[tur?.at] || { ikon: "⚔️", namn: "Strid", typ: "kraft" };
+    const motAt = tur?.mot_at ? info[tur.mot_at] : null;
+    return { at, djur: { art: a.jag.art, steg: Math.max(1, a.jag.steg), namn: a.jag.namn }, motDjur: { art: a.de.art, steg: Math.max(1, a.de.steg) },
+      mon: { ikon: "", namn: `${a.de.namn}`, boss: false, varld: { farg: "#6a1b9a" } }, hp: a.de.max, kvar: tur ? tur.de_fore : a.de.liv,
+      skada: tur?.skada || 0, jagMiss: !!tur?.miss, svag: false, klar: tur?.slut === "vinst", mot: tur?.mot || 0, miss: !!tur?.mot_miss, motAt,
+      livFore: tur ? tur.jag_fore : a.jag.liv, livMax: a.jag.max, arena: true, ...extra };
+  }
+
+  _arenaVisa() {
+    const a = this._s.arena?.pagar;
+    if (a) this._strid(this._arenaO(a, null, { idle: true, live: true }));
+  }
+
+  async _arenaStart(mot) {
+    if (this._busy) return;
+    if (!(await this._act("arena_start", { mot }))) return this._render();
+    await this._load();
+    this._arenaVisa();
+  }
+
+  async _arenaDrag(drag) {
+    const fore = this._s.arena?.pagar;
+    if (!fore || this._busy) return false;
+    if (!(await this._act("arena_drag", { drag }))) return false;
+    const k = this._s.data?.meriter?.karta || {};
+    const a = k.arena || (k.arena_hist || []).at(-1);
+    const tur = a?.turer?.at(-1);
+    if (!tur) return false;
+    const laddat = this._load();
+    this._strid(this._arenaO({ ...fore, jag: { ...fore.jag }, de: { ...fore.de } }, tur, { live: true, fortsatt: true, laddat }));
+    await laddat;
+    return true;
+  }
+
+  // Spelar upp en hel arenastrid tur för tur.
+  _arenaRepris(nyckel) {
+    const x = this._arenaHist?.[nyckel];
+    if (!x) return;
+    const h = x.h, turer = h.turer || [];
+    let i = 0;
+    const nasta = () => {
+      if (i >= turer.length) return;
+      const tur = turer[i++];
+      this._strid(this._arenaO(h, tur, { vem: `${x.vem} mot ${h.mot_namn} · tur ${i}/${turer.length}`, fortsatt: i > 1, efter: i < turer.length ? nasta : null }));
+    };
+    nasta();
   }
 
   // Läget just nu, i den form stridsscenen vill ha.
@@ -1477,6 +1582,7 @@ class SkolanPanel extends HTMLElement {
     if (el.classList.contains("valjer") || !el.isConnected) return;
     el.classList.add("valjer");
     await o.laddat;
+    if (o.arena) return el.isConnected && this._arenaMeny(el, o);
     const k = this._s.karta, d = this._s.meriter?.djur;
     if (!k || !d || !el.isConnected) return;
     const satt = (sel, v) => el.querySelectorAll(sel).forEach((x) => { x.style.width = `${v * 100}%`; });
@@ -1528,6 +1634,44 @@ class SkolanPanel extends HTMLElement {
       }
       el.classList.remove("valjer");
       this._stridMeny(el, o);
+    };
+  }
+
+  _arenaMeny(el, o) {
+    const a = this._s.arena?.pagar, info = this._s.arena?.drag || {}, barn = !this._s.kan_valja;
+    const fel = this._msg?.type === "error" ? this._msg.text : "";
+    this._msg = null;
+    if (a) {
+      el.querySelectorAll(".hpbar:not(.liv) div, .bosshp div").forEach((x) => { x.style.width = `${(a.de.liv / a.de.max) * 100}%`; });
+      el.querySelectorAll(".hpnum").forEach((x) => { x.textContent = `${a.de.liv}/${a.de.max}`; });
+      el.querySelectorAll(".hpbar.liv div").forEach((x) => { x.style.width = `${(a.jag.liv / a.jag.max) * 100}%`; });
+      const ln = el.querySelector(".livnum");
+      if (ln) ln.textContent = `${a.jag.liv}/${a.jag.max}`;
+    }
+    const meny = el.querySelector(".kommandon") || el.querySelector(".ruta.hoger").appendChild(Object.assign(document.createElement("div"), { className: "kommandon" }));
+    el.querySelector(".kommando")?.remove();
+    meny.innerHTML = !a
+      ? `<button data-s-arena>🏟️ Till arenan</button><button data-s-lamna>🏃 Lämna</button>`
+      : `${fel ? `<div class="sfel">${esc(fel)}</div>` : ""}<div class="srubrik">⚔️ Drag · ⚡ ${a.jag.ap}</div>
+         ${Object.entries(a.jag.drag).map(([id, dmg]) => {
+           const x = info[id] || { ikon: "⚔️", namn: id, energi: 0 };
+           return `<button data-s-drag="${id}" ${barn && x.energi <= a.jag.ap ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${dmg}</small></button>`;
+         }).join("")}
+         <button data-s-geupp ${barn ? "" : "disabled"}>🏳️ Ge upp</button><button data-s-lamna>🏃 Pausa</button>`;
+    meny.onclick = async (e) => {
+      e.stopPropagation();
+      const b = e.target.closest("button");
+      if (!b || b.disabled || this._busy) return;
+      if (b.hasAttribute("data-s-lamna")) return el.dispatchEvent(new Event("stang"));
+      if (b.hasAttribute("data-s-arena")) { el.dispatchEvent(new Event("stang")); return this._go({ name: "arena" }); }
+      meny.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+      if (b.hasAttribute("data-s-geupp")) {
+        if (!confirm("Ge upp striden?")) { el.classList.remove("valjer"); return this._stridMeny(el, o); }
+        await this._act("arena_ge_upp");
+        await this._load();
+        return el.dispatchEvent(new Event("stang"));
+      }
+      if (!(await this._arenaDrag(b.dataset.sDrag))) { el.classList.remove("valjer"); this._stridMeny(el, o); }
     };
   }
 
@@ -1585,7 +1729,7 @@ class SkolanPanel extends HTMLElement {
       kraft: `<div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div><div class="jatte">💥</div>${partiklar(10, ["⭐", "✨"], "gnista")}`,
     }[typ] || "";
     if (o.idle) this._msg = null;
-    const siffror = String(o.skada).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("");
+    const siffror = (o.jagMiss ? "MISS!" : String(o.skada)).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("");
     const el = document.createElement("div");
     el.id = "skolan-strid";
     el.className = `strid t-${typ}${o.klar ? " seger" : ""}${o.svag ? " svag" : ""}${lugn ? " lugn" : ""}${motFas ? " mot" : ""}${o.miss ? " miss" : ""}${ko ? " ko" : ""}${o.idle ? " idle" : ""}${o.fortsatt ? " fortsatt" : ""}`;
@@ -1595,13 +1739,13 @@ class SkolanPanel extends HTMLElement {
       <div class="scen">
         <div class="mark"></div>
         <div class="namnruta">${o.at.ikon} ${esc(o.at.namn)}</div>${o.vem ? `<div class="vem">📺 ${esc(o.vem)}</div>` : ""}
-        <div class="fiende"><div class="bosshp"><div style="width:${(o.kvar / o.hp) * 100}%"></div><span class="hpnum">${o.kvar}/${o.hp}</span></div><div class="figur">${o.mon?.ikon || "👾"}</div><div class="fx">${effekt}</div>
-          <div class="tal ${o.svag ? "svag" : ""}">${siffror}${o.svag ? "<small>SVAG PUNKT!</small>" : ""}</div></div>
+        <div class="fiende ${o.motDjur ? "djur-fiende" : ""}"><div class="bosshp"><div style="width:${(o.kvar / o.hp) * 100}%"></div><span class="hpnum">${o.kvar}/${o.hp}</span></div><div class="figur">${o.motDjur ? ritaDjur(o.motDjur.art, ko ? "glad" : o.klar ? "hungrig" : "glad", o.motDjur.steg, {}) : o.mon?.ikon || "👾"}</div><div class="fx">${effekt}</div>
+          <div class="tal ${o.svag ? "svag" : ""} ${o.jagMiss ? "jagmiss" : ""}">${siffror}${o.svag ? "<small>SVAG PUNKT!</small>" : ""}</div></div>
         <div class="hjalte"><div class="kropp">${o.djur ? ritaDjur(o.djur.art, ko ? "hungrig" : "glad", Math.max(1, o.djur.steg), {}) : "🐾"}</div>
           ${motFas ? `<div class="tal motal">${o.miss ? "<span>MISS!</span>" : String(o.mot).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("")}</div>` : ""}</div>
-        ${motFas ? `<div class="motnamn">${o.mon?.ikon || "👾"} ${esc(o.mon?.boss ? o.mon.namn : "Monstret")} slår tillbaka!</div>` : ""}
-        ${ko ? `<div class="kotext">😵 ${esc(o.djur?.namn || "Husdjuret")} orkar inte mer<small>Plugga för att få tillbaka liv ❤️</small></div>` : ""}
-        <div class="segertext">SEGER!<small>Nivå klar 🎉</small></div>
+        ${motFas ? `<div class="motnamn">${o.motAt ? `${esc(o.mon?.namn || "")} använder ${o.motAt.ikon} ${esc(o.motAt.namn)}!` : `${o.mon?.ikon || "👾"} ${esc(o.mon?.boss ? o.mon.namn : "Monstret")} slår tillbaka!`}</div>` : ""}
+        ${ko ? `<div class="kotext">😵 ${esc(o.djur?.namn || "Husdjuret")} orkar inte mer<small>${o.arena ? "Förlust · +2 🏆 · bra kämpat!" : "Plugga för att få tillbaka liv ❤️"}</small></div>` : ""}
+        <div class="segertext">${o.arena ? "VINST!" : "SEGER!"}<small>${o.arena ? "+10 🏆 · +15 XP" : "Nivå klar 🎉"}</small></div>
         <div class="meny">
           <div class="ruta vanster"><div class="rad"><span>${esc(o.mon?.boss ? "👑 " + o.mon.namn : o.mon?.namn || "Monster")}</span><span class="hpnum">${o.kvar}/${o.hp}</span></div>
             <div class="hpbar"><div style="width:${(o.kvar / o.hp) * 100}%"></div></div></div>
@@ -1648,6 +1792,9 @@ class SkolanPanel extends HTMLElement {
       const meny = () => { timers.forEach(clearTimeout); this._stridMeny(el, o); };
       if (o.idle) meny(); else vid(slut, meny);
       el.addEventListener("click", () => { if (!el.classList.contains("valjer")) meny(); });
+    } else if (o.efter) {
+      vid(slut, o.efter);
+      el.addEventListener("click", () => { timers.forEach(clearTimeout); o.efter(); });
     } else {
       vid(slut, stang);
       el.addEventListener("click", stang);
@@ -3682,6 +3829,10 @@ class SkolanPanel extends HTMLElement {
     );
     on("#open-djurbutik", () => this._go({ name: "djurbutik" }));
     on("#open-karta", () => this._go({ name: "karta" }));
+    on("#open-arena", () => this._go({ name: "arena" }));
+    r.querySelectorAll("[data-arena-mot]").forEach((b) => b.addEventListener("click", () => this._arenaStart(b.dataset.arenaMot)));
+    r.querySelector("#arena-fortsatt")?.addEventListener("click", () => this._arenaVisa());
+    r.querySelectorAll("[data-arena-repris]").forEach((b) => b.addEventListener("click", () => this._arenaRepris(b.dataset.arenaRepris)));
     on("#open-vanner", () => this._go({ name: "vanner" }));
     on("#van-smek-spara", () => this._vanOp("smeknamn", { namn: r.querySelector("#van-smek").value }));
     on("#van-smek-ok", () => this._vanOp("godkann_smeknamn"));
@@ -4459,6 +4610,13 @@ const CSS = `
   .liv-rad .djur-liv.lag div { background:linear-gradient(90deg,#d50000,#ff8a80); }
   .ko-text { margin-top:6px; font-weight:700; }
   .strid-knapp { margin-top:8px; }
+  .djur-niva { margin-top:6px; }
+  .niva-upp { margin-top:8px; padding:6px 10px; border-radius:10px; background:linear-gradient(90deg,#ffd54f,#ffb300); color:#3e2723; font-weight:800; animation:nivaUpp 1s ease-out; }
+  @keyframes nivaUpp { 0% { transform:scale(.6); opacity:0; } 60% { transform:scale(1.08); opacity:1; } 100% { transform:none; } }
+  .arena-jag { display:flex; gap:12px; align-items:center; }
+  .arena-djur { width:90px; height:90px; flex:none; } .arena-djur svg { width:100%; height:100%; }
+  .arena-lista li { display:flex; align-items:center; gap:10px; }
+  .arena-lista li > span:nth-child(2) { flex:1; }
   .dryck-knapp { background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.45); }
   .repris-rad { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:8px; }
   .repris-knapp { background:rgba(0,0,0,.25); color:#fff; border:1px solid rgba(255,255,255,.4); }

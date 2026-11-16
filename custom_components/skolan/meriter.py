@@ -54,6 +54,7 @@ MEDALJER = [
     ("bossjagare", "⚔️", "Bossjägare", "Besegrat en världsboss på kartan", "bossar", 1),
     ("aventyrare", "🗺️", "Äventyrare", "Klarat 10 nivåer på kartan", "nivaer", 10),
     ("kartans_hjalte", "🏆", "Kartans hjälte", "Klarat 50 nivåer på kartan", "nivaer", 50),
+    ("arenamastare", "🏟️", "Arenamästare", "Vunnit 10 strider i arenan", "arena_vinster", 10),
 ]
 
 P_LAS_I_TID = 30  # läsläxan läst och kontrollfrågorna klarade före slutdatum
@@ -96,6 +97,7 @@ def ge(data: dict, poang: int, orsak: str, nyckel: str | None = None, ikon: str 
             _pass_xp(m, int(poang))
             _karta_energi(data, int(poang))
             _djur_laka(data, int(poang))
+            _djur_xp(data, int(poang))
             _karta_skada(data, int(poang))
     m["saldo"] = m.get("saldo", 0) + int(poang)
     return True
@@ -1409,7 +1411,9 @@ def karta_kort(data: dict) -> dict:
     k = _karta(data)
     d = _m(data).get("djur") or {}
     return {"niva": k["niva"], "stjarnor": sum(k["stjarnor"].values()), "art": d.get("art"), "djur": d.get("namn"),
-            "steg": d.get("steg", 0), "repriser": [repris(r) for r in k.get("repriser", [])[-3:]]}
+            "steg": _djur_steg(data), "repriser": [repris(r) for r in k.get("repriser", [])[-3:]],
+            "djur_niva": djur_niva(data)["niva"], "cp": djur_cp(data), "arena_poang": k.get("arena_poang", 0),
+            "arena_hist": k.get("arena_hist", [])[-3:]}
 
 
 def repris(r: dict) -> dict | None:
@@ -1458,10 +1462,49 @@ P_LIV = 3  # 1 liv tillbaka per 3 intjänade meriter
 MISS_CHANS = 0.15  # monstret missar ibland
 
 
+DJUR_NIVA_MAX = 50
+LIV_PER_NIVA = 4  # mer liv för varje nivå husdjuret går upp
+KRAFT_PER_NIVA = 0.02  # +2 % skada per nivå
+
+
+def _xp_for(n: int) -> int:
+    """XP som behövs för att nå nivå n (1 → 0, 2 → 40, 10 → 1800, 50 → 49000)."""
+    return 20 * n * (n - 1)
+
+
+def _djur_xp(data: dict, poang: int) -> None:
+    """Husdjuret växer av allt barnet pluggar. Första gången räknas allt som redan tjänats in."""
+    k = _karta(data)
+    if "djur_xp" not in k:
+        k["djur_xp"] = _m(data).get("intjanat", 0)
+    else:
+        k["djur_xp"] += int(poang)
+
+
+def djur_niva(data: dict) -> dict:
+    xp = _karta(data).get("djur_xp", _m(data).get("intjanat", 0))
+    n = 1
+    while n < DJUR_NIVA_MAX and xp >= _xp_for(n + 1):
+        n += 1
+    nasta = _xp_for(n + 1) if n < DJUR_NIVA_MAX else None
+    return {"niva": n, "xp": xp, "fran": _xp_for(n), "till": nasta}
+
+
+def djur_kraft(data: dict) -> float:
+    return 1 + (djur_niva(data)["niva"] - 1) * KRAFT_PER_NIVA
+
+
+def djur_cp(data: dict) -> int:
+    """Stridskraft att jämföra med: liv + bästa attack, gånger kraften."""
+    agda = _m(data).get("attacker", [])
+    basta = max([x["skada"] for x in ATTACKER if x["id"] in agda] or [KNUFF["skada"]])
+    return round((djur_liv(data)[1] + basta * 6) * djur_kraft(data))
+
+
 def djur_liv(data: dict) -> tuple[int, int]:
     """(liv kvar, max liv). Nya och gamla husdjur börjar med fullt liv."""
     k = _karta(data)
-    mx = LIV_MAX[min(_djur_steg(data), len(LIV_MAX) - 1)]
+    mx = LIV_MAX[min(_djur_steg(data), len(LIV_MAX) - 1)] + (djur_niva(data)["niva"] - 1) * LIV_PER_NIVA
     liv = k.get("liv")
     return (mx if liv is None else max(0, min(mx, int(liv)))), mx
 
@@ -1542,7 +1585,7 @@ def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
     elif at["id"] == "a_vag":
         skada += min(9, _streak(m["ovningsdagar"]))
     svag = mon.get("svag") == at["typ"]
-    return skada * (SVAG_GANGER if svag else 1), svag
+    return round(skada * djur_kraft(data)) * (SVAG_GANGER if svag else 1), svag
 
 
 def attack_kop(data: dict, at_id: str) -> None:
@@ -1599,6 +1642,120 @@ def attack(data: dict, at_id: str) -> dict:
                                                "svag": svag, "klar": klar, "tid": k["senaste"]["tid"], "mot": mot,
                                                "miss": miss, "liv_fore": liv_fore, "liv_max": liv_max}])[-5:]
     return k["senaste"]
+
+
+# ---------- arenan: husdjur mot husdjur ----------
+KNUFF = {"id": "knuff", "ikon": "🐾", "namn": "Knuff", "typ": "kraft", "energi": 0, "skada": 3}
+ARENA_AP_START, ARENA_AP_TUR, ARENA_AP_MAX = 3, 1, 6
+ARENA_MISS = 0.1
+ARENA_GANGER = 3  # arenan går snabbare än kartan
+ARENA_VINST, ARENA_FORLUST = 10, 2  # arenapoäng 🏆
+ARENA_XP_VINST, ARENA_XP_FORLUST = 15, 5
+
+
+def _kampe(data: dict, agare: str) -> dict:
+    d = _m(data).get("djur") or {}
+    agda = _m(data).get("attacker", [])
+    kraft = djur_kraft(data)
+    drag = {"knuff": round(KNUFF["skada"] * kraft * ARENA_GANGER)}
+    for at in ATTACKER:
+        if at["id"] in agda:
+            drag[at["id"]] = _attack_varde(data, at, {})[0] * ARENA_GANGER
+    mx = djur_liv(data)[1]
+    return {"agare": agare, "namn": d.get("namn", "?"), "art": d.get("art"), "steg": _djur_steg(data),
+            "niva": djur_niva(data)["niva"], "cp": djur_cp(data), "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag}
+
+
+def _drag_info(at_id: str) -> dict:
+    return KNUFF if at_id == "knuff" else next(x for x in ATTACKER if x["id"] == at_id)
+
+
+def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict) -> dict:
+    m = _m(data)
+    if not m.get("djur"):
+        raise ValueError("Du behöver ett husdjur först.")
+    if not _m(mot_data).get("djur"):
+        raise ValueError(f"{mot_namn} har inget husdjur än.")
+    k = _karta(data)
+    if k.get("energi", 0) < 1:
+        raise ValueError("Du behöver 1 ⚡ energi för att gå in i arenan. Plugga så laddas den!")
+    k["energi"] -= 1
+    k["arena"] = {"mot": mot_id, "mot_namn": mot_namn, "jag": _kampe(data, jag), "de": _kampe(mot_data, mot_namn),
+                  "turer": [], "start": dt_util.now().isoformat(timespec="seconds")}
+    return k["arena"]
+
+
+def _slag(kampe: dict, at_id: str, mal: dict) -> tuple[int, bool]:
+    if random.random() < ARENA_MISS:
+        return 0, True
+    skada = max(1, round(kampe["drag"][at_id] * random.uniform(0.85, 1.15)))
+    mal["liv"] = max(0, mal["liv"] - skada)
+    return skada, False
+
+
+def _ai_val(de: dict) -> str:
+    kan = [a for a in de["drag"] if _drag_info(a)["energi"] <= de["ap"]]
+    if random.random() < 0.7:
+        return max(kan, key=lambda a: de["drag"][a])
+    return random.choice(kan)
+
+
+def arena_drag(data: dict, at_id: str) -> dict:
+    k = _karta(data)
+    a = k.get("arena")
+    if not a:
+        raise ValueError("Ingen strid pågår.")
+    jag, de = a["jag"], a["de"]
+    if at_id not in jag["drag"]:
+        raise ValueError("Det draget kan ditt husdjur inte.")
+    kostar = _drag_info(at_id)["energi"]
+    if kostar > jag["ap"]:
+        raise ValueError(f"Du behöver {kostar} ⚡ i striden. Använd Knuff 🐾 och vänta en tur.")
+    tur = {"at": at_id, "jag_fore": jag["liv"], "de_fore": de["liv"]}
+    jag["ap"] -= kostar
+    tur["skada"], tur["miss"] = _slag(jag, at_id, de)
+    if de["liv"] > 0:
+        mot = _ai_val(de)
+        de["ap"] -= _drag_info(mot)["energi"]
+        tur["mot_at"] = mot
+        tur["mot"], tur["mot_miss"] = _slag(de, mot, jag)
+    jag["ap"] = min(ARENA_AP_MAX, jag["ap"] + ARENA_AP_TUR)
+    de["ap"] = min(ARENA_AP_MAX, de["ap"] + ARENA_AP_TUR)
+    a["turer"].append(tur)
+    if de["liv"] <= 0 or jag["liv"] <= 0 or len(a["turer"]) >= 40:
+        _arena_slut(data, de["liv"] <= 0 and jag["liv"] > 0)
+        tur["slut"] = "vinst" if de["liv"] <= 0 else "forlust"
+    return tur
+
+
+def arena_ge_upp(data: dict) -> None:
+    if _karta(data).get("arena"):
+        _arena_slut(data, False, gav_upp=True)
+
+
+def _arena_slut(data: dict, vann: bool, gav_upp: bool = False) -> None:
+    k = _karta(data)
+    a = k.pop("arena")
+    k["arena_poang"] = k.get("arena_poang", 0) + (ARENA_VINST if vann else ARENA_FORLUST if not gav_upp else 0)
+    _djur_xp(data, 0)
+    k["djur_xp"] += ARENA_XP_VINST if vann else ARENA_XP_FORLUST if not gav_upp else 0
+    if vann:
+        _rakna(data, "arena_vinster")
+        kolla_medaljer(data)
+    k["arena_hist"] = (k.get("arena_hist", []) + [{
+        "mot": a["mot"], "mot_namn": a["mot_namn"], "vann": vann, "gav_upp": gav_upp, "tid": dt_util.now().isoformat(timespec="seconds"),
+        "jag": {x: a["jag"][x] for x in ("namn", "art", "steg", "niva", "max")},
+        "de": {x: a["de"][x] for x in ("namn", "art", "steg", "niva", "max")},
+        "turer": a["turer"][-40:]}])[-10:]
+
+
+def arena_status(data: dict) -> dict:
+    k = _karta(data)
+    a = k.get("arena")
+    n = djur_niva(data)
+    return {"niva": n, "cp": djur_cp(data), "kraft": round(djur_kraft(data), 2), "poang": k.get("arena_poang", 0),
+            "vinster": _m(data)["raknare"].get("arena_vinster", 0), "pagar": a, "hist": k.get("arena_hist", [])[-5:],
+            "knuff": KNUFF, "ap_max": ARENA_AP_MAX, "drag": {x["id"]: {y: x[y] for y in ("ikon", "namn", "typ", "energi")} for x in [KNUFF, *ATTACKER]}}
 
 
 # ---------- husdjurets rum ----------
