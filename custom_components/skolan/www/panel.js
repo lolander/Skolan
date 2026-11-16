@@ -2111,6 +2111,7 @@ class SkolanPanel extends HTMLElement {
         `Alla rätt: ${p(20)} extra`,
         `Gör förhöret samma dag som det kommer: ${p(5)} extra`,
         `När du har startat ett förhör måste du göra klart det innan du kan göra något annat.`,
+        `✅ Minst 80 % rätt är godkänt, och då blir det fanfar och konfetti 🎉. ❌ Inte godkänt ger ett nytt förhör på samma ord. Mamma eller pappa kan ändra beslutet.`,
       ])}
 
       ${kort("🗣️", "Högläsning", [
@@ -2170,6 +2171,28 @@ class SkolanPanel extends HTMLElement {
         `Nivåerna blir längre ju längre du kommer, och monstrens styrka beror på hur mycket du brukar plugga och hur många läxor och prov du har.`,
         `⚔️ Attacker köper du i husdjursbutiken. De laddas med ⚡ energi: 1 energi per 25 ⭐ du tjänar.`,
         `🎯 Varje monster är svagt mot en typ (🔥 🍃 ⚡ 🌊 ❄️). Då gör attacken dubbel skada.`,
+      ])}
+
+      ${kort("⚔️", "Så strider du mot bossen", [
+        `<b>1.</b> Öppna Skolan. Bosskortet med monstret och dess ❤️ livmätare finns på startsidan.`,
+        `<b>2.</b> Tryck <b>⚔️ Till strid</b>. Då öppnas stridsscenen där du väljer attack eller öppnar 🎒 ryggsäcken.`,
+        `Du kan också attackera direkt med attackknapparna under bossen.`,
+        `Det här behöver du: ett kläckt husdjur, minst en attack från 🛍️ Butiken och ⚡ energi (du får energi när du pluggar).`,
+        `Bossen slår tillbaka! Ibland missar den. Ditt husdjurs ❤️ liv syns i striden.`,
+        `😵 Är ditt husdjur utmattat (0 liv) kan det inte attackera. Plugga för att få tillbaka liv, eller drick en 🧪 livdryck från butiken.`,
+        `📺 Du kan se när syskonet attackerar under repriserna på bosskortet.`,
+      ])}
+
+      ${kort("❤️", "Husdjurets liv och nivå", [
+        `Husdjuret får tillbaka 1 ❤️ liv för varje 3 ⭐ du tjänar.`,
+        `🧪 Livdrycker köper du i butiken och har i ryggsäcken (högst 5 av varje). 🪶 Fenixfjädern väcker ett utmattat husdjur.`,
+        `Allt du tjänar ger husdjuret XP. Ny nivå ger mer ❤️ liv och starkare attacker. <b>CP</b> visar hur starkt husdjuret är.`,
+      ])}
+
+      ${kort("🏟️", "Arenan", [
+        `Tryck <b>🏟️ Arenan</b> på bosskortet för att låta ditt husdjur möta syskonets husdjur.`,
+        `Ni turas om att attackera. Varje tur får du mer ⚡ AP att använda på attacker. Den med liv kvar till sist vinner.`,
+        `Vinst ger 10 🏆 och XP till husdjuret. Förlust ger 2 🏆. Ger du upp får du inget.`,
       ])}
 
       ${kort("🏠", "Husdjurets rum", [
