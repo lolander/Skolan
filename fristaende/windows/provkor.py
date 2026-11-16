@@ -10,6 +10,7 @@ import tempfile
 import time
 import urllib.request
 
+sys.stdout.reconfigure(encoding="utf-8")
 EXE = sys.argv[1]
 PORT = 8799
 BAS = f"http://127.0.0.1:{PORT}"
