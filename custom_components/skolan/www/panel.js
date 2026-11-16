@@ -1444,7 +1444,7 @@ class SkolanPanel extends HTMLElement {
         <div class="small">❤️ ${kvar} av ${k.hp} liv · 🎯 svag mot <b>${k.typer[mon.svag]}</b></div>
         <div class="small muted">Varje merit du tjänar gör skada.${mon.boss && mon.sak ? ` Besegra bossen för ${mon.sak.ikon} ${esc(mon.sak.namn)}!` : ""}${sen ? ` Senast: nivå ${sen.niva} ${"⭐".repeat(sen.stjarnor)}` : ""}</div>
         ${livRad}
-        ${d && barn ? `<button class="mini primary strid-knapp" id="till-strid">⚔️ Till strid</button>` : ""}
+        ${d ? `<button class="mini primary strid-knapp" id="till-strid">${barn ? "⚔️ Till strid" : "👀 Se striden"}</button>` : ""}
         ${attacker}
         ${this._reprisRad()}
         <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
@@ -1490,18 +1490,18 @@ class SkolanPanel extends HTMLElement {
     const ko = k.liv <= 0, fel = this._msg?.type === "error" ? this._msg.text : "";
     const vecka = k.super_anvand;
     const at = (k.attacker || []).filter((x) => x.har).map((x) => {
-      const kan = !ko && k.energi >= x.energi && !(x.id === "a_super" && vecka);
+      const kan = !o.titta && !ko && k.energi >= x.energi && !(x.id === "a_super" && vecka);
       return `<button data-s-attack="${x.id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${x.nu}</small></button>`;
     }).join("");
     const dr = (k.drycker || []).filter((x) => x.antal).map((x) => {
-      const kan = x.id === "d_fenix" ? ko : k.liv < k.liv_max;
+      const kan = !o.titta && (x.id === "d_fenix" ? ko : k.liv < k.liv_max);
       return `<button data-s-dryck="${x.id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>×${x.antal}</small></button>`;
     }).join("");
     const meny = el.querySelector(".kommandon") || el.querySelector(".ruta.hoger").appendChild(Object.assign(document.createElement("div"), { className: "kommandon" }));
     el.querySelector(".kommando")?.remove();
     meny.innerHTML = o.klar
       ? `<button data-s-nasta>➡️ Nästa nivå</button><button data-s-lamna>🏃 Lämna</button>`
-      : `${fel ? `<div class="sfel">${esc(fel)}</div>` : ""}<div class="srubrik">⚔️ Attack · ⚡ ${k.energi}</div>${at || `<div class="stom">Köp attacker i Butiken 🛍️</div>`}
+      : `${fel ? `<div class="sfel">${esc(fel)}</div>` : ""}${o.titta ? `<div class="stom">👀 Du tittar. Bara ${esc(this._s.namn || "barnet")} kan attackera.</div>` : ""}<div class="srubrik">⚔️ Attack · ⚡ ${k.energi}</div>${at || `<div class="stom">Köp attacker i Butiken 🛍️</div>`}
          <div class="srubrik">🎒 Ryggsäck</div>${dr || `<div class="stom">Tom. Livdrycker finns i Butiken 🛍️</div>`}
          <button data-s-lamna>🏃 Lämna striden</button>`;
     this._msg = null;
@@ -1537,7 +1537,7 @@ class SkolanPanel extends HTMLElement {
     const knappar = (s.topplista || []).filter((t) => t.karta?.repriser?.length).map((t) => {
       const r = t.karta.repriser[t.karta.repriser.length - 1];
       const egen = t.id === s.barn;
-      return this._reprisKnapp(r, egen ? "Din attack" : t.namn, { art: t.karta.art, steg: t.karta.steg || 1, namn: t.karta.djur }, `barn:${t.id}`, !egen);
+      return this._reprisKnapp(r, egen && !s.kan_valja ? "Din attack" : t.namn, { art: t.karta.art, steg: t.karta.steg || 1, namn: t.karta.djur }, `barn:${t.id}`, !egen);
     });
     return knappar.length ? `<div class="repris-rad">📺 ${knappar.join("")}</div>` : "";
   }
@@ -3772,7 +3772,7 @@ class SkolanPanel extends HTMLElement {
         this._gorAttack(b.dataset.attack);
       })
     );
-    r.querySelector("#till-strid")?.addEventListener("click", () => this._strid(this._stridLage({ idle: true })));
+    r.querySelector("#till-strid")?.addEventListener("click", () => this._strid(this._stridLage({ idle: true, titta: !!this._s.kan_valja })));
     r.querySelectorAll("[data-djur-pa]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: b.dataset.typ, sak: b.dataset.djurPa })));
     r.querySelectorAll("[data-djur-av]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: b.dataset.djurAv, sak: null })));
     r.querySelectorAll("[data-djur-byt]").forEach((b) =>
