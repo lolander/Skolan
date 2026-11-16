@@ -1,0 +1,51 @@
+name: Windowsappen
+
+on:
+  push:
+    branches: [main]
+    paths: ["fristaende/**", "custom_components/**", ".github/workflows/windows.yml"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bygg:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installera beroenden
+        run: pip install -r fristaende/requirements.txt pyinstaller
+
+      - name: Bygg Skolan.exe
+        working-directory: fristaende
+        run: pyinstaller --noconfirm windows/skolan.spec
+
+      - name: Provkör appen
+        run: python fristaende/windows/provkor.py fristaende/dist/Skolan/Skolan.exe
+
+      - name: Bygg installationsprogrammet
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          $version = (Get-Content custom_components/skolan/manifest.json | ConvertFrom-Json).version
+          & $iscc "/DVERSION=$version" fristaende/windows/skolan.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Skolan-Setup
+          path: fristaende/windows/Output/*.exe
+
+      - name: Publicera (vid ny version-tagg)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: fristaende/windows/Output/*.exe

@@ -1,0 +1,211 @@
+"""Vänner mellan familjer, direkt mellan hemmens Home Assistant (som Direct Connect, ingen server).
+
+Varje barn har en vänlänk: {familjens externa adress}/api/skolan/van/{nyckel}. Den visar bara barnets
+kort (smeknamn, husdjur, nivå, stjärnor, titel). Den som har länken kan se kortet, så den delas bara
+med kompisar. När en förälder godkänt en ny vän hämtar vår Home Assistant vännens kort direkt från
+vännens Home Assistant och skickar samtidigt en förfrågan dit, så att den familjen kan lägga till oss.
+
+Kräver att båda familjerna kan nås utifrån (t.ex. Nabu Casa). Ingen chatt, inget annat delas.
+"""
+from __future__ import annotations
+
+import ipaddress
+import json
+import re
+import secrets
+from pathlib import Path
+from urllib.parse import urlparse
+
+from homeassistant.util import dt as dt_util
+
+PA = False  # dolt tills vidare; True visar Vänner i appen
+TIMEOUT = 10
+MAX_VANNER = 50
+MAX_INKOMMANDE = 20
+VAG = "/api/skolan/van/"
+KOD_RE = re.compile(r"https://[A-Za-z0-9.\-]+(?::\d+)?/api/skolan/van/[A-Za-z0-9_\-]{20,64}")
+
+
+def pa() -> bool:
+    return PA
+
+
+def egen_kod(bas: str, v: dict) -> str:
+    return f"{bas.rstrip('/')}{VAG}{v['nyckel']}" if bas.startswith("https://") else ""
+
+
+def normal_kod(text: str) -> str:
+    """Plocka ut en vänlänk ur det barnet klistrat in. Bara https och inga lokala adresser."""
+    m = KOD_RE.search(str(text or ""))
+    if not m:
+        raise ValueError("Klistra in hela vänlänken (den börjar med https:// och innehåller /api/skolan/van/).")
+    kod = m.group(0)
+    host = urlparse(kod).hostname or ""
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            raise ValueError("Vänlänken måste gå att nå utifrån.")
+    except ValueError as err:
+        if "utifrån" in str(err):
+            raise
+    if "." not in host or host.endswith((".local", ".lan", ".home", ".internal", ".localdomain")):
+        raise ValueError("Vänlänken måste gå att nå utifrån.")
+    return kod
+
+
+def smeknamn_ok(text: str) -> str:
+    s = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not 2 <= len(s) <= 16:
+        raise ValueError("Smeknamnet ska vara 2–16 tecken.")
+    if re.search(r"\d{4,}|@|https?:|www\.", s):
+        raise ValueError("Skriv inte telefonnummer, mejl eller länkar i smeknamnet.")
+    return s
+
+
+def _fil(mapp: Path) -> Path:
+    return mapp / "vanner.json"
+
+
+def las(mapp: Path) -> dict:
+    f = _fil(mapp)
+    try:
+        v = json.loads(f.read_text("utf-8")) if f.exists() else {}
+    except (OSError, ValueError):
+        v = {}
+    v.setdefault("nyckel", "")
+    v.setdefault("smeknamn", "")
+    v.setdefault("smeknamn_ok", False)  # en förälder har godkänt smeknamnet
+    v.setdefault("vanner", [])  # [{kod, smeknamn, art, niva, stjarnor, titel, hamtad, fel}]
+    v.setdefault("utgaende", [])  # [{kod, tid}] barnet vill lägga till, väntar på förälder
+    v.setdefault("inkommande", [])  # [{kod, smeknamn, tid}] någon vill bli vän, väntar på förälder
+    v.setdefault("synkad", "")
+    return v
+
+
+def spara(mapp: Path, v: dict) -> None:
+    tmp = _fil(mapp).with_suffix(".tmp")
+    tmp.write_text(json.dumps(v, ensure_ascii=False), "utf-8")
+    tmp.replace(_fil(mapp))
+
+
+def se_till_nyckel(v: dict) -> bool:
+    if v["nyckel"]:
+        return False
+    v["nyckel"] = secrets.token_urlsafe(24)
+    return True
+
+
+def kort(v: dict, karta: dict, titel: str | None) -> dict | None:
+    """Det enda som delas med vännerna. None tills smeknamnet är godkänt."""
+    if not (v["smeknamn"] and v["smeknamn_ok"]):
+        return None
+    return {"v": 1, "smeknamn": v["smeknamn"], "art": karta.get("art"), "niva": karta.get("niva", 1),
+            "stjarnor": karta.get("stjarnor", 0), "titel": titel or ""}
+
+
+def publik(v: dict, foralder: bool, bas: str) -> dict:
+    """Det appen får se."""
+    return {"pa": pa(), "kod": egen_kod(bas, v) if v["smeknamn_ok"] else "", "kan_nas": bas.startswith("https://"),
+            "smeknamn": v["smeknamn"], "smeknamn_ok": v["smeknamn_ok"],
+            "vanner": sorted(v["vanner"], key=lambda x: (-x.get("niva", 0), -x.get("stjarnor", 0))),
+            "utgaende": v["utgaende"], "inkommande": v["inkommande"], "synkad": v["synkad"], "foralder": foralder}
+
+
+def _rensa_kort(k: dict) -> dict:
+    return {"smeknamn": str(k.get("smeknamn") or "?")[:16], "art": str(k.get("art") or "")[:8],
+            "niva": max(1, min(100000, int(k.get("niva") or 1))), "stjarnor": max(0, min(10**6, int(k.get("stjarnor") or 0))),
+            "titel": str(k.get("titel") or "")[:40]}
+
+
+# ---------- ändringar ----------
+def satt_smeknamn(v: dict, namn: str, foralder: bool) -> None:
+    v["smeknamn"] = smeknamn_ok(namn)
+    v["smeknamn_ok"] = foralder  # barnets eget smeknamn måste godkännas av en förälder
+
+
+def godkann_smeknamn(v: dict) -> None:
+    if not v["smeknamn"]:
+        raise ValueError("Inget smeknamn att godkänna.")
+    v["smeknamn_ok"] = True
+
+
+def _kolla_ny(v: dict, kod: str, egen: str) -> None:
+    if kod == egen or kod.endswith(VAG + v["nyckel"]):
+        raise ValueError("Det är din egen vänlänk.")
+    if any(x["kod"] == kod for x in v["vanner"]):
+        raise ValueError("Ni är redan vänner.")
+    if len(v["vanner"]) >= MAX_VANNER:
+        raise ValueError(f"Du kan ha högst {MAX_VANNER} vänner.")
+
+
+def onska(v: dict, text: str, egen: str) -> dict:
+    """Barnet klistrar in en kompis vänlänk. En förälder godkänner sedan."""
+    kod = normal_kod(text)
+    _kolla_ny(v, kod, egen)
+    if any(x["kod"] == kod for x in v["utgaende"]):
+        raise ValueError("Den vännen väntar redan på godkännande.")
+    rad = {"kod": kod, "tid": dt_util.now().isoformat(timespec="minutes")}
+    v["utgaende"].append(rad)
+    return rad
+
+
+def lagg_in_van(v: dict, kod: str, k: dict) -> None:
+    v["vanner"] = [x for x in v["vanner"] if x["kod"] != kod]
+    v["vanner"].append({"kod": kod, **_rensa_kort(k), "hamtad": dt_util.now().isoformat(timespec="minutes"), "fel": 0})
+    v["utgaende"] = [x for x in v["utgaende"] if x["kod"] != kod]
+    v["inkommande"] = [x for x in v["inkommande"] if x["kod"] != kod]
+
+
+def ta_bort(v: dict, kod: str) -> None:
+    for lista in ("vanner", "utgaende", "inkommande"):
+        v[lista] = [x for x in v[lista] if x["kod"] != kod]
+
+
+def ta_emot_forfragan(v: dict, text: str, smeknamn: str) -> dict | None:
+    """En annan familjs Home Assistant säger att deras barn har lagt till vårt barn. None om den redan finns."""
+    kod = normal_kod(text)
+    if any(x["kod"] == kod for x in v["vanner"] + v["inkommande"]):
+        return None
+    if len(v["inkommande"]) >= MAX_INKOMMANDE:
+        raise ValueError("För många förfrågningar.")
+    rad = {"kod": kod, "smeknamn": str(smeknamn or "")[:16], "tid": dt_util.now().isoformat(timespec="minutes")}
+    v["inkommande"].append(rad)
+    return rad
+
+
+def uppdatera_van(v: dict, kod: str, k: dict | None) -> None:
+    """Efter en hämtning: nytt kort, eller räkna ett misslyckat försök."""
+    for x in v["vanner"]:
+        if x["kod"] == kod:
+            if k:
+                x.update(_rensa_kort(k), hamtad=dt_util.now().isoformat(timespec="minutes"), fel=0)
+            else:
+                x["fel"] = x.get("fel", 0) + 1
+
+
+# ---------- nätverk ----------
+async def hamta_kort(session, kod: str) -> dict:
+    """Hämta en väns kort direkt från vännens Home Assistant."""
+    try:
+        async with session.get(f"{kod}?json=1", timeout=TIMEOUT, allow_redirects=False) as r:
+            if r.status != 200:
+                raise ValueError("Vännens kort gick inte att hämta (har kompisen godkänt sitt smeknamn?).")
+            text = await r.content.read(4096)
+        k = json.loads(text)
+        if not isinstance(k, dict) or k.get("v") != 1:
+            raise ValueError("Det där verkar inte vara en vänlänk från Skolan.")
+        return k
+    except ValueError:
+        raise
+    except Exception as err:  # noqa: BLE001
+        raise ValueError("Kunde inte nå kompisens Home Assistant just nu.") from err
+
+
+async def skicka_forfragan(session, kod: str, egen: str, smeknamn: str) -> None:
+    """Säg till vännens Home Assistant att vi har lagt till dem (så att de kan lägga till oss)."""
+    try:
+        async with session.post(f"{kod}/forfragan", json={"kod": egen, "smeknamn": smeknamn}, timeout=TIMEOUT,
+                                allow_redirects=False) as r:
+            await r.read()
+    except Exception:  # noqa: BLE001
+        pass  # inte så farligt; kompisen kan lägga till oss med vår länk ändå

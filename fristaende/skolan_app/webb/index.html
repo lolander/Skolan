@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Skolan</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/app/bilder/ikon-64.png">
+<link rel="apple-touch-icon" href="/app/bilder/ikon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Skolan">
+<meta name="theme-color" content="#3a63d8">
+<style>
+  :root {
+    --primary-color:#3a63d8; --text-primary-color:#fff; --primary-text-color:#1f2430; --secondary-text-color:#5f6675;
+    --primary-background-color:#f4f6fb; --secondary-background-color:#e8ecf5; --card-background-color:#fff;
+    --divider-color:#d9deea; --error-color:#db4437; --success-color:#43a047;
+    --ha-card-box-shadow:0 2px 6px rgba(0,0,0,.08); --app-header-background-color:#3a63d8; --app-header-text-color:#fff;
+    --paper-font-body1_-_font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color-scheme:light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --primary-text-color:#e6e9f0; --secondary-text-color:#a7afc0; --primary-background-color:#12151c;
+      --secondary-background-color:#232836; --card-background-color:#1b1f2a; --divider-color:#30364a; color-scheme:dark; }
+  }
+  html, body { margin:0; height:100%; background:var(--primary-background-color); color:var(--primary-text-color);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  #rot { min-height:100%; }
+  .mitt { max-width:520px; margin:0 auto; padding:24px 16px calc(24px + env(safe-area-inset-bottom)); }
+  h1 { font-size:26px; margin:8px 0 16px; } h2 { font-size:18px; margin:24px 0 8px; }
+  .kort { background:var(--card-background-color); border-radius:16px; padding:16px; box-shadow:var(--ha-card-box-shadow); margin-bottom:12px; }
+  button { font:inherit; border-radius:12px; border:0; padding:10px 16px; cursor:pointer; background:var(--secondary-background-color); color:var(--primary-text-color); }
+  button.primar { background:var(--primary-color); color:#fff; } button:disabled { opacity:.5; }
+  input, select { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--divider-color); background:var(--card-background-color); color:var(--primary-text-color); width:100%; box-sizing:border-box; }
+  .rad { display:flex; gap:8px; align-items:center; margin:8px 0; } .rad > * { flex:1; } .rad > button { flex:0 0 auto; }
+  .personer { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:12px; }
+  .person { display:flex; flex-direction:column; align-items:center; gap:6px; padding:18px 8px; font-size:17px; background:var(--card-background-color); box-shadow:var(--ha-card-box-shadow); }
+  .person .ava { width:56px; height:56px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:26px; color:#fff; }
+  .pin { font-size:34px; letter-spacing:12px; text-align:center; min-height:44px; }
+  .knappsats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; max-width:300px; margin:12px auto; }
+  .knappsats button { font-size:26px; padding:16px 0; background:var(--card-background-color); box-shadow:var(--ha-card-box-shadow); }
+  .fel { color:var(--error-color); min-height:22px; text-align:center; } .ok { color:var(--success-color); }
+  .liten { font-size:13px; color:var(--secondary-text-color); } .center { text-align:center; }
+  .qr { width:220px; height:220px; background:#fff; border-radius:12px; padding:8px; display:block; margin:10px auto; }
+  .verktyg { position:fixed; right:10px; bottom:calc(10px + env(safe-area-inset-bottom)); display:flex; gap:6px; z-index:50; opacity:.85; }
+  .verktyg button { padding:8px 10px; font-size:16px; box-shadow:0 2px 6px rgba(0,0,0,.2); background:var(--card-background-color); }
+  .lista li { margin:6px 0; } code { word-break:break-all; }
+</style>
+</head>
+<body>
+<div id="rot"><div class="mitt"><p class="liten">Laddar Skolan…</p></div></div>
+<script type="module" src="/app/app.js"></script>
+</body>
+</html>

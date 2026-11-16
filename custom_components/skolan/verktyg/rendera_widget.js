@@ -1,4 +1,4 @@
-// Kör: node rendera_widget.js i en tom mapp, sen rsvg-convert -w 300 -h 300 svg/X.svg -o /config/www/skolan_djur/X.png för varje fil.
+// Kör: node rendera_widget.js i en tom mapp, sen rsvg-convert -w 300 -h 300 svg/X.svg -o /config/custom_components/skolan/www/djur/X.png för varje fil.
 // Ritar alla husdjur i alla humör som SVG + ankarpunkter för hatt/kompis (för widgeten)
 const fs = require("fs");
 const src = fs.readFileSync("/config/custom_components/skolan/www/panel.js", "utf8");
@@ -19,5 +19,5 @@ for (const art of Object.keys(DJUR_UTSEENDE)) {
   ankare[slug(art)] = { hatt: hatt.map((v) => Math.round(v)), ogon: ogon.map((v) => Math.round(v)) };
 }
 for (const h of ["glad", "nojd", "hungrig", "ledsen"]) fs.writeFileSync(`svg/agg_${h}.svg`, ritaDjur("🐶", h, 0, {}));
-fs.writeFileSync("/config/www/skolan_djur/ankare.json", JSON.stringify({ ankare, kompis: [162, 178, 38], ogon_saker: [...PA_OGONEN] }));
+fs.writeFileSync("/config/custom_components/skolan/www/djur/ankare.json", JSON.stringify({ ankare, kompis: [162, 178, 38], ogon_saker: [...PA_OGONEN] }));
 console.log(Object.keys(ankare).length);

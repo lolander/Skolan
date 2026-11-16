@@ -1,3 +1,9 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Windowsappen
+fristaende/build/
+fristaende/dist/
+fristaende/windows/Output/
+__pycache__/

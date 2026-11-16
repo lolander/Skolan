@@ -527,7 +527,7 @@ class SkolanPanel extends HTMLElement {
     try {
       const q = barn ? `?barn=${encodeURIComponent(barn)}` : this._s ? `?barn=${encodeURIComponent(this._s.barn)}` : "";
       const res = await this._hass.fetchWithAuth(`/api/skolan/state${q}`);
-      if (res.status === 403) throw new Error("Den här sidan är bara för barnen och föräldrarna som är inlagda i Skolan.");
+      if (res.status === 403) throw new Error("Den här sidan är bara för barnen i Skolan och deras föräldrar.");
       const body = await res.json();
       if (!res.ok) throw new Error(body.message || res.statusText);
       this._s = body;
@@ -545,10 +545,71 @@ class SkolanPanel extends HTMLElement {
           this._view = { name: "forhor", forhor: oppet.id, startad: oppet.status === "pagar" };
         }
       }
+      this._hamtaVanner();
     } catch (e) {
       this._msg = { type: "error", text: e.message || String(e) };
     }
     this._render();
+  }
+
+  // ---------- vänner (dolt tills vänservern finns: pa === false) ----------
+  async _hamtaVanner() {
+    try {
+      const res = await this._hass.fetchWithAuth(`/api/skolan/vanner?barn=${encodeURIComponent(this._s.barn)}`);
+      const v = res.ok ? await res.json() : { pa: false };
+      const fore = JSON.stringify(this._vanner || null);
+      this._vanner = v.pa ? v : null;
+      if (JSON.stringify(this._vanner) !== fore) this._render();
+    } catch (e) { this._vanner = null; }
+  }
+
+  async _vanOp(op, args = {}) {
+    this._busy = true; this._render();
+    try {
+      const res = await this._hass.fetchWithAuth("/api/skolan/vanner", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barn: this._s.barn, op, ...args }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || res.statusText);
+      this._vanner = body; this._msg = null; return true;
+    } catch (e) { this._msg = { type: "error", text: e.message || String(e) }; return false; }
+    finally { this._busy = false; this._render(); }
+  }
+
+  _vannerView() {
+    const v = this._vanner, s = this._s;
+    if (!v) return `<p class="muted">Vänner är inte påslaget.</p>`;
+    const k = s.karta, d = s.meriter?.djur, f = v.foralder;
+    const jag = { smeknamn: v.smeknamn || s.namn, art: d?.art, niva: k?.niva || 1, stjarnor: k?.stjarnor_tot || 0, jag: true };
+    const lista = [...v.vanner, jag].sort((a, b) => b.niva - a.niva || b.stjarnor - a.stjarnor);
+    const rad = (x, i) => `<li class="van-rad ${x.jag ? "jag" : ""}"><span class="van-plats">${i + 1}</span>
+      <span class="van-djur">${x.art ? ritaDjur(x.art, "glad", 2, {}) : "🙂"}</span>
+      <span class="van-namn"><b>${esc(x.smeknamn)}</b>${x.jag ? " (du)" : ""}${x.titel ? `<br><span class="titel-bricka">${esc(x.titel)}</span>` : ""}</span>
+      <span class="van-niva">🗺️ ${x.niva}<br><span class="small">⭐ ${x.stjarnor}</span></span>
+      ${!x.jag ? `<button class="mini ghost" data-van-bort="${esc(x.kod)}" title="Ta bort">✕</button>` : ""}</li>`;
+    const vard = (kod) => { try { return new URL(kod).hostname.split(".")[0].slice(0, 8) + "…"; } catch (e) { return "?"; } };
+    const ut = v.utgaende.map((x) => `<li>Ny vän (${esc(vard(x.kod))}) · ⏳ väntar på förälder
+      ${f ? `<button class="mini primary" data-van-ut="${esc(x.kod)}" data-ja="1">Godkänn</button><button class="mini" data-van-ut="${esc(x.kod)}" data-ja="">Neka</button>` : ""}</li>`).join("");
+    const inn = v.inkommande.map((x) => `<li>🤝 ${esc(x.smeknamn || x.kod)} vill bli vän
+      ${f ? `<button class="mini primary" data-van-in="${esc(x.kod)}" data-ja="1">Godkänn</button><button class="mini" data-van-in="${esc(x.kod)}" data-ja="">Neka</button>` : " · ⏳ en förälder godkänner"}</li>`).join("");
+    return `
+      ${!v.kan_nas ? `<div class="card"><b>⚠️ Er Home Assistant går inte att nå utifrån.</b><div class="small">Vänner kräver fjärråtkomst, till exempel Nabu Casa.</div></div>`
+        : v.kod ? `<div class="card center"><div class="small muted">Din vänlänk</div>
+        <div class="actions"><button class="primary" id="van-dela">📤 Dela med en kompis</button><button id="van-kopiera">📋 Kopiera</button></div>
+        <div class="small muted">Ge länken bara till kompisar. Den visar ditt smeknamn, husdjur, nivå och stjärnor.</div></div>`
+        : `<div class="card center small muted">Din vänlänk kommer när smeknamnet är godkänt.</div>`}
+      <div class="card">
+        <div class="row"><input id="van-smek" maxlength="16" placeholder="Smeknamn" value="${esc(v.smeknamn)}"><button id="van-smek-spara">Spara</button></div>
+        <div class="small ${v.smeknamn_ok ? "" : "muted"}">${!v.smeknamn ? "Välj ett smeknamn som kompisarna ser. Skriv inte ditt efternamn." : v.smeknamn_ok ? "✅ Godkänt smeknamn" : "⏳ En förälder behöver godkänna smeknamnet"}
+          ${f && v.smeknamn && !v.smeknamn_ok ? `<button class="mini primary" id="van-smek-ok">Godkänn</button>` : ""}</div>
+      </div>
+      <div class="card"><div class="row"><input id="van-kod" placeholder="Klistra in kompisens vänlänk"><button class="primary" id="van-lagg">Lägg till</button></div>
+        ${inn ? `<h3>Förfrågningar</h3><ul class="van-vantar">${inn}</ul>` : ""}
+        ${ut ? `<h3>Väntar</h3><ul class="van-vantar">${ut}</ul>` : ""}</div>
+      <h3>🏆 Vänner på kartan</h3><ol class="van-lista">${lista.map(rad).join("")}</ol>
+      <div class="actions"><button class="ghost" id="van-synka">🔄 Uppdatera</button></div>
+      <p class="small muted center">Kompisar ser bara ditt smeknamn, husdjur, nivå och stjärnor. En förälder godkänner varje ny vän.</p>`;
   }
 
   async _act(op, args = {}) {
@@ -723,6 +784,14 @@ class SkolanPanel extends HTMLElement {
           </details>
           <p class="small muted">Widgeten visar bara ditt husdjur. Dela inte länken med någon.</p>`
         : `<p class="muted">Hämtar…</p>`;
+    } else if (v.name === "vanner") {
+      title = "🤝 Vänner";
+      back = { name: "hem" };
+      body = this._vannerView();
+    } else if (v.name === "karta") {
+      title = "🗺️ Äventyrskartan";
+      back = { name: "hem" };
+      body = this._kartaView();
     } else if (v.name === "djurbutik") {
       title = "🛍️ Husdjursbutik";
       back = { name: "hem" };
@@ -1138,6 +1207,20 @@ class SkolanPanel extends HTMLElement {
           ${knapp}</div></div>`;
     };
     const paketHtml = (s.paket || []).length ? `<h3>📦 Paket <span class="small muted">★ = finns bara i paket</span></h3>${s.paket.map(paketKort).join("")}` : "";
+    const am = s.karta, mon = am?.monster;
+    const attackKort = (x) => {
+      const last = d.steg < x.steg;
+      const knapp = x.har ? `<span class="small">✅ Kan den</span>`
+        : titta ? `<span class="small muted">${last ? "🔒 " + esc(s.djur_steg[x.steg]) + " · " : ""}${x.pris} ⭐</span>`
+        : last ? `<span class="small muted">🔒 ${esc(s.djur_steg[x.steg])}</span>`
+        : `<button class="mini ${saldo >= x.pris ? "primary" : ""}" data-attack-kop="${x.id}" ${saldo >= x.pris ? "" : "disabled"}>${x.pris} ⭐</button>`;
+      return `<div class="sak-kort attack-sak ${x.svag ? "svag" : ""} ${last ? "last" : ""}"><div class="sak-ikon">${x.ikon}</div>
+        <div class="small"><b>${esc(x.namn)}</b></div><div class="small muted">${x.skada} skada · ${x.energi} ⚡</div>
+        <div class="small muted">${esc(x.info)}</div>${x.svag ? `<div class="small">🎯 Bra mot nivå ${am.niva}!</div>` : ""}${knapp}</div>`;
+    };
+    const attackHtml = am ? `<h3>⚔️ Attacker för kartan</h3>
+      <div class="small muted">Attackerna laddas med ⚡ energi när du pluggar. Varje monster är svagt mot en typ och tar då dubbel skada.</div>
+      <div class="sak-rutnat">${am.attacker.map(attackKort).join("")}</div>` : "";
     const antalAgt = (d.agt || []).length, antalAlla = (s.djurbutik || []).filter((x) => !x.hogtid).length;
     const sasong = (s.hogtider || []).map((h) => {
       const saker = (s.djurbutik || []).filter((x) => x.hogtid === h.id);
@@ -1148,7 +1231,7 @@ class SkolanPanel extends HTMLElement {
       <div class="djur-kort humor-${d.humor}" style="justify-content:center">${this._djurFigur(d, true)}</div>
       <div class="butik-saldo">${titta ? `${esc(s.namn)} har <b>⭐ ${saldo}</b>. Bara ${esc(s.namn)} kan handla här.` : `Du har <b>⭐ ${saldo}</b> att handla för`}</div>
       <div class="small muted center">Samling: ${antalAgt} saker (${antalAlla} vanliga + säsongssaker)</div>
-      ${paketHtml}${sasong}${nasta}
+      ${paketHtml}${sasong}${nasta}${attackHtml}
       ${typer.map(([typ, rubrik]) => `<h3>${rubrik}</h3><div class="sak-rutnat">${vanliga(typ).map(kort).join("")}</div>`).join("")}
       ${titta ? "" : `<h3>🔄 Byt djur · ${d.gratis_byte !== false ? "🎁 Gratis en gång!" : `${s.byt_djur_pris} ⭐`}</h3>
       ${(d.agda_djur || []).filter((a) => a !== d.art).length ? `<div class="small">Dina paketdjur (gratis att byta till):</div><div class="djur-val">${d.agda_djur.filter((a) => a !== d.art).map((a) => `<button data-djur-paketdjur="${a}" class="rit-val">${ritaDjur(a, "glad", Math.max(1, d.steg))}</button>`).join("")}</div>` : ""}
@@ -1189,20 +1272,72 @@ class SkolanPanel extends HTMLElement {
         ${varianter.map((v) => `<button data-variant="${v.id}" class="${d.variant === v.id ? "vald" : ""}">${esc(v.namn)}</button>`).join("")}</div>` : ""}`;
   }
 
-  // ---------- veckans boss ----------
-  _bossKort() {
-    const b = this._s.boss;
-    if (!b) return "";
-    const kvar = b.hp - b.skada;
-    return `<div class="boss-kort ${b.vunnen ? "vunnen" : ""}">
-      <div class="boss-figur">${b.vunnen ? "💥" : b.ikon}</div>
+  // ---------- äventyrskartan ----------
+  _nivaKort() {
+    const k = this._s.karta;
+    if (!k) return "";
+    const mon = k.monster, d = this._s.meriter?.djur, barn = !this._s.kan_valja;
+    const kvar = k.hp - k.skada, anim = this._attackAnim;
+    let attacker = "";
+    if (d && barn) {
+      const mina = (k.attacker || []).filter((x) => x.har);
+      attacker = mina.length
+        ? `<div class="attack-rad"><span class="energi" title="Energi">⚡ ${k.energi}</span>${mina.map((x) => {
+            const slut = x.id === "a_super" && k.super_anvand;
+            const kan = !slut && k.energi >= x.energi && !this._busy;
+            return `<button class="attack-knapp ${x.svag ? "svag" : ""}" data-attack="${x.id}" ${kan ? "" : "disabled"} title="${esc(x.namn)}: ${esc(x.info)}">
+              <span class="ai">${x.ikon}</span><b>${x.nu}</b><small>${slut ? "använd" : x.energi + "⚡"}</small></button>`;
+          }).join("")}</div>
+          <div class="small muted">1 ⚡ per ${k.p_energi} ⭐ du tjänar (max ${k.energi_max})</div>`
+        : `<div class="small">⚔️ ⚡ ${k.energi} energi · lär ${esc(d.namn)} attacker i <button class="mini butik-knapp" id="open-djurbutik">🛍️ Butiken</button></div>`;
+    }
+    const sen = k.klara?.length ? k.klara[k.klara.length - 1] : null;
+    return `<div class="boss-kort ${mon.boss ? "varldsboss" : ""}" style="--varld:${mon.varld.farg}">
+      ${anim ? `<div class="attack-anim"><div class="anim-djur">${ritaDjur(d.art, "glad", Math.max(1, d.steg), {})}</div><div class="anim-skott">${anim.ikon}</div>
+        <div class="anim-skada ${anim.svag ? "svag" : ""}">−${anim.skada}${anim.svag ? "<small>SVAG PUNKT!</small>" : ""}${anim.klar ? "<small>NIVÅ KLAR! 🎉</small>" : ""}</div></div>` : ""}
+      <div class="boss-figur ${anim ? "traff" : ""}">${mon.ikon}</div>
       <div class="djur-info">
-        <div class="djur-rubrik">👾 Veckans boss: ${esc(b.namn)}</div>
-        <div class="progress boss-hp"><div style="width:${Math.round((kvar / b.hp) * 100)}%"></div></div>
-        <div class="small">${b.vunnen ? `🎉 Besegrad! Ni fick ${b.belonin.ikon} ${esc(b.belonin.namn)}` : `❤️ ${kvar} liv kvar · ${b.dagar_kvar} dagar kvar`}</div>
-        <div class="small muted">${b.delar.map((x) => `${esc(x.namn)} ⚔️ ${x.skada}`).join(" · ")}</div>
-        ${b.vunnen ? "" : `<div class="small">Varje merit ni tjänar gör skada. Besegra den tillsammans för ${b.belonin.ikon} <b>${esc(b.belonin.namn)}</b>!</div>`}
+        <div class="djur-rubrik">${mon.varld.ikon} Nivå ${k.niva}${mon.boss ? ` · 👑 ${esc(mon.namn)}` : ""}</div>
+        <div class="progress boss-hp"><div style="width:${Math.round((kvar / k.hp) * 100)}%"></div></div>
+        <div class="small">❤️ ${kvar} av ${k.hp} liv · 🎯 svag mot <b>${k.typer[mon.svag]}</b></div>
+        <div class="small muted">Varje merit du tjänar gör skada.${mon.boss && mon.sak ? ` Besegra bossen för ${mon.sak.ikon} ${esc(mon.sak.namn)}!` : ""}${sen ? ` Senast: nivå ${sen.niva} ${"⭐".repeat(sen.stjarnor)}` : ""}</div>
+        ${attacker}
+        <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
       </div></div>`;
+  }
+
+  _kartaView() {
+    const s = this._s, k = s.karta;
+    if (!k) return `<p class="muted">Hämtar…</p>`;
+    const syskon = (s.topplista || []).filter((t) => t.id !== s.barn && t.karta);
+    const d = s.meriter?.djur;
+    const noder = [...k.karta].reverse(); // högst upp = framtiden
+    let senVarld = null;
+    const rader = noder.map((n, i) => {
+      const x = [50, 72, 80, 66, 42, 24, 18, 32][n.niva % 8];
+      const klar = n.niva < k.niva, nu = n.niva === k.niva;
+      const har = syskon.filter((t) => t.karta.niva === n.niva);
+      let rubrik = "";
+      if (senVarld !== null && senVarld !== n.varld.nr) {
+        const v = noder[i - 1].varld;
+        rubrik = `<div class="karta-varld" style="background:${v.farg}">${v.ikon} Värld ${v.nr}: ${esc(v.namn)}${v.varv ? " ★".repeat(v.varv) : ""}</div>`;
+      }
+      senVarld = n.varld.nr;
+      return `${rubrik}<div class="karta-rad" style="--x:${x}%; --farg:${n.varld.farg}">
+        <div class="karta-nod ${klar ? "klar" : nu ? "nu" : "last"} ${n.boss ? "boss" : ""}">
+          <span class="nod-ikon">${klar || nu || n.boss ? n.ikon : "🔒"}</span>
+          <span class="nod-nr">${n.niva}</span>
+          ${klar ? `<span class="nod-stj">${"⭐".repeat(n.stjarnor)}</span>` : ""}
+          ${nu && d ? `<span class="nod-djur">${ritaDjur(d.art, "glad", Math.max(1, d.steg), {})}</span>` : ""}
+          ${har.map((t) => `<span class="nod-syskon" title="${esc(t.namn)}">${t.karta.art ? ritaDjur(t.karta.art, "glad", 2, {}) : "🙂"}<b>${esc(t.namn)}</b></span>`).join("")}
+        </div></div>`;
+    }).join("");
+    const sista = noder[noder.length - 1].varld;
+    const forbi = syskon.filter((t) => t.karta.niva < k.karta[0].niva || t.karta.niva > k.karta[k.karta.length - 1].niva);
+    return `<div class="karta-topp">⭐ ${k.stjarnor_tot} stjärnor · nivå ${k.niva}${syskon.map((t) => ` · ${esc(t.namn)}: nivå ${t.karta.niva}`).join("")}</div>
+      <div class="karta">${rader}<div class="karta-varld" style="background:${sista.farg}">${sista.ikon} Värld ${sista.nr}: ${esc(sista.namn)}${sista.varv ? " ★".repeat(sista.varv) : ""}</div></div>
+      ${forbi.length ? `<div class="small muted center">${forbi.map((t) => `${esc(t.namn)} är på nivå ${t.karta.niva}`).join(" · ")}</div>` : ""}
+      <p class="small muted center">Klara nivån snabbt för ⭐⭐⭐. Var tionde nivå är en världsboss med en egen pris-sak.</p>`;
   }
 
   // ---------- husdjurets rum ----------
@@ -1393,9 +1528,13 @@ class SkolanPanel extends HTMLElement {
         `Passet börjar om den 1:a varje månad med nya belöningar.`,
       ])}
 
-      ${kort("👾", "Veckans boss", [
-        `Varje vecka kommer ett nytt monster. Alla meriter ni syskon tjänar gör skada på det.`,
-        `Besegrar ni bossen före söndag får ni båda en sak som bara finns hos bossen och +50 ⭐.`,
+      ${kort("🗺️", "Äventyrskartan", [
+        `Kartan har nivåer med monster genom världar som 🌲 Glosskogen, 🌊 Bläckhavet och 🌋 Drakvulkanen. Varje merit du tjänar gör skada på nivåns monster.`,
+        `När monstret är besegrat kommer du direkt till nästa nivå. Klarar du nivån snabbt får du ⭐⭐⭐ och fler meriter.`,
+        `Var tionde nivå är en 👑 världsboss. Den ger +50 ⭐ och en sak som bara finns hos bossen.`,
+        `Nivåerna blir längre ju längre du kommer, och monstrens styrka beror på hur mycket du brukar plugga och hur många läxor och prov du har.`,
+        `⚔️ Attacker köper du i husdjursbutiken. De laddas med ⚡ energi: 1 energi per 25 ⭐ du tjänar.`,
+        `🎯 Varje monster är svagt mot en typ (🔥 🍃 ⚡ 🌊 ❄️). Då gör attacken dubbel skada.`,
       ])}
 
       ${kort("🏠", "Husdjurets rum", [
@@ -1558,7 +1697,7 @@ class SkolanPanel extends HTMLElement {
               w.bonus ? `🔥 ${w.perfekta + 1} perfekta veckor i rad +${w.bonus}` : null,
             ].filter(Boolean).join(" · ");
             return `<div class="row static topp ${t.id === s.barn ? "jag" : ""}">
-              <span>${["🥇", "🥈", "🥉"][i] || ""} <b>${esc(t.namn)}</b>${t.titel ? ` <span class="titel-bricka">${esc(t.titel)}</span>` : ""}<br><span class="muted small">${delar || "Inget gjort än den här veckan"}</span></span>
+              <span>${["🥇", "🥈", "🥉"][i] || ""} <b>${esc(t.namn)}</b>${t.titel ? ` <span class="titel-bricka">${esc(t.titel)}</span>` : ""}${t.karta ? ` <span class="small">🗺️ ${t.karta.niva}</span>` : ""}<br><span class="muted small">${delar || "Inget gjort än den här veckan"}</span></span>
               <span class="topp-p"><b>${w.poang}</b><span class="muted small">poäng</span></span></div>`;
           })
           .join("")}
@@ -2121,7 +2260,7 @@ class SkolanPanel extends HTMLElement {
       ${this._djurKort()}
       ${this._utmaningKort()}
       ${this._passKort()}
-      ${this._bossKort()}
+      ${this._nivaKort()}
       ${this._meritKort()}
       <button class="info-lank" id="open-info">ℹ️ Så funkar meriter och tävlingen ›</button>
       ${this._uppdragLista()}
@@ -3150,6 +3289,25 @@ class SkolanPanel extends HTMLElement {
       })
     );
     on("#open-djurbutik", () => this._go({ name: "djurbutik" }));
+    on("#open-karta", () => this._go({ name: "karta" }));
+    on("#open-vanner", () => this._go({ name: "vanner" }));
+    on("#van-smek-spara", () => this._vanOp("smeknamn", { namn: r.querySelector("#van-smek").value }));
+    on("#van-smek-ok", () => this._vanOp("godkann_smeknamn"));
+    on("#van-lagg", async () => { if (await this._vanOp("lagg_till", { kod: r.querySelector("#van-kod").value })) this._msg = { type: "ok", text: "Tillagd! 🤝" }; this._render(); });
+    on("#van-synka", () => this._vanOp("synka"));
+    on("#van-kopiera", async () => {
+      try { await navigator.clipboard.writeText(this._vanner.kod); this._msg = { type: "ok", text: "Vänlänken är kopierad! 📋" }; }
+      catch (e) { prompt("Kopiera vänlänken:", this._vanner.kod); }
+      this._render();
+    });
+    on("#van-dela", async () => {
+      const text = `Bli min vän i Skolan! 🤝`;
+      if (navigator.share) { try { await navigator.share({ title: "Skolan", text, url: this._vanner.kod }); } catch (e) { /* avbröt */ } }
+      else { try { await navigator.clipboard.writeText(this._vanner.kod); this._msg = { type: "ok", text: "Vänlänken är kopierad! 📋" }; this._render(); } catch (e) { prompt("Kopiera vänlänken:", this._vanner.kod); } }
+    });
+    r.querySelectorAll("[data-van-ut]").forEach((b) => b.addEventListener("click", () => this._vanOp("svar_utgaende", { kod: b.dataset.vanUt, ja: !!b.dataset.ja })));
+    r.querySelectorAll("[data-van-in]").forEach((b) => b.addEventListener("click", () => this._vanOp("svar_inkommande", { kod: b.dataset.vanIn, ja: !!b.dataset.ja })));
+    r.querySelectorAll("[data-van-bort]").forEach((b) => b.addEventListener("click", () => { if (confirm("Ta bort vännen?")) this._vanOp("ta_bort", { kod: b.dataset.vanBort }); }));
     on("#open-rum", () => this._go({ name: "rum" }));
     on("#open-pass", () => this._go({ name: "pass" }));
     r.querySelectorAll("[data-pass]").forEach((b) =>
@@ -3185,6 +3343,27 @@ class SkolanPanel extends HTMLElement {
         if (!x || !confirm(`Köpa ${x.namn} ${x.ikon} för ${x.pris} ⭐?`)) return;
         if (await this._act("djur_kop", { sak: x.id })) this._msg = { type: "ok", text: `${x.ikon} ${x.namn} är köpt!` };
         this._render();
+      })
+    );
+    r.querySelectorAll("[data-attack-kop]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const x = (this._s.karta?.attacker || []).find((y) => y.id === b.dataset.attackKop);
+        if (!x || !confirm(`Lära ${this._s.meriter?.djur?.namn || "husdjuret"} ${x.namn} ${x.ikon} för ${x.pris} ⭐?`)) return;
+        if (await this._act("attack_kop", { attack: x.id })) { this._msg = { type: "ok", text: `${x.ikon} ${x.namn} är inlärd! Använd den på bossen.` }; await this._load(); }
+        this._render();
+      })
+    );
+    r.querySelectorAll("[data-attack]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const x = (this._s.karta?.attacker || []).find((y) => y.id === b.dataset.attack);
+        if (!x || this._busy) return;
+        if (!(await this._act("attack", { attack: x.id }))) return;
+        const sen = this._s.data?.meriter?.karta?.senaste || {};
+        this._attackAnim = { ikon: x.ikon, skada: sen.skada ?? x.nu, svag: sen.svag ?? x.svag, klar: !!sen.klar };
+        clearTimeout(this._attackTimer);
+        this._attackTimer = setTimeout(() => { this._attackAnim = null; this._render(); }, 1900);
+        this._render();
+        await this._load();
       })
     );
     r.querySelectorAll("[data-djur-pa]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: b.dataset.typ, sak: b.dataset.djurPa })));
@@ -3837,6 +4016,49 @@ const CSS = `
   .boss-figur { font-size:54px; animation:vicka 2.4s ease-in-out infinite; }
   .boss-kort .muted { color:rgba(255,255,255,.75); }
   .boss-hp { background:rgba(255,255,255,.25); margin:6px 0; } .boss-hp div { background:#ff5252; }
+  .boss-kort { position:relative; overflow:hidden; background:linear-gradient(135deg,#263238,var(--varld,#b71c1c)); }
+  .boss-kort.varldsboss { background:linear-gradient(135deg,#1a0000,#b71c1c 60%,#ff6f00); box-shadow:0 0 0 3px #ffd54f inset; }
+  .karta-knapp { margin-top:8px; background:rgba(255,255,255,.2); color:#fff; border:none; }
+  .van-lista { list-style:none; padding:0; margin:0; } .van-vantar { padding-left:18px; } .van-vantar li { margin:6px 0; }
+  .van-rad { display:flex; align-items:center; gap:10px; padding:8px; border-radius:12px; margin-bottom:6px; background:var(--card-background-color,#fff); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  .van-rad.jag { outline:2px solid #ffd54f; }
+  .van-plats { font-weight:800; width:22px; text-align:center; } .van-djur { width:40px; height:40px; } .van-djur svg { width:100%; height:100%; }
+  .van-namn { flex:1; } .van-niva { text-align:right; font-weight:700; }
+  .karta-topp { text-align:center; font-weight:600; margin-bottom:8px; }
+  .karta { border-radius:16px; overflow:hidden; background:linear-gradient(#e8f5e9,#fff8e1); padding-bottom:8px; }
+  .karta-varld { color:#fff; font-weight:700; text-align:center; padding:6px; }
+  .karta-rad { position:relative; height:76px; background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--farg) 14%,transparent),transparent); }
+  .karta-rad::before { content:""; position:absolute; left:calc(var(--x) - 3px); top:-30px; width:6px; height:110px; background:repeating-linear-gradient(#bcaaa4 0 8px,transparent 8px 14px); z-index:0; }
+  .karta-nod { position:absolute; left:var(--x); top:50%; transform:translate(-50%,-50%); width:54px; height:54px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#fff; border:4px solid var(--farg); box-shadow:0 3px 0 rgba(0,0,0,.2); z-index:1; }
+  .karta-nod.boss { width:66px; height:66px; border-color:#ffd54f; background:#fff3e0; }
+  .karta-nod.last { background:#eceff1; border-color:#b0bec5; }
+  .karta-nod.klar { background:color-mix(in srgb,var(--farg) 25%,#fff); }
+  .karta-nod.nu { animation:nodPuls 1.4s ease-in-out infinite; box-shadow:0 0 0 6px rgba(255,213,79,.6); }
+  .nod-ikon { font-size:26px; } .karta-nod.last .nod-ikon { font-size:18px; opacity:.6; }
+  .nod-nr { position:absolute; bottom:-8px; background:var(--farg); color:#fff; font-size:11px; font-weight:700; border-radius:8px; padding:0 6px; }
+  .nod-stj { position:absolute; top:-12px; font-size:11px; white-space:nowrap; }
+  .nod-djur { position:absolute; right:-46px; top:-14px; width:44px; height:44px; } .nod-djur svg, .nod-syskon svg { width:100%; height:100%; }
+  .nod-syskon { position:absolute; left:-50px; top:-10px; width:40px; height:40px; text-align:center; } .nod-syskon b { display:block; font-size:9px; margin-top:-4px; }
+  @keyframes nodPuls { 0%,100% { transform:translate(-50%,-50%) scale(1); } 50% { transform:translate(-50%,-50%) scale(1.08); } }
+  .attack-rad { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:8px; }
+  .attack-rad .energi { font-weight:700; background:rgba(255,235,59,.25); border-radius:12px; padding:4px 10px; }
+  .attack-knapp { display:flex; flex-direction:column; align-items:center; min-width:52px; padding:4px 6px; border-radius:12px; border:2px solid rgba(255,255,255,.4); background:rgba(255,255,255,.15); color:#fff; cursor:pointer; line-height:1.1; }
+  .attack-knapp .ai { font-size:22px; } .attack-knapp small { font-size:10px; opacity:.85; }
+  .attack-knapp.svag { border-color:#ffeb3b; box-shadow:0 0 8px #ffeb3b; }
+  .attack-knapp:disabled { opacity:.4; cursor:default; }
+  .attack-sak.svag { outline:2px solid #fbc02d; }
+  .attack-anim { position:absolute; inset:0; pointer-events:none; z-index:2; }
+  .anim-djur { position:absolute; left:58%; bottom:6px; width:64px; height:64px; animation:djurAnfall 1.8s ease-in-out forwards; }
+  .anim-djur svg { width:100%; height:100%; }
+  .anim-skott { position:absolute; left:60%; top:40%; font-size:36px; opacity:0; animation:skott 1.8s ease-in forwards; }
+  .anim-skada { position:absolute; left:14px; top:4px; font-size:30px; font-weight:900; color:#ffeb3b; text-shadow:0 2px 4px #000; opacity:0; animation:skadaUpp 1.8s ease-out forwards; }
+  .anim-skada small { display:block; font-size:12px; }
+  .anim-skada.svag { color:#ff9100; font-size:36px; }
+  .boss-figur.traff { animation:bossTraff 1.8s ease-in-out; }
+  @keyframes djurAnfall { 0% { transform:translateX(140px); opacity:0; } 20% { transform:translateX(0); opacity:1; } 35% { transform:translateX(-24px) scale(1.15); } 50%,80% { transform:translateX(0); opacity:1; } 100% { opacity:0; } }
+  @keyframes skott { 0%,30% { left:60%; transform:scale(.6); opacity:0; } 35% { opacity:1; } 60% { left:24px; transform:scale(1.5); opacity:1; } 61%,100% { left:24px; opacity:0; } }
+  @keyframes skadaUpp { 0%,55% { opacity:0; transform:translateY(20px) scale(.6); } 65% { opacity:1; transform:translateY(0) scale(1.3); } 90% { opacity:1; transform:translateY(-8px) scale(1); } 100% { opacity:0; transform:translateY(-16px); } }
+  @keyframes bossTraff { 0%,55% { transform:none; filter:none; } 60% { transform:translateX(-8px) rotate(-8deg); filter:brightness(2.5); } 68% { transform:translateX(8px) rotate(8deg); } 76% { transform:translateX(-5px); filter:none; } 85%,100% { transform:none; } }
   .rum-scen { position:relative; height:240px; border-radius:18px; overflow:hidden; margin-bottom:10px; box-shadow:inset 0 0 0 3px rgba(0,0,0,.08); }
   .rum-golv { position:absolute; left:0; right:0; bottom:0; height:34%; border-top:4px solid rgba(0,0,0,.12); }
   .rum-sak { position:absolute; line-height:1; }

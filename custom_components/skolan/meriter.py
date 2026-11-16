@@ -10,7 +10,7 @@ så att samma sak aldrig ger meriter två gånger.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from homeassistant.util import dt as dt_util
 
@@ -50,7 +50,9 @@ MEDALJER = [
     ("snabbfinger", "⚡", "Snabbfinger", "Fått 20 rätt i Glosrekord", "rekord_max", 20),
     ("raket", "🚀", "Raket", "Fått 35 rätt i Glosrekord", "rekord_max", 35),
     ("passmastare", "🎟️", "Passmästare", "Klarat alla 30 nivåer i läxpasset", "pass_klara", 1),
-    ("bossjagare", "⚔️", "Bossjägare", "Besegrat veckans boss", "bossar", 1),
+    ("bossjagare", "⚔️", "Bossjägare", "Besegrat en världsboss på kartan", "bossar", 1),
+    ("aventyrare", "🗺️", "Äventyrare", "Klarat 10 nivåer på kartan", "nivaer", 10),
+    ("kartans_hjalte", "🏆", "Kartans hjälte", "Klarat 50 nivåer på kartan", "nivaer", 50),
 ]
 
 P_LAS_I_TID = 30  # läsläxan läst och kontrollfrågorna klarade före slutdatum
@@ -89,8 +91,10 @@ def ge(data: dict, poang: int, orsak: str, nyckel: str | None = None, ikon: str 
     del m["logg"][:-500]
     if poang > 0:
         m["intjanat"] = m.get("intjanat", 0) + int(poang)
-        if ikon not in ("🎟️", "👾"):  # belöningar från passet och bossen ger inte pass-XP
+        if ikon not in EJ_SKADA:  # belöningar (pass, nivåer, bossar) ger inte pass-XP eller skada
             _pass_xp(m, int(poang))
+            _karta_energi(data, int(poang))
+            _karta_skada(data, int(poang))
     m["saldo"] = m.get("saldo", 0) + int(poang)
     return True
 
@@ -1186,43 +1190,300 @@ def hamta_pass(data: dict, niva: int) -> str:
     return f"{b['ikon']} {b['namn']}!"
 
 
-# ---------- veckans boss (bröderna slåss tillsammans) ----------
-BOSSAR = [
-    {"id": "glosmonster", "namn": "Glosmonstret", "ikon": "👾", "sak": {"id": "b_pixel", "typ": "hatt", "ikon": "👾", "namn": "Pixelmonster"}},
-    {"id": "blackfisken", "namn": "Bläckbläckfisken", "ikon": "🦑", "sak": {"id": "b_black", "typ": "effekt", "ikon": "🖋️", "namn": "Bläckstänk", "partikel": "🖋️"}},
-    {"id": "troll", "namn": "Läxtrollet", "ikon": "👹", "sak": {"id": "b_troll", "typ": "hatt", "ikon": "👹", "namn": "Trollmask"}},
-    {"id": "zombie", "namn": "Sömnzombien", "ikon": "🧟", "sak": {"id": "b_zombie", "typ": "kompis", "ikon": "🧟", "namn": "Snälla zombien"}},
-    {"id": "robot", "namn": "Robotkungen", "ikon": "🤖", "sak": {"id": "b_kugge", "typ": "effekt", "ikon": "⚙️", "namn": "Kugghjul", "partikel": "⚙️"}},
-    {"id": "drake", "namn": "Glömskedraken", "ikon": "🐉", "sak": {"id": "b_drakfjall", "typ": "bakgrund", "ikon": "🏔️", "namn": "Drakberget", "bg": "linear-gradient(170deg,#263238,#b71c1c 70%,#ff6f00)", "fg": "#fff", "deko": "🐉"}},
-    {"id": "spoke", "namn": "Slarvspöket", "ikon": "👻", "sak": {"id": "b_spoke", "typ": "kompis", "ikon": "👻", "namn": "Lilla spöket"}},
-    {"id": "haj", "namn": "Tidshajen", "ikon": "🦈", "sak": {"id": "b_haj", "typ": "hatt", "ikon": "🦈", "namn": "Hajfena"}},
+# ---------- äventyrskartan: nivåer med monster, en världsboss var tionde nivå ----------
+VARLDAR = [
+    {"id": "skog", "namn": "Glosskogen", "ikon": "🌲", "farg": "#2e7d32", "monster": ["🐛", "🐌", "🦔", "🐝", "🕷️", "🦇", "🐍", "🦂", "🪲"]},
+    {"id": "hav", "namn": "Bläckhavet", "ikon": "🌊", "farg": "#0277bd", "monster": ["🦀", "🐡", "🦐", "🪼", "🐚", "🦞", "🐊", "🦭", "🐋"]},
+    {"id": "berg", "namn": "Trollberget", "ikon": "⛰️", "farg": "#6d4c41", "monster": ["🐺", "🦅", "🐗", "🦬", "🐐", "🦫", "🦡", "🦨", "🧌"]},
+    {"id": "trask", "namn": "Sömnträsket", "ikon": "🌙", "farg": "#4527a0", "monster": ["🦟", "🪰", "🐀", "🦎", "🕸️", "🌫️", "🧛", "🦥", "🐊"]},
+    {"id": "fabrik", "namn": "Robotfabriken", "ikon": "🏭", "farg": "#546e7a", "monster": ["⚙️", "🔩", "🔋", "📟", "🖨️", "💾", "🕹️", "📡", "🛸"]},
+    {"id": "vulkan", "namn": "Drakvulkanen", "ikon": "🌋", "farg": "#bf360c", "monster": ["☄️", "🌶️", "🦂", "🐍", "🧨", "💣", "🌪️", "🦖", "🔥"]},
+    {"id": "slott", "namn": "Spökslottet", "ikon": "🏚️", "farg": "#37474f", "monster": ["🕯️", "💀", "🧙", "🎃", "🪦", "👁️", "🦉", "🕸️", "🧟"]},
+    {"id": "tid", "namn": "Tidshavet", "ikon": "⏳", "farg": "#00695c", "monster": ["⏰", "⌛", "🕰️", "⏱️", "📅", "🐠", "🪸", "🌀", "🐙"]},
 ]
-BOSS_HP = 800  # så mycket meriter bröderna tillsammans behöver tjäna under veckan
+BOSSAR = [  # världsbossar, en per värld (samma ordning som VARLDAR)
+    {"id": "glosmonster", "svag": "natur", "svar": 0.85, "namn": "Glosmonstret", "ikon": "👾", "sak": {"id": "b_pixel", "typ": "hatt", "ikon": "👾", "namn": "Pixelmonster"}},
+    {"id": "blackfisken", "svag": "blixt", "svar": 0.9, "namn": "Bläckbläckfisken", "ikon": "🦑", "sak": {"id": "b_black", "typ": "effekt", "ikon": "🖋️", "namn": "Bläckstänk", "partikel": "🖋️"}},
+    {"id": "troll", "svag": "eld", "svar": 0.95, "namn": "Läxtrollet", "ikon": "👹", "sak": {"id": "b_troll", "typ": "hatt", "ikon": "👹", "namn": "Trollmask"}},
+    {"id": "zombie", "svag": "natur", "svar": 1.0, "namn": "Sömnzombien", "ikon": "🧟", "sak": {"id": "b_zombie", "typ": "kompis", "ikon": "🧟", "namn": "Snälla zombien"}},
+    {"id": "robot", "svag": "vatten", "svar": 1.0, "namn": "Robotkungen", "ikon": "🤖", "sak": {"id": "b_kugge", "typ": "effekt", "ikon": "⚙️", "namn": "Kugghjul", "partikel": "⚙️"}},
+    {"id": "drake", "svag": "is", "svar": 1.05, "namn": "Glömskedraken", "ikon": "🐉", "sak": {"id": "b_drakfjall", "typ": "bakgrund", "ikon": "🏔️", "namn": "Drakberget", "bg": "linear-gradient(170deg,#263238,#b71c1c 70%,#ff6f00)", "fg": "#fff", "deko": "🐉"}},
+    {"id": "spoke", "svag": "eld", "svar": 1.1, "namn": "Slarvspöket", "ikon": "👻", "sak": {"id": "b_spoke", "typ": "kompis", "ikon": "👻", "namn": "Lilla spöket"}},
+    {"id": "haj", "svag": "blixt", "svar": 1.15, "namn": "Tidshajen", "ikon": "🦈", "sak": {"id": "b_haj", "typ": "hatt", "ikon": "🦈", "namn": "Hajfena"}},
+]
+NIVA_PER_VARLD = 10
+BOSS_MAL_MIN, BOSS_MAL_MAX = 150, 700
+BOSS_MAL_BAS = 100  # svit, dagens utmaning m.m. en vanlig vecka
+BOSS_LAXA = {"glosor": 90, "bok": 45}  # ungefär vad en läxa i schemat ger en vecka man gör den ordentligt
+BOSS_LAXA_ANNAN = 50
+BOSS_ATTACK_TILLAGG = 1.15  # attackerna ger extra skada, så monstren har lite mer liv
+EJ_SKADA = ("🎟️", "👾", "🗺️")  # belöningar gör ingen skada och ger ingen pass-XP
+P_NIVA_STJARNA = 5  # meriter per stjärna när en nivå klaras
+P_VARLDSBOSS = 50
+ENERGI_MAX = 15
 
 
-def boss_vecka(dag: date | None = None) -> tuple[str, dict]:
+def _vecko_poang(data: dict) -> dict[str, int]:
+    """Intjänade meriter (utan belöningar) per vecka, t.ex. {"2026-W46": 320}."""
+    ut: dict[str, int] = {}
+    for x in _m(data)["logg"]:
+        if x["p"] > 0 and x.get("ikon") not in EJ_SKADA:
+            ar, v, _ = date.fromisoformat(x["tid"][:10]).isocalendar()
+            k = f"{ar}-W{v:02d}"
+            ut[k] = ut.get(k, 0) + x["p"]
+    return ut
+
+
+def boss_mal(data: dict, dag: date | None = None) -> int | None:
+    """Hur mycket ett barn brukar plugga en hel vecka (snitt av de senaste fyra hela veckorna). None utan historik."""
     dag = dag or dt_util.now().date()
-    ar, v, _ = dag.isocalendar()
-    return f"{ar}-W{v:02d}", BOSSAR[(ar * 53 + v) % len(BOSSAR)]
+    logg = _m(data)["logg"]
+    if not logg:
+        return None
+    forsta = date.fromisoformat(logg[0]["tid"][:10])
+    forsta_mandag = forsta - timedelta(days=forsta.weekday())
+    if forsta.weekday() != 0:
+        forsta_mandag += timedelta(days=7)  # första veckan var inte hel
+    per = _vecko_poang(data)
+    veckor = []
+    mandag = dag - timedelta(days=dag.weekday())
+    for i in range(1, 5):
+        m = mandag - timedelta(days=7 * i)
+        if m < forsta_mandag:
+            break
+        ar, v, _ = m.isocalendar()
+        veckor.append(per.get(f"{ar}-W{v:02d}", 0))
+    if not veckor:
+        return None
+    return int(sum(veckor) / len(veckor))
 
 
-def veckans_poang(data: dict) -> int:
+def boss_arbete(data: dict, dag: date | None = None) -> tuple[int, int, int]:
+    """Veckans väntade läxmängd i meriter: (poäng, antal läxor, antal prov).
+    Klara uppdrag räknas också, så att bossen inte blir svagare av att man gör dem."""
+    dag = dag or dt_util.now().date()
+    mandag = dag - timedelta(days=dag.weekday())
+    sondag = mandag + timedelta(days=6)
+    p, laxor, prov = BOSS_MAL_BAS, 0, 0
+    for x in data.get("schema", []):
+        if (mandag + timedelta(days=int(x.get("kommer", 0)))).isoformat() < x.get("fran", SCHEMA_START):
+            continue
+        p += BOSS_LAXA.get(x.get("typ"), BOSS_LAXA_ANNAN)
+        laxor += 1
+    for u in data.get("uppdrag", []):
+        try:
+            datum = date.fromisoformat((u.get("datum") or "")[:10])
+        except ValueError:
+            continue
+        if u.get("typ") == "prov":
+            # pluggdagar (upp till 5 dagar före provet) som hamnar i den här veckan
+            dagar = sum(1 for i in range(1, 6) if mandag <= datum - timedelta(days=i) <= sondag)
+            if dagar or mandag <= datum <= sondag:
+                p += P_REG_PROV + P_PROV_DAG * dagar + (P_PROV_KLART if mandag <= datum <= sondag + timedelta(days=1) else 0)
+                prov += 1
+        elif mandag <= datum <= sondag:
+            p += P_LAS_I_TID if u.get("typ") == "las" else P_SKRIV_I_TID
+            laxor += 1
+    return p, laxor, prov
+
+
+def boss_mal_vecka(data: dict, dag: date | None = None) -> int:
+    """Vad bossen räknar med från ett barn: hälften vana, hälften veckans läxmängd."""
+    arbete = boss_arbete(data, dag)[0]
+    vana = boss_mal(data, dag)
+    mal = (vana + arbete) / 2 if vana is not None else arbete
+    return int(min(BOSS_MAL_MAX, max(BOSS_MAL_MIN, mal)))
+
+
+
+
+def niva_dagar(n: int) -> float:
+    """Hur många dagars vanligt plugg en nivå motsvarar. Börjar kort och blir längre."""
+    d = min(2.5, 0.6 + 0.04 * n)
+    return min(5.0, d * 2.5) if n % NIVA_PER_VARLD == 0 else d
+
+
+def niva_info(n: int) -> dict:
+    """Monster, värld och svaghet för nivå n (1, 2, 3 …). Världarna går runt igen efter den sista."""
+    vi = (n - 1) // NIVA_PER_VARLD
+    v = VARLDAR[vi % len(VARLDAR)]
+    varv = vi // len(VARLDAR)
+    plats = (n - 1) % NIVA_PER_VARLD
+    typer = [t for t in TYPER if t != "kraft"]
+    if plats == NIVA_PER_VARLD - 1:
+        b = BOSSAR[vi % len(BOSSAR)]
+        mon = {"namn": b["namn"], "ikon": b["ikon"], "svag": b["svag"], "boss": True, "svar": b["svar"], "sak": b["sak"]}
+    else:
+        ik = v["monster"][plats % len(v["monster"])]
+        mon = {"namn": f"Nivå {n}", "ikon": ik, "svag": typer[(n * 7 + vi) % len(typer)], "boss": False, "svar": 1.0}
+    return {**mon, "niva": n, "varld": {**{k: v[k] for k in ("id", "namn", "ikon", "farg")}, "nr": vi + 1, "varv": varv}}
+
+
+def niva_liv(data: dict, n: int) -> int:
+    dag = boss_mal_vecka(data) / 7
+    info = niva_info(n)
+    return max(15, int(round(dag * niva_dagar(n) * info["svar"] * BOSS_ATTACK_TILLAGG)))
+
+
+def _karta(data: dict) -> dict:
     m = _m(data)
-    idag = dt_util.now().date()
-    mandag = (idag - timedelta(days=idag.weekday())).isoformat()
-    return sum(x["p"] for x in m["logg"] if x["p"] > 0 and x["tid"][:10] >= mandag and x.get("ikon") not in ("🎟️", "👾"))
+    k = m.get("karta")
+    if not k:
+        k = m["karta"] = {"niva": 1, "skada": 0, "start": dt_util.now().isoformat(timespec="minutes"),
+                          "hp": niva_liv(data, 1), "stjarnor": {}, "energi": 3, "energi_rest": 0, "super": ""}
+    return k
 
 
-def ge_boss_belonin(data: dict, vecka: str, boss: dict) -> bool:
-    """Ge bossens pris till ett barn (en gång per vecka). Returnerar True om det gavs nu."""
-    if not ge(data, 50, f"👾 Ni besegrade {boss['namn']}!", f"boss:{vecka}", "👾"):
-        return False
-    d = _m(data).get("djur")
-    if d and boss["sak"]["id"] not in d.setdefault("agt", []):
-        d["agt"].append(boss["sak"]["id"])
-    _rakna(data, "bossar")
+def _klara_niva(data: dict, k: dict) -> None:
+    n = k["niva"]
+    info = niva_info(n)
+    try:
+        tid = (dt_util.now() - datetime.fromisoformat(k["start"])).total_seconds() / 86400
+    except (ValueError, TypeError):
+        tid = 99
+    mal = niva_dagar(n)
+    st = 3 if tid <= mal else 2 if tid <= mal * 1.6 else 1
+    k["stjarnor"][str(n)] = max(st, k["stjarnor"].get(str(n), 0))
+    ge(data, st * P_NIVA_STJARNA, f"🗺️ Nivå {n} klar! {'⭐' * st}", f"niva:{n}", "🗺️")
+    if info["boss"]:
+        ge(data, P_VARLDSBOSS, f"👾 Du besegrade {info['namn']}!", f"varldsboss:{n}", "👾")
+        d = _m(data).get("djur")
+        if d and info["sak"]["id"] not in d.setdefault("agt", []):
+            d["agt"].append(info["sak"]["id"])
+        _rakna(data, "bossar")
+    _rakna(data, "nivaer")
+    k.setdefault("klara", []).append({"niva": n, "stjarnor": st, "tid": dt_util.now().isoformat(timespec="minutes")})
+    del k["klara"][:-20]
+    k["niva"] = n + 1
+    k["start"] = dt_util.now().isoformat(timespec="minutes")
+    k["hp"] = niva_liv(data, n + 1)
+
+
+def _karta_skada(data: dict, skada: int) -> None:
+    """Lägg skada på nivån. Det som blir över går vidare till nästa nivå."""
+    k = _karta(data)
+    k["skada"] += int(skada)
+    for _ in range(5):
+        if k["skada"] < k["hp"]:
+            break
+        over = k["skada"] - k["hp"]
+        _klara_niva(data, k)
+        k["skada"] = min(over, k["hp"] - 1)
     kolla_medaljer(data)
-    return True
+
+
+def _karta_energi(data: dict, poang: int) -> None:
+    k = _karta(data)
+    rest = k.get("energi_rest", 0) + int(poang)
+    k["energi"] = min(ENERGI_MAX, k.get("energi", 0) + rest // P_ENERGI)
+    k["energi_rest"] = rest % P_ENERGI
+
+
+def karta_status(data: dict) -> dict:
+    k = _karta(data)
+    n = k["niva"]
+    info = niva_info(n)
+    m = _m(data)
+    agda = m.get("attacker", [])
+    lista = []
+    for at in ATTACKER:
+        skada, svag = _attack_varde(data, at, info)
+        lista.append({**at, "har": at["id"] in agda, "nu": skada, "svag": svag})
+    vecka = "{}-W{:02d}".format(*dt_util.now().date().isocalendar()[:2])
+    fran = max(1, n - 12)
+    karta = [{**{x: niva_info(i)[x] for x in ("niva", "ikon", "namn", "boss", "varld")}, "stjarnor": k["stjarnor"].get(str(i), 0)}
+             for i in range(fran, n + 6)]
+    _, laxor, prov = boss_arbete(data)
+    return {"niva": n, "hp": k["hp"], "skada": min(k["skada"], k["hp"]), "monster": info, "dagar": niva_dagar(n),
+            "energi": k.get("energi", 0), "energi_max": ENERGI_MAX, "p_energi": P_ENERGI, "attacker": lista, "typer": TYPER,
+            "super_anvand": k.get("super") == vecka, "senaste": k.get("senaste"), "karta": karta,
+            "stjarnor_tot": sum(k["stjarnor"].values()), "klara": k.get("klara", [])[-3:], "laxor": laxor, "prov": prov}
+
+
+def karta_kort(data: dict) -> dict:
+    """Det syskon och vänner får se."""
+    k = _karta(data)
+    d = _m(data).get("djur") or {}
+    return {"niva": k["niva"], "stjarnor": sum(k["stjarnor"].values()), "art": d.get("art"), "djur": d.get("namn")}
+
+
+# ---------- attacker mot monstren ----------
+TYPER = {"eld": "🔥 Eld", "natur": "🍃 Natur", "blixt": "⚡ Blixt", "vatten": "🌊 Vatten", "is": "❄️ Is", "kraft": "💥 Kraft"}
+ATTACKER = [
+    {"id": "a_eld", "ikon": "🔥", "namn": "Eldspark", "typ": "eld", "pris": 60, "steg": 0, "energi": 1, "skada": 4,
+     "info": "Snabb och billig."},
+    {"id": "a_blad", "ikon": "🍃", "namn": "Bladvirvel", "typ": "natur", "pris": 90, "steg": 0, "energi": 1, "skada": 3,
+     "info": "+3 skada om dagens utmaning är klar."},
+    {"id": "a_blixt", "ikon": "⚡", "namn": "Blixt", "typ": "blixt", "pris": 120, "steg": 0, "energi": 1, "skada": 3,
+     "info": "Dubbel skada om du har pluggat idag."},
+    {"id": "a_vag", "ikon": "🌊", "namn": "Våg", "typ": "vatten", "pris": 150, "steg": 1, "energi": 2, "skada": 5,
+     "info": "+1 skada per dag i din svit (högst +9)."},
+    {"id": "a_is", "ikon": "❄️", "namn": "Isstorm", "typ": "is", "pris": 250, "steg": 1, "energi": 2, "skada": 10,
+     "info": "Stark attack."},
+    {"id": "a_super", "ikon": "💥", "namn": "Superattack", "typ": "kraft", "pris": 400, "steg": 2, "energi": 3, "skada": 30,
+     "info": "Jättestark, men bara en gång per vecka."},
+]
+P_ENERGI = 25  # 1 energi per 25 intjänade meriter
+SVAG_GANGER = 2  # monstret tar dubbel skada av sin svaghet
+
+
+def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
+    """Hur mycket skada attacken gör just nu, och om monstret är svagt mot den."""
+    m = _m(data)
+    idag = dt_util.now().date().isoformat()
+    skada = at["skada"]
+    if at["id"] == "a_blad" and f"utmaning:{idag}" in m["nycklar"]:
+        skada += 3
+    elif at["id"] == "a_blixt" and idag in m["ovningsdagar"]:
+        skada *= 2
+    elif at["id"] == "a_vag":
+        skada += min(9, _streak(m["ovningsdagar"]))
+    svag = mon.get("svag") == at["typ"]
+    return skada * (SVAG_GANGER if svag else 1), svag
+
+
+def attack_kop(data: dict, at_id: str) -> None:
+    m = _m(data)
+    d = m.get("djur")
+    at = next((x for x in ATTACKER if x["id"] == at_id), None)
+    if not d or not at:
+        raise ValueError("Det finns inte.")
+    agda = m.setdefault("attacker", [])
+    if at_id in agda:
+        raise ValueError("Den attacken kan du redan.")
+    if _djur_steg(data) < at["steg"]:
+        raise ValueError(f"{d['namn']} måste bli {DJUR_STEG[at['steg']][1]} först.")
+    if m.get("saldo", 0) < at["pris"]:
+        raise ValueError(f"Du behöver {at['pris']} ⭐ (du har {m.get('saldo', 0)}).")
+    ge(data, -at["pris"], f"⚔️ {d['namn']} lärde sig {at['namn']} {at['ikon']}", None, "🛍️")
+    agda.append(at_id)
+
+
+def attack(data: dict, at_id: str) -> dict:
+    """Husdjuret anfaller nivåns monster. Kostar energi, ger extra skada."""
+    m = _m(data)
+    if not m.get("djur"):
+        raise ValueError("Du behöver ett husdjur först.")
+    at = next((x for x in ATTACKER if x["id"] == at_id), None)
+    if not at or at_id not in m.get("attacker", []):
+        raise ValueError("Den attacken kan ditt husdjur inte än.")
+    k = _karta(data)
+    vecka = "{}-W{:02d}".format(*dt_util.now().date().isocalendar()[:2])
+    if at_id == "a_super" and k.get("super") == vecka:
+        raise ValueError("Superattacken går bara att använda en gång per vecka.")
+    if k.get("energi", 0) < at["energi"]:
+        raise ValueError(f"Du behöver {at['energi']} ⚡ energi. Plugga mer så laddas den!")
+    n = k["niva"]
+    mon = niva_info(n)
+    skada, svag = _attack_varde(data, at, mon)
+    k["energi"] -= at["energi"]
+    if at_id == "a_super":
+        k["super"] = vecka
+    k["senaste"] = {"id": at_id, "skada": skada, "svag": svag, "niva": n, "tid": dt_util.now().isoformat(timespec="seconds")}
+    _rakna(data, "attacker")
+    _karta_skada(data, skada)
+    k["senaste"]["klar"] = k["niva"] > n
+    return k["senaste"]
 
 
 # ---------- husdjurets rum ----------

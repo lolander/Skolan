@@ -35,14 +35,14 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import meriter
+from . import meriter, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.27.0"
+VERSION = "1.28.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -132,7 +132,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView):
+    for view in (StateView, ActionView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, VannerView, VanPublikView, VanForfraganView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -329,28 +329,17 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
             await _notis(hass, b.get("notify"), titel, text, "/skolan")
 
     async_track_time_change(hass, _hungrig_notis, hour=16, minute=0, second=0)
-    async def _boss(_now=None) -> None:
-        """När bröderna tillsammans tjänat ihop bossens liv: ge båda priset och säg till."""
-        vecka, boss = meriter.boss_vecka()
-        barn = hass.data[DOMAIN]["conf"]["barn"]
-        skada = 0
-        for b in barn:
-            d = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
-            skada += meriter.veckans_poang(d)
-        if skada < meriter.BOSS_HP:
+    async def _vanner_synk(_now=None) -> None:
+        """Skicka barnens kort till vänservern och hämta vänner (bara när vänner är påslaget)."""
+        if not vanner.pa():
             return
-        for b in barn:
-            async with hass.data[DOMAIN]["locks"][b["id"]]:
-                path = _dir(hass, b["id"])
-                d = await hass.async_add_executor_job(_load, path)
-                ny = meriter.ge_boss_belonin(d, vecka, boss)
-                if ny:
-                    await hass.async_add_executor_job(_save, path, d)
-            if ny:
-                await _notis(hass, b.get("notify"), f"⚔️ Ni besegrade {boss['namn']}!",
-                             f"Bra jobbat tillsammans! Du fick {boss['sak']['ikon']} {boss['sak']['namn']} till ditt husdjur och +50 ⭐.", "/skolan")
+        for b in hass.data[DOMAIN]["conf"]["barn"]:
+            try:
+                await _vanner_synka_barn(hass, b)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Vänsynk %s: %s", b["id"], err)
 
-    async_track_time_change(hass, _boss, minute=list(range(0, 60, 5)), second=40)
+    async_track_time_change(hass, _vanner_synk, minute=list(range(3, 60, 15)), second=0)
     async_track_time_change(hass, _klockor, second=20)  # varje minut
     hass.async_create_task(_klockor())
 
@@ -429,6 +418,196 @@ def _save(path: Path, data: dict) -> None:
     tmp = path / "data.json.tmp"
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), "utf-8")
     tmp.replace(path / "data.json")
+
+
+def _vanner_kort(hass: HomeAssistant, barn: str, v: dict) -> dict | None:
+    data = _load(_dir(hass, barn))
+    return vanner.kort(v, meriter.karta_kort(data), meriter.titel(data))
+
+
+async def _vanner_foraldrar(hass: HomeAssistant, titel: str, text: str) -> None:
+    for tjanst in hass.data[DOMAIN]["conf"].get("foralder_notify", {}).values():
+        await _notis(hass, tjanst, titel, text, "/skolan")
+
+
+def _vlock(hass: HomeAssistant, barn: str) -> asyncio.Lock:
+    return hass.data[DOMAIN].setdefault("vlocks", {}).setdefault(barn, asyncio.Lock())
+
+
+async def _vanner_synka_barn(hass: HomeAssistant, b: dict) -> dict:
+    """Hämta alla vänners kort direkt från deras Home Assistant."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    mapp = _dir(hass, b["id"])
+    session = async_get_clientsession(hass)
+    v = await hass.async_add_executor_job(vanner.las, mapp)
+    resultat = {}
+    for x in list(v["vanner"]):
+        try:
+            resultat[x["kod"]] = await vanner.hamta_kort(session, x["kod"])
+        except ValueError:
+            resultat[x["kod"]] = None
+    async with _vlock(hass, b["id"]):
+        v = await hass.async_add_executor_job(vanner.las, mapp)
+        for kod, k in resultat.items():
+            vanner.uppdatera_van(v, kod, k)
+        v["synkad"] = dt_util.now().isoformat(timespec="minutes")
+        await hass.async_add_executor_job(vanner.spara, mapp, v)
+    return v
+
+
+async def _barn_for_vannyckel(hass: HomeAssistant, nyckel: str) -> tuple[dict, dict] | None:
+    import hmac
+    hitta = None
+    for b in hass.data[DOMAIN]["conf"]["barn"]:
+        v = await hass.async_add_executor_job(vanner.las, _dir(hass, b["id"]))
+        if v["nyckel"] and hmac.compare_digest(v["nyckel"], nyckel):
+            hitta = (b, v)
+    return hitta
+
+
+class VanPublikView(HomeAssistantView):
+    """Barnets vänkort för andra familjers Home Assistant. Ingen inloggning, hemlig nyckel i länken."""
+
+    url = "/api/skolan/van/{nyckel}"
+    name = "api:skolan:van"
+    requires_auth = False
+
+    async def get(self, request: web.Request, nyckel: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        hitta = await _barn_for_vannyckel(hass, nyckel) if vanner.pa() else None
+        if not hitta:
+            raise web.HTTPNotFound
+        b, v = hitta
+        k = await hass.async_add_executor_job(_vanner_kort, hass, b["id"], v)
+        if not k:
+            raise web.HTTPNotFound
+        if request.query.get("json"):
+            return self.json(k)
+        lank = html.escape(str(request.url.with_query(None)))
+        sida = f"""<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bli vän i Skolan</title><style>body{{font-family:system-ui;background:#fff8e1;margin:0;padding:24px;text-align:center}}
+.kort{{background:#fff;border-radius:20px;padding:24px;max-width:360px;margin:auto;box-shadow:0 4px 16px rgba(0,0,0,.12)}}
+.djur{{font-size:72px}}button{{font-size:18px;padding:12px 20px;border-radius:12px;border:0;background:#43a047;color:#fff;margin-top:16px}}
+textarea{{width:100%;font-size:12px;margin-top:12px;height:70px}}</style></head><body><div class="kort">
+<div class="djur">{html.escape(k['art'] or '🙂')}</div><h2>{html.escape(k['smeknamn'])} vill bli din vän i Skolan!</h2>
+<p>🗺️ Nivå {k['niva']} · ⭐ {k['stjarnor']}</p>
+<p>Kopiera länken och klistra in den under <b>🤝 Vänner</b> i din Skolan-app.</p>
+<button onclick="navigator.clipboard.writeText(document.getElementById('l').value).then(()=>this.textContent='✅ Kopierad!')">📋 Kopiera vänlänken</button>
+<textarea id="l" readonly>{lank}</textarea></div></body></html>"""
+        return web.Response(text=sida, content_type="text/html")
+
+
+class VanForfraganView(HomeAssistantView):
+    """En annan familjs Home Assistant säger att deras barn har lagt till vårt barn."""
+
+    url = "/api/skolan/van/{nyckel}/forfragan"
+    name = "api:skolan:van:forfragan"
+    requires_auth = False
+
+    async def post(self, request: web.Request, nyckel: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        hitta = await _barn_for_vannyckel(hass, nyckel) if vanner.pa() else None
+        if not hitta:
+            raise web.HTTPNotFound
+        b, _ = hitta
+        try:
+            body = json.loads(await request.content.read(2048))
+            async with _vlock(hass, b["id"]):
+                v = await hass.async_add_executor_job(vanner.las, _dir(hass, b["id"]))
+                rad = vanner.ta_emot_forfragan(v, body.get("kod"), body.get("smeknamn"))
+                if rad:
+                    await hass.async_add_executor_job(vanner.spara, _dir(hass, b["id"]), v)
+        except (ValueError, AttributeError):
+            return self.json({"ok": False}, status_code=400)
+        if rad:
+            await _vanner_foraldrar(hass, f"🤝 Vänförfrågan till {b['namn']}",
+                                    f"{rad['smeknamn'] or 'Någon'} har lagt till {b['namn']} som vän i Skolan. Godkänn eller neka under Vänner.")
+        return self.json({"ok": True})
+
+
+class VannerView(HomeAssistantView):
+    """Appens vänsida. Dolt (pa: false) tills vänner slås på."""
+
+    url = "/api/skolan/vanner"
+    name = "api:skolan:vanner"
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        barn = _barn_for(hass, request, request.query.get("barn"))
+        if not vanner.pa():
+            return self.json({"pa": False})
+        async with _vlock(hass, barn):
+            v = await hass.async_add_executor_job(vanner.las, _dir(hass, barn))
+            if vanner.se_till_nyckel(v):
+                await hass.async_add_executor_job(vanner.spara, _dir(hass, barn), v)
+        return self.json(vanner.publik(v, _ar_foralder(hass, request), _bas_url(hass)))
+
+    async def post(self, request: web.Request) -> web.Response:
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        hass: HomeAssistant = request.app["hass"]
+        if not vanner.pa():
+            raise web.HTTPNotFound
+        body = await request.json()
+        barn = _barn_for(hass, request, body.get("barn"))
+        foralder = _ar_foralder(hass, request)
+        op = str(body.get("op") or "")
+        b = next(x for x in hass.data[DOMAIN]["conf"]["barn"] if x["id"] == barn)
+        if op in ("godkann_smeknamn", "svar_utgaende", "svar_inkommande") and not foralder:
+            raise web.HTTPForbidden
+        mapp = _dir(hass, barn)
+        bas = _bas_url(hass)
+        session = async_get_clientsession(hass)
+        meddela = None
+        try:
+            if op == "synka":
+                v = await _vanner_synka_barn(hass, b)
+                return self.json(vanner.publik(v, foralder, bas))
+            async with _vlock(hass, barn):
+                v = await hass.async_add_executor_job(vanner.las, mapp)
+                vanner.se_till_nyckel(v)
+                egen = vanner.egen_kod(bas, v)
+                kod = str(body.get("kod") or "")
+                if op == "smeknamn":
+                    vanner.satt_smeknamn(v, body.get("namn"), foralder)
+                    if not foralder:
+                        meddela = (f"🤝 {b['namn']} vill heta \"{v['smeknamn']}\"", "Godkänn smeknamnet under Vänner innan det visas för kompisar.")
+                elif op == "godkann_smeknamn":
+                    vanner.godkann_smeknamn(v)
+                elif op == "lagg_till":
+                    if not (v["smeknamn_ok"] and egen):
+                        raise ValueError("Välj ett smeknamn och låt en förälder godkänna det först.")
+                    if foralder:  # föräldern lägger till direkt
+                        kod = vanner.normal_kod(kod)
+                        vanner._kolla_ny(v, kod, egen)
+                        vanner.lagg_in_van(v, kod, await vanner.hamta_kort(session, kod))
+                        await vanner.skicka_forfragan(session, kod, egen, v["smeknamn"])
+                    else:
+                        vanner.onska(v, kod, egen)
+                        meddela = (f"🤝 {b['namn']} vill lägga till en vän", "Godkänn eller neka under Vänner i Skolan.")
+                elif op in ("svar_utgaende", "svar_inkommande"):
+                    kod = vanner.normal_kod(kod)
+                    if body.get("ja"):
+                        if not egen:
+                            raise ValueError("Er Home Assistant går inte att nå utifrån, så vänner fungerar inte.")
+                        vanner._kolla_ny(v, kod, egen)
+                        vanner.lagg_in_van(v, kod, await vanner.hamta_kort(session, kod))
+                        if op == "svar_utgaende":
+                            await vanner.skicka_forfragan(session, kod, egen, v["smeknamn"])
+                    else:
+                        lista = "utgaende" if op == "svar_utgaende" else "inkommande"
+                        v[lista] = [x for x in v[lista] if x["kod"] != kod]
+                elif op == "ta_bort":
+                    vanner.ta_bort(v, vanner.normal_kod(kod))
+                else:
+                    raise ValueError("Okänd åtgärd.")
+                await hass.async_add_executor_job(vanner.spara, mapp, v)
+        except ValueError as err:
+            return self.json_message(str(err), 400)
+        if meddela:
+            await _vanner_foraldrar(hass, *meddela)
+        return self.json(vanner.publik(v, foralder, bas))
 
 
 def _load_fil(f: Path) -> dict:
@@ -512,12 +691,10 @@ class StateView(HomeAssistantView):
             for b in conf["barn"]:
                 d = data if b["id"] == barn else _load(_dir(hass, b["id"]))
                 ut.append({"id": b["id"], "namn": b["namn"], **meriter.sammanfattning(d), "vecka": meriter.veckoresultat(d),
-                           "titel": meriter.titel(d), "boss_skada": meriter.veckans_poang(d)})
+                           "titel": meriter.titel(d), "karta": meriter.karta_kort(d)})
             return sorted(ut, key=lambda x: -x["vecka"]["poang"])
 
         topplista = await hass.async_add_executor_job(_topp)
-        vecka, boss = meriter.boss_vecka()
-        skada = sum(t["boss_skada"] for t in topplista)
         idag = dt_util.now().date()
         butik = await hass.async_add_executor_job(_load_fil, hass.data[DOMAIN]["base"] / "butik.json") if parent else None
         return self.json(
@@ -531,10 +708,7 @@ class StateView(HomeAssistantView):
                 "djurlista": meriter.DJUR,
                 "djurbutik": meriter.butik_lista(),
                 "pass": meriter.pass_status(data),
-                "boss": {**{k: v for k, v in boss.items() if k != "sak"}, "belonin": boss["sak"], "vecka": vecka, "hp": meriter.BOSS_HP,
-                         "skada": min(skada, meriter.BOSS_HP), "vunnen": skada >= meriter.BOSS_HP,
-                         "dagar_kvar": 6 - idag.weekday(),
-                         "delar": [{"namn": t["namn"], "skada": t["boss_skada"]} for t in topplista]},
+                "karta": meriter.karta_status(data),
                 "rum_platser": meriter.RUM_PLATSER,
                 "varianter": meriter.VARIANTER,
                 "titel": meriter.titel(data),
@@ -647,7 +821,7 @@ def _apply(data: dict, body: dict) -> list[str]:
     """Utför en ändring i barnets data. Returnerar filer som ska raderas."""
     op = body.get("op")
     amnen = data.setdefault("amnen", [])
-    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
+    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
         if op == "djur":
@@ -660,6 +834,10 @@ def _apply(data: dict, body: dict) -> list[str]:
             meriter.hamta_pass(data, int(body.get("niva") or 0))
         elif op == "rum_stall":
             meriter.rum_stall(data, str(body.get("plats") or ""), body.get("sak") or None)
+        elif op == "attack_kop":
+            meriter.attack_kop(data, str(body.get("attack") or ""))
+        elif op == "attack":
+            meriter.attack(data, str(body.get("attack") or ""))
         else:
             meriter.djur_pa(data, str(body.get("typ") or ""), body.get("sak") or None)
         return []
