@@ -45,9 +45,28 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.39.0"
+VERSION = "1.40.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
+# Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
+# Formler och begrepp sparas som listor bland glosorna (med "typ") så att de kan övas och förhöras på samma sätt.
+DELAR = ("bocker", "glosor", "formler", "begrepp", "uppgifter", "anteckningar")
+LISTTYPER = ("glosor", "formler", "begrepp")
+
+
+def _delar(a: dict) -> list[str]:
+    if isinstance(a.get("delar"), list):
+        return [d for d in DELAR if d in a["delar"]]
+    return ["bocker", "glosor"]  # ämnen från före delarna
+
+
+def _rensa_delar(x) -> list[str]:
+    valda = [d for d in DELAR if isinstance(x, list) and d in x]
+    if not valda:
+        raise ValueError("Välj minst en del till ämnet.")
+    return valda
+
+
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
 
 BARN_SCHEMA = vol.Schema(
@@ -1134,7 +1153,16 @@ def _apply(data: dict, body: dict) -> list[str]:
         namn = _name(body.get("namn"))
         if any(a["namn"].lower() == namn.lower() for a in amnen):
             raise ValueError("Det ämnet finns redan.")
-        amnen.append({"id": _new_id(), "namn": namn, "farg": FARGER[len(amnen) % len(FARGER)], "bocker": [], "glosor": []})
+        delar = _rensa_delar(body.get("delar")) if body.get("delar") is not None else ["bocker", "glosor"]
+        amnen.append({"id": _new_id(), "namn": namn, "farg": FARGER[len(amnen) % len(FARGER)], "bocker": [], "glosor": [], "delar": delar})
+        return []
+    if op == "amne_andra":
+        a = _find(amnen, body.get("amne"))
+        namn = _name(body.get("namn"))
+        if any(x is not a and x["namn"].lower() == namn.lower() for x in amnen):
+            raise ValueError("Det ämnet finns redan.")
+        a["namn"] = namn
+        a["delar"] = _rensa_delar(body.get("delar"))  # en del som tas bort göms bara, innehållet sparas
         return []
     if op == "rename_amne":
         _find(amnen, body.get("amne"))["namn"] = _name(body.get("namn"))
@@ -1192,8 +1220,31 @@ def _apply(data: dict, body: dict) -> list[str]:
             j = max(0, min(len(b["sidor"]) - 1, i + steg))
             b["sidor"].insert(j, b["sidor"].pop(i))
         return []
+    if op == "uppgift_ny":
+        text = str(body.get("text") or "").strip()[:200]
+        if not text:
+            raise ValueError("Skriv vad uppgiften är.")
+        datum = str(body.get("datum") or "").strip()
+        if datum and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum):
+            raise ValueError("Ogiltigt datum.")
+        u = a.setdefault("uppgifter", [])
+        if len(u) >= 200:
+            raise ValueError("Ta bort några gamla uppgifter först.")
+        u.append({"id": _new_id(), "text": text, "datum": datum or None, "klar": None, "skapad": dt_util.now().date().isoformat()})
+        return []
+    if op == "uppgift_klar":
+        u = _find(a.get("uppgifter", []), body.get("uppgift"))
+        u["klar"] = dt_util.now().date().isoformat() if body.get("klar") else None
+        return []
+    if op == "uppgift_bort":
+        a["uppgifter"].remove(_find(a.get("uppgifter", []), body.get("uppgift")))
+        return []
+    if op == "anteckning_spara":
+        a["anteckningar"] = str(body.get("text") or "")[:10000]
+        return []
     if op == "save_glosor":
         namn = _name(body.get("namn"))
+        typ = body.get("typ") if body.get("typ") in LISTTYPER else "glosor"
         sprak = [str(s or "").strip()[:30] for s in (body.get("sprak") or ["", ""])][:2]
         while len(sprak) < 2:
             sprak.append("")
@@ -1205,9 +1256,9 @@ def _apply(data: dict, body: dict) -> list[str]:
             raise ValueError("Ogiltigt datum för förhöret.")
         if body.get("glosor"):
             g = _find(a["glosor"], body.get("glosor"))
-            g.update({"namn": namn, "sprak": sprak, "par": par, "forhor": forhor or None})
+            g.update({"namn": namn, "sprak": sprak, "par": par, "forhor": forhor or None, "typ": typ})
         else:
-            ny_g = {"id": _new_id(), "namn": namn, "sprak": sprak, "par": par, "forhor": forhor or None, "skapad": dt_util.now().date().isoformat()}
+            ny_g = {"id": _new_id(), "namn": namn, "sprak": sprak, "par": par, "forhor": forhor or None, "skapad": dt_util.now().date().isoformat(), "typ": typ}
             a["glosor"].append(ny_g)
             if body.get("_barn"):
                 meriter.lagt_in(data, a["id"], "glosor", ny_g)
@@ -2071,7 +2122,15 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def _ratt_svar(svar: str, facit: str) -> bool:
+def _formel(s: str) -> str:
+    """Formler jämförs utan mellanslag och gångertecken: "F = m · a" = "F=ma"."""
+    s = str(s or "").lower().translate(str.maketrans({"²": "^2", "³": "^3", "−": "-", "÷": "/", ",": "."}))
+    return re.sub(r"[\s·×*⋅]", "", s).rstrip(".")
+
+
+def _ratt_svar(svar: str, facit: str, formel: bool = False) -> bool:
+    if formel:
+        return bool(_formel(svar)) and _formel(svar) in [_formel(x) for x in re.split(r";| eller ", facit or "")]
     alt = [_norm(x) for x in re.split(r"[/,;]| eller ", facit or "") if _norm(x)]
     return _norm(svar) in alt or _norm(svar) == _norm(facit)
 
@@ -2147,6 +2206,8 @@ def _forslag(f: dict) -> str:
 
 def _stavord(g: dict) -> bool:
     """Samma språk på båda sidor (t.ex. svenska veckans ord): förhörs som diktamen."""
+    if g.get("typ", "glosor") != "glosor":
+        return False
     sp = [str(x or "").lower().strip() for x in g.get("sprak", [])] + ["", ""]
     par = g.get("par", [])
     return bool(sp[0] and sp[0] == sp[1]) or bool(par) and all(
@@ -2163,7 +2224,10 @@ def _fragor(g: dict, riktning: int) -> list[dict]:
     fragor = []
     for p in g["par"]:
         fran = riktning if riktning in (0, 1) else (0 if uuid.uuid4().int % 2 else 1)
-        fragor.append({"fraga": p[fran], "facit": p[1 - fran], "fran": g["sprak"][fran], "till": g["sprak"][1 - fran]})
+        q = {"fraga": p[fran], "facit": p[1 - fran], "fran": g["sprak"][fran], "till": g["sprak"][1 - fran]}
+        if g.get("typ") == "formler" and fran == 0:
+            q["formel"] = True
+        fragor.append(q)
     random.shuffle(fragor)
     return fragor
 
@@ -2265,7 +2329,7 @@ class ForhorView(HomeAssistantView):
                         if int(body.get("index", -1)) != i or i >= len(f["fragor"]):
                             raise ValueError("Fel fråga.")
                         svar = str(body.get("svar") or "").strip()[:100]
-                        f["svar"].append({"svar": svar, "ratt": _ratt_svar(svar, f["fragor"][i]["facit"])})
+                        f["svar"].append({"svar": svar, "ratt": _ratt_svar(svar, f["fragor"][i]["facit"], bool(f["fragor"][i].get("formel")))})
                         f["senast"] = dt_util.now().isoformat(timespec="seconds")
                         if f["status"] == "skickat":
                             f["status"] = "pagar"
@@ -3029,7 +3093,7 @@ def _kompisar(hass: HomeAssistant, barn: str) -> list[dict]:
 
 def _glos_listor(data: dict) -> list[dict]:
     return [{"amne": a["id"], "id": g["id"], "namn": g["namn"], "amne_namn": a["namn"], "antal": len(g.get("par", []))}
-            for a in data.get("amnen", []) for g in a.get("glosor", []) if g.get("par") and not _stavord(g)]
+            for a in data.get("amnen", []) for g in a.get("glosor", []) if g.get("par") and not _stavord(g) and g.get("typ", "glosor") == "glosor"]
 
 
 async def _van_framsteg(hass: HomeAssistant, kod: str, typ: str, sid: str) -> dict | None:

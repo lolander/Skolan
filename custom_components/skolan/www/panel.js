@@ -14,6 +14,56 @@ const norm = (s) =>
 // "springa / löpa" eller "springa, löpa" = flera rätta svar.
 const answers = (s) => String(s ?? "").split(/[\/,;]| eller /).map(norm).filter(Boolean);
 
+// Delar ett ämne kan ha. Väljs när ämnet skapas och kan ändras under ✏️ Redigera ämnet.
+const DELAR = [
+  { id: "bocker", ikon: "📚", namn: "Böcker", besk: "Foton eller PDF av skolboken, e-böcker" },
+  { id: "glosor", ikon: "🗣️", namn: "Glosor", besk: "Ord på två språk att öva och få förhör på" },
+  { id: "formler", ikon: "📐", namn: "Formler", besk: "Formler och ekvationer, t.ex. v = s / t" },
+  { id: "begrepp", ikon: "💡", namn: "Begrepp", besk: "Ord med förklaring, t.ex. fotosyntes" },
+  { id: "uppgifter", ikon: "✅", namn: "Uppgifter", besk: "Att göra, t.ex. räkna s. 34 uppg. 1–10" },
+  { id: "anteckningar", ikon: "🗒️", namn: "Anteckningar", besk: "Fri text att komma ihåg" },
+];
+const delarFor = (a) => (Array.isArray(a?.delar) ? DELAR.map((d) => d.id).filter((id) => a.delar.includes(id)) : ["bocker", "glosor"]);
+// Förslag utifrån ämnets namn. Går alltid att ändra.
+const forslagDelar = (namn) => {
+  const n = norm(namn);
+  const ord = n.split(/[\s\/&-]+/);
+  const har = (...x) => x.some((o) => n.includes(o));
+  if (har("matte", "matematik", "math")) return ["bocker", "formler", "uppgifter"];
+  if (har("fysik", "kemi", "teknik")) return ["bocker", "formler", "begrepp", "uppgifter"];
+  if (ord.includes("no") || har("biologi", "natur")) return ["bocker", "begrepp", "uppgifter"];
+  if (ord.includes("so") || har("historia", "geografi", "samhäll", "religion")) return ["bocker", "begrepp", "anteckningar"];
+  if (har("engelska", "spanska", "tyska", "franska", "svenska", "språk", "english", "moderna", "italienska", "kinesiska", "arabiska", "norska", "finska"))
+    return ["bocker", "glosor"];
+  return ["bocker", "uppgifter"];
+};
+// Listor som övas som glosor: vanliga glosor, formler och begrepp.
+const LISTTYP = {
+  glosor: { del: "glosor", ikon: "📝", ny: "＋ Nya glosor", en: "ord", fler: "ord", sprak: ["", "Svenska"], plats: ["ord", "översättning"],
+    titel: ["Nya glosor", "Ändra glosor"], bort: "Ta bort glosorna?", knapp: "Ta bort glosorna", namn: "t.ex. Kapitel 3" },
+  formler: { del: "formler", ikon: "📐", ny: "＋ Nya formler", en: "formel", fler: "formler", sprak: ["Namn", "Formel"], plats: ["t.ex. Hastighet", "t.ex. v = s / t"],
+    titel: ["Nya formler", "Ändra formler"], bort: "Ta bort formlerna?", knapp: "Ta bort formlerna", namn: "t.ex. Rörelse" },
+  begrepp: { del: "begrepp", ikon: "💡", ny: "＋ Nya begrepp", en: "begrepp", fler: "begrepp", sprak: ["Begrepp", "Förklaring"], plats: ["t.ex. Fotosyntes", "t.ex. växter gör socker av solljus"],
+    titel: ["Nya begrepp", "Ändra begrepp"], bort: "Ta bort begreppen?", knapp: "Ta bort begreppen", namn: "t.ex. Kapitel 2 Cellen" },
+};
+const gTyp = (g) => (LISTTYP[g?.typ] ? g.typ : "glosor");
+// Formler jämförs utan mellanslag och gångertecken: "F = m · a" är samma som "F=ma".
+const formelNorm = (s) =>
+  String(s ?? "").toLowerCase().replace(/²/g, "^2").replace(/³/g, "^3").replace(/−/g, "-").replace(/÷/g, "/").replace(/,/g, ".")
+    .replace(/[\s·×*⋅]/g, "").replace(/\.$/, "");
+const amneRad = (a) => {
+  const d = delarFor(a);
+  const n = (k, en, fler) => `${k} ${k === 1 ? en : fler}`;
+  const lista = (typ) => (a.glosor || []).filter((g) => gTyp(g) === typ).length;
+  const delar = [];
+  if (d.includes("bocker")) delar.push(n(a.bocker.length, "bok", "böcker"));
+  if (d.includes("glosor")) delar.push(n(lista("glosor"), "glosläxa", "glosläxor"));
+  if (d.includes("formler")) delar.push(n(lista("formler"), "formellista", "formellistor"));
+  if (d.includes("begrepp")) delar.push(n(lista("begrepp"), "begreppslista", "begreppslistor"));
+  if (d.includes("uppgifter")) { const k = (a.uppgifter || []).filter((u) => !u.klar).length; delar.push(k ? n(k, "uppgift kvar", "uppgifter kvar") : "inga uppgifter kvar"); }
+  return delar.slice(0, 3).join(" · ");
+};
+
 // Stavningsjämförelse bokstav för bokstav (Levenshtein-uppställning).
 // Ger delar av rätt svar: ok = barnet skrev rätt bokstav, fel = fel/saknad bokstav,
 // samt antal bokstäver för mycket.
@@ -104,6 +154,7 @@ const las_upp = (text, sprak, hass) => {
 
 // Stavningsord: samma språk på båda sidor (t.ex. svenska veckans ord). Då förhörs orden genom uppläsning.
 const stavLista = (g) => {
+  if (g?.typ && g.typ !== "glosor") return false;
   const sp = (g?.sprak || []).map((x) => String(x || "").toLowerCase().trim());
   const par = g?.par || [];
   return (sp[0] && sp[0] === sp[1]) || (par.length > 0 && par.every((p) => !String(p[1] || "").trim() || String(p[0]).trim().toLowerCase() === String(p[1]).trim().toLowerCase()));
@@ -1005,6 +1056,10 @@ class SkolanPanel extends HTMLElement {
       title = "🛍️ Husdjursbutik";
       back = { name: "hem" };
       body = this._djurbutikView();
+    } else if (v.name === "amne-form") {
+      title = v.amne ? "✏️ Redigera ämnet" : "＋ Nytt ämne";
+      back = v.amne ? { name: "amne", amne: v.amne } : { name: "hem" };
+      body = this._amneFormView();
     } else if (v.name === "info") {
       title = "ℹ️ Så funkar det";
       back = v.fran || { name: "hem" };
@@ -1081,7 +1136,7 @@ class SkolanPanel extends HTMLElement {
         back = { name: "amne", amne: a.id };
         body = this._glosorView(a, g);
       } else if (v.name === "redigera") {
-        title = v.glosor ? "Ändra glosor" : "Nya glosor";
+        title = LISTTYP[v.typ || "glosor"].titel[v.glosor ? 1 : 0];
         back = v.glosor ? { name: "glosor", amne: a.id, glosor: v.glosor } : { name: "amne", amne: a.id };
         body = this._redigeraView(a);
       } else if (v.name === "rekord") {
@@ -1218,7 +1273,7 @@ class SkolanPanel extends HTMLElement {
                <div class="muted small">Lyssna och stava ordet. Tryck igen för att höra det långsammare.</div>`
             : `<div class="muted small">${esc(q.fran)}</div>
           <div class="word">${esc(q.fraga)}</div>`}
-          <input id="fh-svar" placeholder="${q.dikt ? "Skriv ordet" : `Skriv på ${esc((q.till || "").toLowerCase() || "det andra språket")}`}" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <input id="fh-svar" placeholder="${q.dikt ? "Skriv ordet" : ["namn", "vad", "formel", "begrepp", "förklaring"].includes((q.till || "").toLowerCase()) ? `Skriv ${esc(q.till.toLowerCase())}` : `Skriv på ${esc((q.till || "").toLowerCase() || "det andra språket")}`}" autocomplete="off" autocapitalize="off" spellcheck="false">
           <button class="primary" id="fh-svara">${i === n - 1 ? "Lämna in ✓" : "Nästa →"}</button>
         </div>`;
     }
@@ -3472,7 +3527,7 @@ class SkolanPanel extends HTMLElement {
             (a) => `
           <button class="card amne" style="--c:${a.farg}" data-open-amne="${a.id}">
             <div class="amne-namn">${esc(a.namn)}</div>
-            <div class="muted small">${a.bocker.length} bok${a.bocker.length === 1 ? "" : "öcker"} · ${a.glosor.length} glos${a.glosor.length === 1 ? "läxa" : "läxor"}</div>
+            <div class="muted small">${esc(amneRad(a))}</div>
           </button>`
           )
           .join("")}
@@ -3481,8 +3536,92 @@ class SkolanPanel extends HTMLElement {
       ${amnen.length ? "" : `<p class="muted">Börja med att skapa ett ämne, till exempel Engelska eller Matte.</p>`}`;
   }
 
-  _amneView(a) {
+  _amneFormView() {
+    const v = this._view;
+    const a = v.amne ? this._amne(v.amne) : null;
+    const innehall = (id) => {
+      if (!a) return 0;
+      if (id === "bocker") return a.bocker.length;
+      if (LISTTYP[id]) return a.glosor.filter((g) => gTyp(g) === id).length;
+      if (id === "uppgifter") return (a.uppgifter || []).length;
+      if (id === "anteckningar") return a.anteckningar?.trim() ? 1 : 0;
+      return 0;
+    };
     return `
+      <div class="form">
+        <label>Vad heter ämnet? <input id="af-namn" value="${esc(v.namn || "")}" placeholder="t.ex. Matte, Engelska, SO" maxlength="40"></label>
+      </div>
+      <p class="small muted">${a ? "Välj vad ämnet ska innehålla." : "Vad tror du att ämnet kommer att innehålla? Det går att ändra sen."}</p>
+      <div class="list">
+        ${DELAR.map((d) => {
+          const pa = v.delar.includes(d.id);
+          const n = innehall(d.id);
+          return `<label class="row del-val ${pa ? "vald-rad" : ""}"><span>${d.ikon} <b>${esc(d.namn)}</b><br><span class="muted small">${esc(d.besk)}${
+            n && !pa ? (LISTTYP[d.id] ? " · har innehåll, visas så länge det finns kvar" : " · har innehåll som sparas och kommer tillbaka om du slår på den igen") : ""}</span></span>
+            <input type="checkbox" data-del="${d.id}" ${pa ? "checked" : ""}></label>`;
+        }).join("")}
+      </div>
+      <div class="actions">
+        <button class="primary" id="af-spara" ${this._busy ? "disabled" : ""}>${a ? "Spara" : "Skapa ämnet"}</button>
+      </div>`;
+  }
+
+  _listSektion(a, typ) {
+    const lt = LISTTYP[typ];
+    const d = DELAR.find((x) => x.id === typ);
+    const listor = a.glosor.filter((g) => gTyp(g) === typ);
+    return `
+      <h3>${d.ikon} ${esc(d.namn)}</h3>
+      <div class="list">
+        ${[...listor]
+          .sort((x, y) => {
+            // kommande förhör först (närmast överst), sen listor utan datum, sist gamla förhör
+            const v = (g) => { const f = forhorInfo(g.forhor)?.dagar; return f == null ? 9000 : f < 0 ? 9500 - f : f; };
+            return v(x) - v(y);
+          })
+          .map((g) => {
+            const last = (g.resultat || []).slice(-1)[0];
+            const f = forhorInfo(g.forhor);
+            const snart = f && f.dagar >= 0 && f.dagar <= 3;
+            return `<button class="row ${snart ? "snart" : ""}" data-open-glosor="${g.id}">
+              <span>${lt.ikon} ${esc(g.namn)}${f && f.dagar >= 0 ? `<br><span class="small forhor">📅 Förhör ${esc(f.text)} · ${f.kvar}</span>` : ""}</span>
+              <span class="muted small">${g.par.length} ${g.par.length === 1 ? lt.en : lt.fler}${last ? ` · senast ${last.ratt}/${last.av}` : ""} ›</span></button>`;
+          })
+          .join("")}
+        <button class="row add" data-add-lista="${typ}">${lt.ny}</button>
+      </div>`;
+  }
+
+  _uppgiftSektion(a) {
+    const u = a.uppgifter || [];
+    const kvar = u.filter((x) => !x.klar).sort((x, y) => (x.datum || "9999").localeCompare(y.datum || "9999"));
+    const klara = u.filter((x) => x.klar).sort((x, y) => y.klar.localeCompare(x.klar));
+    const visaKlara = this._view.allaKlara ? klara : klara.slice(0, 3);
+    const rad = (x) => {
+      const f = x.datum && !x.klar ? forhorInfo(x.datum) : null;
+      return `<div class="row static uppg ${x.klar ? "klar" : f && f.dagar >= 0 && f.dagar <= 1 ? "snart" : ""}">
+        <label class="uppg-text"><input type="checkbox" data-uppg-klar="${x.id}" ${x.klar ? "checked" : ""}>
+          <span>${esc(x.text)}${f ? `<br><span class="small ${f.dagar < 0 ? "danger-text" : "forhor"}">📅 ${esc(f.text)} · ${f.dagar < 0 ? "försenad" : f.kvar}</span>` : ""}</span></label>
+        <button class="mini danger" data-uppg-bort="${x.id}" title="Ta bort">✕</button></div>`;
+    };
+    return `
+      <h3>✅ Uppgifter</h3>
+      <div class="list">
+        ${kvar.map(rad).join("") || `<div class="row static muted small">Inga uppgifter kvar 🎉</div>`}
+        ${visaKlara.map(rad).join("")}
+        ${klara.length > 3 ? `<button class="row add" id="uppg-alla">${this._view.allaKlara ? "Visa färre" : `Visa alla klara (${klara.length})`}</button>` : ""}
+      </div>
+      <div class="uppg-ny">
+        <input id="uppg-text" placeholder="Ny uppgift, t.ex. Räkna s. 34 uppg. 1–10" maxlength="200" value="${esc(this._view.uppgUtkast || "")}">
+        <input id="uppg-datum" type="date" title="Klar senast (valfritt)">
+        <button class="primary" id="uppg-add" ${this._busy ? "disabled" : ""}>＋</button>
+      </div>`;
+  }
+
+  _amneView(a) {
+    const d = delarFor(a);
+    const del = {
+      bocker: () => `
       <h3>📚 Böcker</h3>
       <div class="hylla">
         ${a.bocker
@@ -3495,28 +3634,23 @@ class SkolanPanel extends HTMLElement {
           )
           .join("")}
         <button class="bok-tile add" id="add-bok"><div class="bok-utan">＋</div><div class="bok-namn">Ny bok</div></button>
-      </div>
-      <h3>🗣️ Glosor</h3>
-      <div class="list">
-        ${[...a.glosor]
-          .sort((x, y) => {
-            // kommande förhör först (närmast överst), sen glosor utan datum, sist gamla förhör
-            const v = (g) => { const d = forhorInfo(g.forhor)?.dagar; return d == null ? 9000 : d < 0 ? 9500 - d : d; };
-            return v(x) - v(y);
-          })
-          .map((g) => {
-            const last = (g.resultat || []).slice(-1)[0];
-            const f = forhorInfo(g.forhor);
-            const snart = f && f.dagar >= 0 && f.dagar <= 3;
-            return `<button class="row ${snart ? "snart" : ""}" data-open-glosor="${g.id}">
-              <span>📝 ${esc(g.namn)}${f && f.dagar >= 0 ? `<br><span class="small forhor">📅 Förhör ${esc(f.text)} · ${f.kvar}</span>` : ""}</span>
-              <span class="muted small">${g.par.length} ord${last ? ` · senast ${last.ratt}/${last.av}` : ""} ›</span></button>`;
-          })
-          .join("")}
-        <button class="row add" id="add-glosor">＋ Nya glosor</button>
-      </div>
+      </div>`,
+      glosor: () => this._listSektion(a, "glosor"),
+      formler: () => this._listSektion(a, "formler"),
+      begrepp: () => this._listSektion(a, "begrepp"),
+      uppgifter: () => this._uppgiftSektion(a),
+      anteckningar: () => `
+      <h3>🗒️ Anteckningar</h3>
+      <textarea id="ant-text" class="anteckning" rows="6" maxlength="10000" placeholder="Skriv det du vill komma ihåg…">${esc(this._view.antUtkast ?? a.anteckningar ?? "")}</textarea>
+      <div class="actions"><button class="primary" id="ant-spara" ${this._busy ? "disabled" : ""}>Spara anteckningarna</button></div>`,
+    };
+    // Listor i delar som är avslagna syns ändå om det finns något i dem, så inget försvinner.
+    const gomda = Object.keys(LISTTYP).filter((typ) => !d.includes(typ) && a.glosor.some((g) => gTyp(g) === typ));
+    return `
+      ${d.map((id) => del[id]()).join("")}
+      ${gomda.map((typ) => this._listSektion(a, typ)).join("")}
       <div class="actions">
-        <button class="ghost" id="rename-amne">Byt namn på ämnet</button>
+        <button class="ghost" id="edit-amne">✏️ Redigera ämnet</button>
         <button class="ghost danger" id="del-amne">Ta bort ämnet</button>
       </div>`;
   }
@@ -3973,33 +4107,37 @@ class SkolanPanel extends HTMLElement {
           : ""
       }
       <div class="actions">
-        <button class="ghost danger" id="del-glosor">Ta bort glosorna</button>
+        <button class="ghost danger" id="del-glosor">${LISTTYP[gTyp(g)].knapp}</button>
       </div>`;
   }
 
   _redigeraView(a) {
     const v = this._view;
+    const typ = v.typ || "glosor";
+    const lt = LISTTYP[typ];
     const par = v.par.length ? v.par : [["", ""]];
     return `
-      <label class="primary upload">
+      ${typ === "glosor" ? `<label class="primary upload">
         📷 Läs in från foto (AI)
         <input type="file" id="glosfoto" accept="image/*,application/pdf" hidden>
-      </label>
+      </label>` : ""}
       <div class="form">
-        <label>Namn <input id="g-namn" value="${esc(v.namn || "")}" placeholder="t.ex. Kapitel 3" maxlength="40"></label>
-        <label>📅 Förhör (datum) <input id="g-forhor" type="date" value="${esc(v.forhor || "")}"></label>
-        <div class="two">
+        <label>Namn <input id="g-namn" value="${esc(v.namn || "")}" placeholder="${esc(lt.namn)}" maxlength="40"></label>
+        <label>📅 Förhör/prov (datum) <input id="g-forhor" type="date" value="${esc(v.forhor || "")}"></label>
+        ${typ === "glosor" ? `<div class="two">
           <label>Språk 1 <input id="g-s0" value="${esc(v.sprak?.[0] || "")}" placeholder="Engelska"></label>
           <label>Språk 2 <input id="g-s1" value="${esc(v.sprak?.[1] || "")}" placeholder="Svenska"></label>
-        </div>
+        </div>` : ""}
+        ${typ === "formler" ? `<p class="small muted">Mellanslag och gångertecken spelar ingen roll när svaret rättas: <b>F = m · a</b> och <b>F=ma</b> räknas som samma. Skriv ² som ^2 om det är lättare.</p>` : ""}
+        ${typ === "begrepp" ? `<p class="small muted">När du övar visas förklaringen och du skriver begreppet. Du kan också öva åt andra hållet och själv bedöma om du hade rätt.</p>` : ""}
       </div>
       <div class="pairs">
         ${par
           .map(
             (p, i) => `
           <div class="pair">
-            <input data-p="${i}" data-k="0" value="${esc(p[0])}" placeholder="ord">
-            <input data-p="${i}" data-k="1" value="${esc(p[1])}" placeholder="översättning">
+            <input data-p="${i}" data-k="0" value="${esc(p[0])}" placeholder="${esc(lt.plats[0])}">
+            <input data-p="${i}" data-k="1" value="${esc(p[1])}" placeholder="${esc(lt.plats[1])}">
             <button class="mini danger" data-del-par="${i}" title="Ta bort">✕</button>
           </div>`
           )
@@ -4030,7 +4168,7 @@ class SkolanPanel extends HTMLElement {
           <button class="row" data-start="0">${esc(g.sprak[0] || "Ord")} → ${esc(g.sprak[1] || "Översättning")}</button>
           <button class="row" data-start="1">${esc(g.sprak[1] || "Översättning")} → ${esc(g.sprak[0] || "Ord")}</button>
           <button class="row" data-start="2">Blandat</button>
-          ${window.speechSynthesis ? `<button class="row" data-start="3">🔊 Lyssna och stava (${esc(g.sprak[0] || "ordet")})</button>` : ""}
+          ${window.speechSynthesis && gTyp(g) === "glosor" ? `<button class="row" data-start="3">🔊 Lyssna och stava (${esc(g.sprak[0] || "ordet")})</button>` : ""}
         </div>`;
     }
     if (!o.kvar.length) {
@@ -4088,7 +4226,7 @@ class SkolanPanel extends HTMLElement {
                <button class="primary" id="nasta">Nästa →</button>
                ${this._hadeRattOk(o, svar) ? `<button class="ghost" id="hade-ratt">Jag hade rätt</button>` : ""}`
             : `${o.tips?.[k.i] ? `<div class="tips-rad">💡 ${[...String(svar)].map((c, j) => (j < o.tips[k.i] || c === " " ? esc(c) : "_")).join("&#8203;")}</div>` : ""}
-               <input id="svar" placeholder="Skriv på ${esc(till.toLowerCase() || "det andra språket")}" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(o.utkast || "")}">
+               <input id="svar" placeholder="${gTyp(g) === "glosor" ? `Skriv på ${esc(till.toLowerCase() || "det andra språket")}` : `Skriv ${esc(till.toLowerCase() || "svaret")}`}" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(o.utkast || "")}">
                <div class="actions center">
                  <button class="primary" id="kolla" ${this._busy ? "disabled" : ""}>Kolla${!this._s.kan_valja && (o.forsok?.[k.i] || 0) >= 2 ? " (1 ⭐ om fel)" : ""}</button>
                  ${(o.tips?.[k.i] || 0) < [...String(svar)].length - 1 ? `<button class="ghost" id="tips" ${this._busy ? "disabled" : ""}>💡 Tips (${this._s.kan_valja ? "gratis" : "1 ⭐"})</button>` : ""}
@@ -4124,10 +4262,44 @@ class SkolanPanel extends HTMLElement {
     );
 
     // hem
-    on("#add-amne", async () => {
-      const n = this._ask("Vad heter ämnet? (t.ex. Engelska)");
-      if (n) await this._act("add_amne", { namn: n });
-    });
+    on("#add-amne", () => this._go({ name: "amne-form", namn: "", delar: ["bocker", "uppgifter"], valt: false }));
+    // nytt / redigera ämne
+    if (v.name === "amne-form") {
+      $("#af-namn")?.addEventListener("input", (e) => {
+        v.namn = e.target.value;
+        if (!v.amne && !v.valt) {
+          v.delar = forslagDelar(v.namn);
+          r.querySelectorAll("[data-del]").forEach((cb) => {
+            cb.checked = v.delar.includes(cb.dataset.del);
+            cb.closest(".del-val")?.classList.toggle("vald-rad", cb.checked);
+          });
+        }
+      });
+      r.querySelectorAll("[data-del]").forEach((cb) =>
+        cb.addEventListener("change", () => {
+          v.valt = true;
+          v.delar = DELAR.map((d) => d.id).filter((id) => r.querySelector(`[data-del="${id}"]`)?.checked);
+          cb.closest(".del-val")?.classList.toggle("vald-rad", cb.checked);
+        })
+      );
+      on("#af-spara", async () => {
+        v.namn = $("#af-namn")?.value ?? v.namn;
+        if (!v.namn.trim()) {
+          this._msg = { type: "error", text: "Skriv vad ämnet heter." };
+          return this._render();
+        }
+        if (!v.delar.length) {
+          this._msg = { type: "error", text: "Välj minst en del." };
+          return this._render();
+        }
+        if (v.amne) {
+          if (await this._act("amne_andra", { amne: v.amne, namn: v.namn, delar: v.delar })) this._go({ name: "amne", amne: v.amne });
+        } else if (await this._act("add_amne", { namn: v.namn, delar: v.delar })) {
+          const ny = (this._s.data.amnen || []).find((x) => x.namn.toLowerCase() === v.namn.trim().toLowerCase());
+          this._go(ny ? { name: "amne", amne: ny.id } : { name: "hem" });
+        }
+      });
+    }
     r.querySelectorAll("[data-open-amne]").forEach((b) =>
       b.addEventListener("click", () => this._go({ name: "amne", amne: b.dataset.openAmne }))
     );
@@ -4137,10 +4309,48 @@ class SkolanPanel extends HTMLElement {
       const n = this._ask("Vad heter boken?");
       if (n) await this._act("add_bok", { amne: v.amne, namn: n });
     });
-    on("#add-glosor", () => this._go({ name: "redigera", amne: v.amne, namn: "", sprak: ["", "Svenska"], par: [] }));
-    on("#rename-amne", async () => {
-      const n = this._ask("Nytt namn på ämnet:", this._amne(v.amne)?.namn);
-      if (n) await this._act("rename_amne", { amne: v.amne, namn: n });
+    r.querySelectorAll("[data-add-lista]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const typ = b.dataset.addLista;
+        this._go({ name: "redigera", amne: v.amne, typ, namn: "", sprak: [...LISTTYP[typ].sprak], par: [] });
+      })
+    );
+    on("#edit-amne", () => {
+      const a = this._amne(v.amne);
+      this._go({ name: "amne-form", amne: a.id, namn: a.namn, delar: delarFor(a), valt: true });
+    });
+    // uppgifter
+    const uppgAdd = async () => {
+      const text = $("#uppg-text")?.value.trim() || "";
+      if (!text) return $("#uppg-text")?.focus();
+      v.uppgUtkast = text;
+      if (await this._act("uppgift_ny", { amne: v.amne, text, datum: $("#uppg-datum")?.value || null })) {
+        v.uppgUtkast = "";
+        this._render();
+        $("#uppg-text")?.focus();
+      }
+    };
+    on("#uppg-add", uppgAdd);
+    $("#uppg-text")?.addEventListener("keydown", (e) => { if (e.key === "Enter") uppgAdd(); });
+    on("#uppg-alla", () => { v.allaKlara = !v.allaKlara; this._render(); });
+    r.querySelectorAll("[data-uppg-klar]").forEach((cb) =>
+      cb.addEventListener("change", () => this._act("uppgift_klar", { amne: v.amne, uppgift: cb.dataset.uppgKlar, klar: cb.checked }))
+    );
+    r.querySelectorAll("[data-uppg-bort]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        if (confirm("Ta bort uppgiften?")) await this._act("uppgift_bort", { amne: v.amne, uppgift: b.dataset.uppgBort });
+      })
+    );
+    // anteckningar
+    $("#ant-text")?.addEventListener("input", (e) => { v.antUtkast = e.target.value; });
+    on("#ant-spara", async () => {
+      const text = $("#ant-text")?.value ?? "";
+      v.antUtkast = text;
+      if (await this._act("anteckning_spara", { amne: v.amne, text })) {
+        v.antUtkast = undefined;
+        this._msg = { type: "ok", text: "Sparat ✓" };
+        this._render();
+      }
     });
     on("#del-amne", async () => {
       if (confirm("Ta bort ämnet med alla böcker, sidor och glosor? Det går inte att ångra.")) {
@@ -4985,10 +5195,10 @@ class SkolanPanel extends HTMLElement {
     on("#ova-svara", () => this._go({ name: "ova", amne: v.amne, glosor: v.glosor, svara: true }));
     on("#edit-glosor", () => {
       const g = this._amne(v.amne).glosor.find((x) => x.id === v.glosor);
-      this._go({ name: "redigera", amne: v.amne, glosor: g.id, namn: g.namn, forhor: g.forhor || "", sprak: [...g.sprak], par: g.par.map((p) => [...p]) });
+      this._go({ name: "redigera", amne: v.amne, glosor: g.id, typ: gTyp(g), namn: g.namn, forhor: g.forhor || "", sprak: [...g.sprak], par: g.par.map((p) => [...p]) });
     });
     on("#del-glosor", async () => {
-      if (confirm("Ta bort glosorna?")) {
+      if (confirm(LISTTYP[gTyp(this._amne(v.amne).glosor.find((x) => x.id === v.glosor))].bort)) {
         if (await this._act("del_glosor", { amne: v.amne, glosor: v.glosor })) this._go({ name: "amne", amne: v.amne });
       }
     });
@@ -4998,7 +5208,7 @@ class SkolanPanel extends HTMLElement {
       if (v.name !== "redigera") return;
       v.namn = $("#g-namn")?.value ?? v.namn;
       v.forhor = $("#g-forhor")?.value ?? v.forhor;
-      v.sprak = [$("#g-s0")?.value ?? "", $("#g-s1")?.value ?? ""];
+      v.sprak = (v.typ || "glosor") === "glosor" ? [$("#g-s0")?.value ?? "", $("#g-s1")?.value ?? ""] : [...LISTTYP[v.typ].sprak];
       const par = v.par.length ? v.par : [["", ""]];
       r.querySelectorAll("[data-p]").forEach((inp) => {
         par[Number(inp.dataset.p)][Number(inp.dataset.k)] = inp.value;
@@ -5028,10 +5238,10 @@ class SkolanPanel extends HTMLElement {
       syncForm();
       const par = v.par.filter((p) => p[0].trim() || p[1].trim());
       if (!v.namn.trim()) {
-        this._msg = { type: "error", text: "Ge glosorna ett namn." };
+        this._msg = { type: "error", text: "Ge listan ett namn." };
         return this._render();
       }
-      const ok = await this._act("save_glosor", { amne: v.amne, glosor: v.glosor || null, namn: v.namn, sprak: v.sprak, par, forhor: v.forhor || null });
+      const ok = await this._act("save_glosor", { amne: v.amne, glosor: v.glosor || null, typ: v.typ || "glosor", namn: v.namn, sprak: v.sprak, par, forhor: v.forhor || null });
       if (ok) {
         const a = this._amne(v.amne);
         const g = v.glosor ? a.glosor.find((x) => x.id === v.glosor) : a.glosor[a.glosor.length - 1];
@@ -5051,7 +5261,10 @@ class SkolanPanel extends HTMLElement {
       if (this._busy) return;
       const facit = k.fran < 0 ? g.par[k.i][0] : g.par[k.i][1 - k.fran];
       const ratt = answers(facit);
-      const ok = ratt.includes(norm(skrev)) || (ratt.length > 1 && norm(skrev) === norm(facit));
+      const formel = gTyp(g) === "formler" && k.fran === 0;
+      const ok = formel
+        ? !!formelNorm(skrev) && String(facit).split(/;| eller /).map(formelNorm).includes(formelNorm(skrev))
+        : ratt.includes(norm(skrev)) || (ratt.length > 1 && norm(skrev) === norm(facit));
       // 2 gratis försök per ord. Sedan kostar ett FEL svar 1 ⭐ (rätt svar är alltid gratis, liksom tomma svar och föräldrar).
       if (skrev.trim()) {
         o.forsok = o.forsok || {};
@@ -5234,6 +5447,13 @@ const CSS = `
   .danger { color:var(--error-color, #db4437); }
   .mini { background:none; border:1px solid var(--divider-color); border-radius:8px; padding:4px 9px; cursor:pointer; }
   .msg { padding:12px 14px; border-radius:10px; margin-bottom:14px; }
+  .del-val { cursor:pointer; } .del-val.vald-rad .muted { font-weight:400; } .del-val input { width:22px; height:22px; flex:none; }
+  .uppg { gap:8px; } .uppg.klar .uppg-text span { text-decoration:line-through; opacity:.6; }
+  .uppg-text { display:flex; gap:10px; align-items:flex-start; flex:1; cursor:pointer; } .uppg-text input { width:20px; height:20px; margin-top:2px; flex:none; }
+  .uppg-ny { display:grid; grid-template-columns:1fr auto auto; gap:6px; margin-top:8px; } .uppg-ny input { min-width:0; }
+  .danger-text { color:var(--error-color, #db4437); }
+  textarea.anteckning { width:100%; box-sizing:border-box; font:inherit; padding:10px; border-radius:10px; border:1px solid var(--divider-color); background:var(--card-background-color); color:var(--primary-text-color); resize:vertical; }
+  @media (max-width:420px) { .uppg-ny { grid-template-columns:1fr auto; } .uppg-ny #uppg-text { grid-column:1 / -1; } }
   .msg.error { background:rgba(219,68,55,.15); } .msg.ok { background:rgba(67,160,71,.15); } .msg.info { background:rgba(3,169,244,.13); }
   .tabs { display:flex; gap:8px; margin-bottom:14px; }
   .tab { border:1px solid var(--divider-color); background:none; border-radius:20px; padding:8px 16px; cursor:pointer; }
