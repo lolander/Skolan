@@ -10,6 +10,7 @@ så att samma sak aldrig ger meriter två gånger.
 
 from __future__ import annotations
 
+import random
 from datetime import date, datetime, timedelta
 
 from homeassistant.util import dt as dt_util
@@ -94,6 +95,7 @@ def ge(data: dict, poang: int, orsak: str, nyckel: str | None = None, ikon: str 
         if ikon not in EJ_SKADA:  # belöningar (pass, nivåer, bossar) ger inte pass-XP eller skada
             _pass_xp(m, int(poang))
             _karta_energi(data, int(poang))
+            _djur_laka(data, int(poang))
             _karta_skada(data, int(poang))
     m["saldo"] = m.get("saldo", 0) + int(poang)
     return True
@@ -1395,6 +1397,8 @@ def karta_status(data: dict) -> dict:
              for i in range(fran, n + 6)]
     _, laxor, prov = boss_arbete(data)
     return {"niva": n, "hp": k["hp"], "skada": min(k["skada"], k["hp"]), "monster": info, "dagar": niva_dagar(n),
+            "liv": djur_liv(data)[0], "liv_max": djur_liv(data)[1], "p_liv": P_LIV,
+            "drycker": [{**x, "antal": k.get("drycker", {}).get(x["id"], 0)} for x in DRYCKER], "dryck_max": DRYCK_MAX,
             "energi": k.get("energi", 0), "energi_max": ENERGI_MAX, "p_energi": P_ENERGI, "attacker": lista, "typer": TYPER,
             "super_anvand": k.get("super") == vecka, "senaste": k.get("senaste"), "karta": karta,
             "stjarnor_tot": sum(k["stjarnor"].values()), "klara": k.get("klara", [])[-3:], "laxor": laxor, "prov": prov}
@@ -1417,11 +1421,15 @@ def repris(r: dict) -> dict | None:
         hp = max(1, min(10**6, int(r.get("hp") or 1)))
         kvar = max(0, min(hp, int(r.get("kvar") or 0)))
         skada = max(0, min(10**6, int(r.get("skada") or 0)))
+        liv_max = max(1, min(1000, int(r.get("liv_max") or 0))) if r.get("liv_max") else None
+        liv_fore = max(0, min(liv_max, int(r.get("liv_fore") or 0))) if liv_max else None
+        mot = max(0, min(1000, int(r.get("mot") or 0)))
     except (StopIteration, TypeError, ValueError):
         return None
     mon = niva_info(niva)
     return {"id": at["id"], "ikon": at["ikon"], "namn": at["namn"], "typ": at["typ"], "niva": niva, "hp": hp, "kvar": kvar,
             "skada": skada, "svag": bool(r.get("svag")), "klar": bool(r.get("klar")), "tid": str(r.get("tid") or "")[:25],
+            "mot": mot, "miss": bool(r.get("miss")), "liv_fore": liv_fore, "liv_max": liv_max,
             "mon": {"ikon": mon["ikon"], "namn": mon["namn"], "boss": mon["boss"], "varld": {"farg": mon["varld"]["farg"]}}}
 
 
@@ -1443,6 +1451,83 @@ ATTACKER = [
 ]
 P_ENERGI = 25  # 1 energi per 25 intjänade meriter
 SVAG_GANGER = 2  # monstret tar dubbel skada av sin svaghet
+
+# ---------- husdjurets liv ----------
+LIV_MAX = [40, 50, 70, 90, 110, 140]  # per steg: Ägg, Bebis, Liten, Stor, Jätte, Legend
+P_LIV = 3  # 1 liv tillbaka per 3 intjänade meriter
+MISS_CHANS = 0.15  # monstret missar ibland
+
+
+def djur_liv(data: dict) -> tuple[int, int]:
+    """(liv kvar, max liv). Nya och gamla husdjur börjar med fullt liv."""
+    k = _karta(data)
+    mx = LIV_MAX[min(_djur_steg(data), len(LIV_MAX) - 1)]
+    liv = k.get("liv")
+    return (mx if liv is None else max(0, min(mx, int(liv)))), mx
+
+
+def _djur_laka(data: dict, poang: int) -> None:
+    """Plugg ger tillbaka liv."""
+    k = _karta(data)
+    liv, mx = djur_liv(data)
+    rest = k.get("liv_rest", 0) + int(poang)
+    k["liv"] = min(mx, liv + rest // P_LIV)
+    k["liv_rest"] = rest % P_LIV
+
+
+DRYCKER = [
+    {"id": "d_liten", "ikon": "🧃", "namn": "Liten livdryck", "pris": 30, "steg": 0, "liv": 20, "info": "+20 liv."},
+    {"id": "d_stor", "ikon": "🧪", "namn": "Stor livdryck", "pris": 70, "steg": 1, "liv": 50, "info": "+50 liv."},
+    {"id": "d_full", "ikon": "💖", "namn": "Fulldryck", "pris": 120, "steg": 2, "liv": 9999, "info": "Fyller hela livet."},
+    {"id": "d_fenix", "ikon": "🪶", "namn": "Fenixfjäder", "pris": 60, "steg": 0, "liv": 0,
+     "info": "Väcker ett utmattat husdjur med halva livet."},
+]
+DRYCK_MAX = 5  # högst så många av varje sort i ryggsäcken
+
+
+def dryck_kop(data: dict, dryck_id: str) -> None:
+    m = _m(data)
+    d = m.get("djur")
+    x = next((y for y in DRYCKER if y["id"] == dryck_id), None)
+    if not d or not x:
+        raise ValueError("Det finns inte.")
+    if _djur_steg(data) < x["steg"]:
+        raise ValueError(f"{d['namn']} måste bli {DJUR_STEG[x['steg']][1]} först.")
+    lager = _karta(data).setdefault("drycker", {})
+    if lager.get(dryck_id, 0) >= DRYCK_MAX:
+        raise ValueError(f"Ryggsäcken rymmer bara {DRYCK_MAX} {x['namn'].lower()}.")
+    if m.get("saldo", 0) < x["pris"]:
+        raise ValueError(f"Du behöver {x['pris']} ⭐ (du har {m.get('saldo', 0)}).")
+    ge(data, -x["pris"], f"{x['ikon']} Köpte {x['namn']}", None, "🛍️")
+    lager[dryck_id] = lager.get(dryck_id, 0) + 1
+
+
+def dryck(data: dict, dryck_id: str) -> dict:
+    """Husdjuret dricker en dryck ur ryggsäcken."""
+    m = _m(data)
+    x = next((y for y in DRYCKER if y["id"] == dryck_id), None)
+    k = _karta(data)
+    lager = k.setdefault("drycker", {})
+    if not m.get("djur") or not x or lager.get(dryck_id, 0) <= 0:
+        raise ValueError("Du har ingen sådan dryck.")
+    liv, mx = djur_liv(data)
+    if dryck_id == "d_fenix":
+        if liv > 0:
+            raise ValueError("Fenixfjädern fungerar bara när husdjuret är utmattat 😵.")
+        nytt = mx // 2
+    else:
+        if liv >= mx:
+            raise ValueError(f"{m['djur']['namn']} har redan fullt liv ❤️.")
+        nytt = min(mx, liv + x["liv"])
+    lager[dryck_id] -= 1
+    k["liv"] = nytt
+    return {"fore": liv, "liv": nytt, "max": mx}
+
+
+def _motattack(n: int, mon: dict) -> int:
+    """Hur hårt monstret slår tillbaka. Starkare längre fram och på bossnivåer."""
+    bas = (3 + min(15, n // 6)) * (1.8 if mon.get("boss") else 1)
+    return max(1, round(bas * random.uniform(0.7, 1.3)))
 
 
 def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
@@ -1491,6 +1576,9 @@ def attack(data: dict, at_id: str) -> dict:
         raise ValueError("Superattacken går bara att använda en gång per vecka.")
     if k.get("energi", 0) < at["energi"]:
         raise ValueError(f"Du behöver {at['energi']} ⚡ energi. Plugga mer så laddas den!")
+    liv_fore, liv_max = djur_liv(data)
+    if liv_fore <= 0:
+        raise ValueError(f"{m['djur']['namn']} är utmattad 😵 Plugga så får hen tillbaka liv!")
     n = k["niva"]
     mon = niva_info(n)
     skada, svag = _attack_varde(data, at, mon)
@@ -1501,9 +1589,15 @@ def attack(data: dict, at_id: str) -> dict:
     k["senaste"] = {"id": at_id, "skada": skada, "svag": svag, "niva": n, "tid": dt_util.now().isoformat(timespec="seconds")}
     _rakna(data, "attacker")
     _karta_skada(data, skada)
-    k["senaste"]["klar"] = k["niva"] > n
+    klar = k["niva"] > n
+    # Monstret slår tillbaka om det överlevde
+    miss = not klar and random.random() < MISS_CHANS
+    mot = 0 if klar or miss else _motattack(n, mon)
+    k["liv"] = max(0, liv_fore - mot)
+    k["senaste"].update({"klar": klar, "mot": mot, "miss": miss, "liv_fore": liv_fore, "liv": k["liv"], "liv_max": liv_max})
     k["repriser"] = (k.get("repriser", []) + [{"id": at_id, "niva": n, "hp": hp_fore, "kvar": kvar_fore, "skada": skada,
-                                               "svag": svag, "klar": k["senaste"]["klar"], "tid": k["senaste"]["tid"]}])[-5:]
+                                               "svag": svag, "klar": klar, "tid": k["senaste"]["tid"], "mot": mot,
+                                               "miss": miss, "liv_fore": liv_fore, "liv_max": liv_max}])[-5:]
     return k["senaste"]
 
 

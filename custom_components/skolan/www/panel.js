@@ -274,6 +274,47 @@ const STRID_CSS = `
 #skolan-strid .ridaa b:nth-child(odd) { --dir:-1; } #skolan-strid .ridaa b:nth-child(even) { --dir:1; }
 .strid .ruta, .strid .namnruta { background:linear-gradient(#2a3fb8, #0b1660); border:3px solid #e8eaf6; border-radius:8px; box-shadow:0 0 0 2px #0b1660, 0 6px 18px rgba(0,0,0,.6); text-shadow:2px 2px 0 #000; }
 #skolan-strid .namnruta { position:absolute; top:6%; left:50%; transform:translateX(-50%); padding:8px 22px; font-size:20px; font-weight:800; white-space:nowrap; opacity:0; animation:sNamn calc(2.4s*var(--f)) ease-out forwards; animation-delay:calc(.45s*var(--f)); }
+#skolan-strid .hpbar.liv div { background:linear-gradient(#b9f6ca, #00c853); }
+#skolan-strid .hjalte .kropp { width:100%; height:100%; }
+#skolan-strid.mot .figur { animation:sFiendeIdle 2s ease-in-out infinite, sTraff calc(.55s*var(--f)) ease-out calc(1.7s*var(--f)), sBossAnfall calc(.6s*var(--f)) ease-in-out calc(2.85s*var(--f)); }
+#skolan-strid.mot:not(.miss) .hjalte .kropp { animation:sDjurTraff calc(.5s*var(--f)) ease-out calc(3.15s*var(--f)); }
+#skolan-strid.mot.miss .hjalte .kropp { animation:sUndan calc(.5s*var(--f)) ease-out calc(3.05s*var(--f)); }
+#skolan-strid.ko .hjalte .kropp { animation:sDjurTraff calc(.5s*var(--f)) ease-out calc(3.15s*var(--f)), sKo calc(.6s*var(--f)) ease-in calc(3.8s*var(--f)) forwards; }
+#skolan-strid .motal { top:-30%; font-size:38px; }
+#skolan-strid .motal span { color:#ff5252; animation-delay:calc(3.2s*var(--f) + var(--i)*.05s); }
+#skolan-strid.miss .motal span { color:#e0e0e0; font-size:30px; }
+#skolan-strid .motnamn, #skolan-strid .kotext { position:absolute; left:50%; transform:translateX(-50%); white-space:nowrap; font-weight:800; text-shadow:2px 2px 0 #000; opacity:0; }
+#skolan-strid .motnamn { top:calc(6% + 52px); font-size:16px; color:#ff8a80; animation:sNamn calc(1.4s*var(--f)) ease-out calc(2.7s*var(--f)) forwards; }
+#skolan-strid .kotext { top:24%; font-size:24px; text-align:center; color:#ffccbc; animation:sSeger calc(.6s*var(--f)) ease-out calc(4.3s*var(--f)) forwards; }
+#skolan-strid .kotext small { display:block; font-size:15px; color:#fff; margin-top:4px; }
+#skolan-strid.mot .namnruta { animation-duration:calc(2.1s*var(--f)); }
+@keyframes sBossAnfall { 0%,100% { transform:none; } 45% { transform:translateX(16vw) scale(1.15); } 60% { transform:translateX(18vw) scale(1.1) rotate(8deg); } }
+@keyframes sDjurTraff { 0% { filter:brightness(3) saturate(0); transform:translateX(12px); } 30% { transform:translateX(-8px); filter:none; } 50% { filter:brightness(2) hue-rotate(-40deg); transform:translateX(6px); } 100% { transform:none; filter:none; } }
+@keyframes sUndan { 40% { transform:translate(30px,-26px) rotate(12deg); } 100% { transform:none; } }
+@keyframes sKo { to { transform:rotate(80deg) translate(20px,10px); filter:grayscale(1) brightness(.7); } }
+#skolan-strid.fortsatt .ridaa, #skolan-strid.idle .ridaa { display:none; }
+#skolan-strid.fortsatt, #skolan-strid.idle { animation:none; }
+#skolan-strid.idle .namnruta, #skolan-strid.idle .tal, #skolan-strid.idle .hjalte, #skolan-strid.idle .hjalte .kropp { animation:none !important; opacity:0; }
+#skolan-strid.idle .hjalte, #skolan-strid.idle .hjalte .kropp { opacity:1; }
+#skolan-strid.idle .namnruta { display:none; }
+#skolan-strid.valjer .fx, #skolan-strid.valjer .fiende .tal, #skolan-strid.valjer .motnamn, #skolan-strid.valjer .namnruta, #skolan-strid.valjer .vem { display:none; }
+#skolan-strid.valjer { cursor:default; }
+#skolan-strid.valjer .meny { flex-direction:column; gap:6px; }
+#skolan-strid.valjer .meny .vanster { padding:6px 12px; font-size:15px; }
+#skolan-strid .kommandon { display:grid; grid-template-columns:1fr 1fr; gap:0 6px; margin-top:4px; max-height:40vh; overflow-y:auto; }
+#skolan-strid .kommandon .srubrik, #skolan-strid .kommandon .stom, #skolan-strid .kommandon .sfel { grid-column:1 / -1; }
+#skolan-strid .kommandon [data-s-lamna] { grid-column:1 / -1; margin-top:4px; }
+#skolan-strid .kommandon button { all:unset; cursor:pointer; padding:5px 6px 5px 18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:4px; font-size:14px; font-weight:700; color:#fff; text-shadow:2px 2px 0 #000; position:relative; }
+#skolan-strid .kommandon button small { font-size:11px; opacity:.8; }
+#skolan-strid .kommandon button:hover:not(:disabled), #skolan-strid .kommandon button:focus-visible { background:rgba(255,255,255,.12); }
+#skolan-strid .kommandon button:hover:not(:disabled)::before { content:"▶"; position:absolute; left:3px; color:#fff59d; }
+#skolan-strid .kommandon button:disabled { opacity:.4; cursor:default; }
+#skolan-strid .srubrik { font-size:12px; color:#9fa8da; margin-top:4px; text-shadow:none; }
+#skolan-strid .stom { font-size:12px; opacity:.7; padding-left:18px; }
+#skolan-strid .sfel { font-size:12px; color:#ffab91; }
+#skolan-strid.dricker .hjalte .kropp { animation:sDrick 1.2s ease-out; }
+#skolan-strid .laktal { top:-30%; left:50%; font-size:34px; color:#69f0ae; animation:sSeger .4s ease-out forwards; }
+@keyframes sDrick { 0% { filter:none; } 30% { filter:drop-shadow(0 0 18px #69f0ae) brightness(1.4); transform:translateY(-10px); } 100% { filter:none; transform:none; } }
 #skolan-strid .vem { position:absolute; top:calc(6% + 52px); left:50%; transform:translateX(-50%); font-size:14px; font-weight:700; background:rgba(0,0,0,.45); padding:3px 12px; border-radius:12px; white-space:nowrap; }
 #skolan-strid .fiende { position:absolute; left:4%; top:30%; width:44%; height:40%; display:flex; align-items:center; justify-content:center; }
 #skolan-strid .figur { font-size:min(28vw,150px); filter:drop-shadow(0 10px 8px rgba(0,0,0,.6)); animation:sFiendeIdle 2s ease-in-out infinite, sTraff calc(.55s*var(--f)) ease-out calc(1.7s*var(--f)); }
@@ -1303,7 +1344,18 @@ class SkolanPanel extends HTMLElement {
     };
     const attackHtml = am ? `<h3>⚔️ Attacker för kartan</h3>
       <div class="small muted">Attackerna laddas med ⚡ energi när du pluggar. Varje monster är svagt mot en typ och tar då dubbel skada.</div>
-      <div class="sak-rutnat">${am.attacker.map(attackKort).join("")}</div>` : "";
+      <div class="sak-rutnat">${am.attacker.map(attackKort).join("")}</div>
+      <h3>🧪 Livdrycker</h3>
+      <div class="small muted">❤️ ${am.liv} av ${am.liv_max} liv. Monstren slår tillbaka när ${esc(d.namn)} attackerar. Plugga (1 ❤️ per ${am.p_liv} ⭐) eller drick en livdryck. Dryckerna hamnar i ryggsäcken 🎒.</div>
+      <div class="sak-rutnat">${(am.drycker || []).map((x) => {
+        const last = d.steg < x.steg, fullt = x.antal >= am.dryck_max;
+        const knapp = titta ? `<span class="small muted">${x.pris} ⭐</span>`
+          : last ? `<span class="small muted">🔒 ${esc(s.djur_steg[x.steg])}</span>`
+          : fullt ? `<span class="small">🎒 Fullt</span>`
+          : `<button class="mini ${saldo >= x.pris ? "primary" : ""}" data-dryck-kop="${x.id}" ${saldo >= x.pris ? "" : "disabled"}>${x.pris} ⭐</button>`;
+        return `<div class="sak-kort ${last ? "last" : ""}"><div class="sak-ikon">${x.ikon}</div><div class="small"><b>${esc(x.namn)}</b></div>
+          <div class="small muted">${esc(x.info)}</div><div class="small">🎒 ${x.antal}/${am.dryck_max}</div>${knapp}</div>`;
+      }).join("")}</div>` : "";
     const antalAgt = (d.agt || []).length, antalAlla = (s.djurbutik || []).filter((x) => !x.hogtid).length;
     const sasong = (s.hogtider || []).map((h) => {
       const saker = (s.djurbutik || []).filter((x) => x.hogtid === h.id);
@@ -1362,12 +1414,19 @@ class SkolanPanel extends HTMLElement {
     const mon = k.monster, d = this._s.meriter?.djur, barn = !this._s.kan_valja;
     const kvar = k.hp - k.skada, anim = this._attackAnim;
     let attacker = "";
+    const ko = d && k.liv <= 0;
+    const livRad = d ? `<div class="liv-rad"><span>❤️ ${esc(d.namn)}</span><div class="progress djur-liv ${k.liv / k.liv_max < 0.3 ? "lag" : ""}"><div style="width:${Math.round((k.liv / k.liv_max) * 100)}%"></div></div><b>${k.liv}/${k.liv_max}</b></div>
+      ${barn && (k.drycker || []).some((x) => x.antal) ? `<div class="attack-rad">🎒 ${(k.drycker || []).filter((x) => x.antal).map((x) => {
+        const kan = !this._busy && (x.id === "d_fenix" ? ko : k.liv < k.liv_max);
+        return `<button class="mini dryck-knapp" data-dryck="${x.id}" ${kan ? "" : "disabled"} title="${esc(x.namn)}: ${esc(x.info)}">${x.ikon} ×${x.antal}</button>`;
+      }).join("")}</div>` : ""}
+      ${ko ? `<div class="small ko-text">😵 ${esc(d.namn)} är utmattad. Plugga för att få tillbaka liv${barn ? ", eller drick en livdryck 🧪" : ""}.</div>` : ""}` : "";
     if (d && barn) {
       const mina = (k.attacker || []).filter((x) => x.har);
       attacker = mina.length
         ? `<div class="attack-rad"><span class="energi" title="Energi">⚡ ${k.energi}</span>${mina.map((x) => {
             const slut = x.id === "a_super" && k.super_anvand;
-            const kan = !slut && k.energi >= x.energi && !this._busy;
+            const kan = !slut && !ko && k.energi >= x.energi && !this._busy;
             return `<button class="attack-knapp ${x.svag ? "svag" : ""}" data-attack="${x.id}" ${kan ? "" : "disabled"} title="${esc(x.namn)}: ${esc(x.info)}">
               <span class="ai">${x.ikon}</span><b>${x.nu}</b><small>${slut ? "använd" : x.energi + "⚡"}</small></button>`;
           }).join("")}</div>
@@ -1384,10 +1443,92 @@ class SkolanPanel extends HTMLElement {
         <div class="progress boss-hp"><div style="width:${Math.round((kvar / k.hp) * 100)}%"></div></div>
         <div class="small">❤️ ${kvar} av ${k.hp} liv · 🎯 svag mot <b>${k.typer[mon.svag]}</b></div>
         <div class="small muted">Varje merit du tjänar gör skada.${mon.boss && mon.sak ? ` Besegra bossen för ${mon.sak.ikon} ${esc(mon.sak.namn)}!` : ""}${sen ? ` Senast: nivå ${sen.niva} ${"⭐".repeat(sen.stjarnor)}` : ""}</div>
+        ${livRad}
+        ${d && barn ? `<button class="mini primary strid-knapp" id="till-strid">⚔️ Till strid</button>` : ""}
         ${attacker}
         ${this._reprisRad()}
         <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
       </div></div>`;
+  }
+
+  // Läget just nu, i den form stridsscenen vill ha.
+  _stridLage(extra = {}) {
+    const k = this._s.karta, djur = this._s.meriter?.djur;
+    return { at: { ikon: "⚔️", namn: "Strid", typ: "kraft" }, djur, mon: k.monster, hp: k.hp, kvar: k.hp - k.skada,
+      skada: 0, livFore: k.liv, livMax: k.liv_max, mot: 0, live: true, ...extra };
+  }
+
+  async _gorAttack(id, fortsatt = false) {
+    const x = (this._s.karta?.attacker || []).find((y) => y.id === id);
+    if (!x || this._busy) return false;
+    const k0 = this._s.karta, djur = this._s.meriter?.djur;
+    const fore = { mon: k0.monster, hp: k0.hp, kvar: k0.hp - k0.skada };
+    if (!(await this._act("attack", { attack: x.id }))) return false;
+    const sen = this._s.data?.meriter?.karta?.senaste || {};
+    const laddat = this._load();
+    this._strid({ at: x, djur, ...fore, skada: sen.skada ?? x.nu, svag: sen.svag ?? x.svag, klar: !!sen.klar,
+      mot: sen.mot || 0, miss: !!sen.miss, livFore: sen.liv_fore, livMax: sen.liv_max, live: true, fortsatt, laddat });
+    await laddat;
+    return true;
+  }
+
+  // Menyn i stridsrutan: attacker, ryggsäcken och lämna.
+  async _stridMeny(el, o) {
+    if (el.classList.contains("valjer") || !el.isConnected) return;
+    el.classList.add("valjer");
+    await o.laddat;
+    const k = this._s.karta, d = this._s.meriter?.djur;
+    if (!k || !d || !el.isConnected) return;
+    const satt = (sel, v) => el.querySelectorAll(sel).forEach((x) => { x.style.width = `${v * 100}%`; });
+    if (!o.klar) {
+      satt(".hpbar:not(.liv) div, .bosshp div", (k.hp - k.skada) / k.hp);
+      el.querySelectorAll(".hpnum").forEach((x) => { x.textContent = `${k.hp - k.skada}/${k.hp}`; });
+    }
+    satt(".hpbar.liv div", k.liv / k.liv_max);
+    const ln = el.querySelector(".livnum");
+    if (ln) ln.textContent = `${k.liv}/${k.liv_max}`;
+    const ko = k.liv <= 0, fel = this._msg?.type === "error" ? this._msg.text : "";
+    const vecka = k.super_anvand;
+    const at = (k.attacker || []).filter((x) => x.har).map((x) => {
+      const kan = !ko && k.energi >= x.energi && !(x.id === "a_super" && vecka);
+      return `<button data-s-attack="${x.id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${x.nu}</small></button>`;
+    }).join("");
+    const dr = (k.drycker || []).filter((x) => x.antal).map((x) => {
+      const kan = x.id === "d_fenix" ? ko : k.liv < k.liv_max;
+      return `<button data-s-dryck="${x.id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>×${x.antal}</small></button>`;
+    }).join("");
+    const meny = el.querySelector(".kommandon") || el.querySelector(".ruta.hoger").appendChild(Object.assign(document.createElement("div"), { className: "kommandon" }));
+    el.querySelector(".kommando")?.remove();
+    meny.innerHTML = o.klar
+      ? `<button data-s-nasta>➡️ Nästa nivå</button><button data-s-lamna>🏃 Lämna</button>`
+      : `${fel ? `<div class="sfel">${esc(fel)}</div>` : ""}<div class="srubrik">⚔️ Attack · ⚡ ${k.energi}</div>${at || `<div class="stom">Köp attacker i Butiken 🛍️</div>`}
+         <div class="srubrik">🎒 Ryggsäck</div>${dr || `<div class="stom">Tom. Livdrycker finns i Butiken 🛍️</div>`}
+         <button data-s-lamna>🏃 Lämna striden</button>`;
+    this._msg = null;
+    meny.onclick = async (e) => {
+      e.stopPropagation();
+      const b = e.target.closest("button");
+      if (!b || b.disabled || this._busy) return;
+      if (b.hasAttribute("data-s-lamna")) return el.dispatchEvent(new Event("stang"));
+      if (b.hasAttribute("data-s-nasta")) return this._strid(this._stridLage({ idle: true, fortsatt: true }));
+      meny.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+      if (b.dataset.sAttack) {
+        if (!(await this._gorAttack(b.dataset.sAttack, true))) { el.classList.remove("valjer"); this._stridMeny(el, o); }
+        return;
+      }
+      const fore = k.liv;
+      const ok = await this._act("dryck", { dryck: b.dataset.sDryck });
+      if (ok) await this._load();
+      const nu = this._s.karta?.liv ?? fore;
+      if (ok && nu > fore) {
+        const tal = Object.assign(document.createElement("div"), { className: "tal laktal", innerHTML: `+${nu - fore}` });
+        el.querySelector(".hjalte").appendChild(tal);
+        el.classList.add("dricker");
+        setTimeout(() => { el.classList.remove("dricker"); tal.remove(); }, 1300);
+      }
+      el.classList.remove("valjer");
+      this._stridMeny(el, o);
+    };
   }
 
   // Knappar för att titta på senaste attacken från syskon (och sig själv).
@@ -1420,7 +1561,7 @@ class SkolanPanel extends HTMLElement {
     try { localStorage.setItem(`skolan_repris_${nyckel}`, x.r.tid || ""); } catch (e) { /* privat läge */ }
     const r = x.r;
     this._strid({ at: { ikon: r.ikon, namn: r.namn, typ: r.typ }, djur: x.djur, mon: r.mon, hp: r.hp, kvar: r.kvar,
-      skada: r.skada, svag: r.svag, klar: r.klar, vem: x.vem === "Din attack" ? "Repris" : `${x.vem} attackerar!` });
+      skada: r.skada, svag: r.svag, klar: r.klar, mot: r.mot || 0, miss: !!r.miss, livFore: r.liv_fore, livMax: r.liv_max, vem: x.vem === "Din attack" ? "Repris" : `${x.vem} attackerar!` });
     this._render();
   }
 
@@ -1428,7 +1569,10 @@ class SkolanPanel extends HTMLElement {
   _strid(o) {
     document.getElementById("skolan-strid")?.remove();
     const lugn = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const typ = o.at.typ || "kraft", efter = Math.max(0, o.kvar - o.skada);
+    const typ = o.idle ? "" : o.at.typ || "kraft", efter = Math.max(0, o.kvar - o.skada);
+    const motFas = !o.idle && !o.klar && o.livMax != null && o.livFore != null;
+    const livEfter = motFas ? Math.max(0, o.livFore - o.mot) : o.livFore;
+    const ko = motFas && livEfter <= 0;
     const slump = (a, b) => a + Math.random() * (b - a);
     const partiklar = (n, tecken, cls) => Array.from({ length: n }, (_, i) =>
       `<i class="p ${cls}" style="--x:${slump(-60, 60).toFixed(0)}px;--y:${slump(-50, 40).toFixed(0)}px;--r:${slump(-180, 180).toFixed(0)}deg;--d:${(i * 0.06).toFixed(2)}s">${tecken[i % tecken.length]}</i>`).join("");
@@ -1440,10 +1584,11 @@ class SkolanPanel extends HTMLElement {
       is: `<div class="glod" style="--g:#4fc3f7"></div>${partiklar(12, ["❄️", "🧊"], "fall")}<div class="frost"></div>`,
       kraft: `<div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div><div class="jatte">💥</div>${partiklar(10, ["⭐", "✨"], "gnista")}`,
     }[typ] || "";
+    if (o.idle) this._msg = null;
     const siffror = String(o.skada).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("");
     const el = document.createElement("div");
     el.id = "skolan-strid";
-    el.className = `strid t-${typ}${o.klar ? " seger" : ""}${o.svag ? " svag" : ""}${lugn ? " lugn" : ""}`;
+    el.className = `strid t-${typ}${o.klar ? " seger" : ""}${o.svag ? " svag" : ""}${lugn ? " lugn" : ""}${motFas ? " mot" : ""}${o.miss ? " miss" : ""}${ko ? " ko" : ""}${o.idle ? " idle" : ""}${o.fortsatt ? " fortsatt" : ""}`;
     el.style.setProperty("--varld", o.mon?.varld?.farg || "#5c6bc0");
     el.innerHTML = `<style>${STRID_CSS}</style>
       <div class="ridaa">${Array.from({ length: 8 }, (_, i) => `<b style="--i:${i}"></b>`).join("")}</div>
@@ -1452,16 +1597,21 @@ class SkolanPanel extends HTMLElement {
         <div class="namnruta">${o.at.ikon} ${esc(o.at.namn)}</div>${o.vem ? `<div class="vem">📺 ${esc(o.vem)}</div>` : ""}
         <div class="fiende"><div class="bosshp"><div style="width:${(o.kvar / o.hp) * 100}%"></div><span class="hpnum">${o.kvar}/${o.hp}</span></div><div class="figur">${o.mon?.ikon || "👾"}</div><div class="fx">${effekt}</div>
           <div class="tal ${o.svag ? "svag" : ""}">${siffror}${o.svag ? "<small>SVAG PUNKT!</small>" : ""}</div></div>
-        <div class="hjalte">${o.djur ? ritaDjur(o.djur.art, "glad", Math.max(1, o.djur.steg), {}) : "🐾"}</div>
+        <div class="hjalte"><div class="kropp">${o.djur ? ritaDjur(o.djur.art, ko ? "hungrig" : "glad", Math.max(1, o.djur.steg), {}) : "🐾"}</div>
+          ${motFas ? `<div class="tal motal">${o.miss ? "<span>MISS!</span>" : String(o.mot).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("")}</div>` : ""}</div>
+        ${motFas ? `<div class="motnamn">${o.mon?.ikon || "👾"} ${esc(o.mon?.boss ? o.mon.namn : "Monstret")} slår tillbaka!</div>` : ""}
+        ${ko ? `<div class="kotext">😵 ${esc(o.djur?.namn || "Husdjuret")} orkar inte mer<small>Plugga för att få tillbaka liv ❤️</small></div>` : ""}
         <div class="segertext">SEGER!<small>Nivå klar 🎉</small></div>
         <div class="meny">
           <div class="ruta vanster"><div class="rad"><span>${esc(o.mon?.boss ? "👑 " + o.mon.namn : o.mon?.namn || "Monster")}</span><span class="hpnum">${o.kvar}/${o.hp}</span></div>
             <div class="hpbar"><div style="width:${(o.kvar / o.hp) * 100}%"></div></div></div>
-          <div class="ruta hoger"><div>${esc(o.djur?.namn || "")}</div><div class="kommando">▶ ${o.at.ikon} ${esc(o.at.namn)}</div></div>
+          <div class="ruta hoger"><div class="rad"><span>${esc(o.djur?.namn || "")}</span>${o.livMax != null ? `<span class="livnum">${o.livFore}/${o.livMax}</span>` : ""}</div>
+            ${o.livMax != null ? `<div class="hpbar liv"><div style="width:${(o.livFore / o.livMax) * 100}%"></div></div>` : ""}
+            <div class="kommando">▶ ${o.at.ikon} ${esc(o.at.namn)}</div></div>
         </div>
       </div>`;
     document.body.appendChild(el);
-    const ljud = this._stridLjud(typ, o.klar);
+    const ljud = o.idle ? null : this._stridLjud(typ, o.klar, !motFas ? "" : ko ? "ko" : o.miss ? "miss" : o.mot > 0 ? "traff" : "");
     const fart = lugn ? 0.5 : 1, t = (ms) => ms * fart;
     const timers = [];
     const vid = (ms, fn) => timers.push(setTimeout(fn, t(ms)));
@@ -1480,13 +1630,32 @@ class SkolanPanel extends HTMLElement {
       ljud?.stop();
       el.classList.add("ut");
       setTimeout(() => el.remove(), 350);
+      this._render();
     };
-    vid(o.klar ? 5600 : 3700, stang);
-    el.addEventListener("click", stang);
+    if (motFas && o.mot > 0) vid(3250, () => {
+      el.querySelector(".hpbar.liv div").style.width = `${(livEfter / o.livMax) * 100}%`;
+      const num = el.querySelector(".livnum"), start = performance.now();
+      const steg = (nu) => {
+        const f = Math.min(1, (nu - start) / t(700));
+        num.textContent = `${Math.round(o.livFore - (o.livFore - livEfter) * f)}/${o.livMax}`;
+        if (f < 1) requestAnimationFrame(steg);
+      };
+      requestAnimationFrame(steg);
+    });
+    const slut = o.idle ? 0 : o.klar ? 5600 : ko ? 6200 : motFas ? 5000 : 3700;
+    el.addEventListener("stang", stang);
+    if (o.live) {
+      const meny = () => { timers.forEach(clearTimeout); this._stridMeny(el, o); };
+      if (o.idle) meny(); else vid(slut, meny);
+      el.addEventListener("click", () => { if (!el.classList.contains("valjer")) meny(); });
+    } else {
+      vid(slut, stang);
+      el.addEventListener("click", stang);
+    }
   }
 
   // Korta, egna ljudeffekter med Web Audio (inga ljudfiler).
-  _stridLjud(typ, klar) {
+  _stridLjud(typ, klar, mot = "") {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
@@ -1519,6 +1688,9 @@ class SkolanPanel extends HTMLElement {
          is: () => { [1760, 1568, 2093, 1760].forEach((f, i) => ton(f, 1.1 + i * 0.09, 0.25, "triangle")); },
          kraft: () => { ton(80, 1.0, 0.9, "sawtooth", 40); brus(1.4, 0.8); } }[typ] || (() => {}))();
       ton(120, 1.75, 0.15, "square", 60);
+      if (mot === "traff") { ton(140, 3.0, 0.2, "sawtooth", 50); brus(3.2, 0.25); }
+      if (mot === "miss") ton(600, 3.15, 0.2, "triangle", 1200);
+      if (mot === "ko") [392, 349, 311, 262].forEach((f, i) => ton(f, 4.0 + i * 0.22, 0.25, "triangle"));
       if (klar) [523, 659, 784, 659, 784, 1047].forEach((f, i) => ton(f, 3.3 + i * 0.14, i === 5 ? 0.6 : 0.13, "square"));
       return { stop: () => { try { ut.gain.setTargetAtTime(0, ac.currentTime, 0.05); } catch (_) {} } };
     } catch (_) {
@@ -3573,19 +3745,34 @@ class SkolanPanel extends HTMLElement {
         this._render();
       })
     );
+    r.querySelectorAll("[data-dryck-kop]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const x = (this._s.karta?.drycker || []).find((y) => y.id === b.dataset.dryckKop);
+        if (!x || !confirm(`Köpa ${x.namn} ${x.ikon} för ${x.pris} ⭐?`)) return;
+        if (await this._act("dryck_kop", { dryck: x.id })) { this._msg = { type: "ok", text: `${x.ikon} ${x.namn} ligger i ryggsäcken 🎒` }; await this._load(); }
+        this._render();
+      })
+    );
+    r.querySelectorAll("[data-dryck]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const x = (this._s.karta?.drycker || []).find((y) => y.id === b.dataset.dryck);
+        if (!x || this._busy) return;
+        const fore = this._s.karta.liv;
+        if (await this._act("dryck", { dryck: x.id })) {
+          await this._load();
+          const nu = this._s.karta?.liv ?? fore;
+          this._msg = { type: "ok", text: `${x.ikon} Glugg glugg! ${this._s.meriter?.djur?.namn || "Husdjuret"} fick +${nu - fore} ❤️` };
+        }
+        this._render();
+      })
+    );
     r.querySelectorAll("[data-repris]").forEach((b) => b.addEventListener("click", () => this._spelaRepris(b.dataset.repris)));
     r.querySelectorAll("[data-attack]").forEach((b) =>
       b.addEventListener("click", async () => {
-        const x = (this._s.karta?.attacker || []).find((y) => y.id === b.dataset.attack);
-        if (!x || this._busy) return;
-        const k0 = this._s.karta, djur = this._s.meriter?.djur;
-        const fore = { mon: k0.monster, hp: k0.hp, kvar: k0.hp - k0.skada };
-        if (!(await this._act("attack", { attack: x.id }))) return;
-        const sen = this._s.data?.meriter?.karta?.senaste || {};
-        this._strid({ at: x, djur, ...fore, skada: sen.skada ?? x.nu, svag: sen.svag ?? x.svag, klar: !!sen.klar });
-        await this._load();
+        this._gorAttack(b.dataset.attack);
       })
     );
+    r.querySelector("#till-strid")?.addEventListener("click", () => this._strid(this._stridLage({ idle: true })));
     r.querySelectorAll("[data-djur-pa]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: b.dataset.typ, sak: b.dataset.djurPa })));
     r.querySelectorAll("[data-djur-av]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: b.dataset.djurAv, sak: null })));
     r.querySelectorAll("[data-djur-byt]").forEach((b) =>
@@ -4267,6 +4454,12 @@ const CSS = `
   .attack-knapp.svag { border-color:#ffeb3b; box-shadow:0 0 8px #ffeb3b; }
   .attack-knapp:disabled { opacity:.4; cursor:default; }
   .attack-sak.svag { outline:2px solid #fbc02d; }
+  .liv-rad { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:13px; }
+  .liv-rad .djur-liv { flex:1; height:10px; margin:0; } .liv-rad .djur-liv div { background:linear-gradient(90deg,#00c853,#69f0ae); }
+  .liv-rad .djur-liv.lag div { background:linear-gradient(90deg,#d50000,#ff8a80); }
+  .ko-text { margin-top:6px; font-weight:700; }
+  .strid-knapp { margin-top:8px; }
+  .dryck-knapp { background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.45); }
   .repris-rad { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:8px; }
   .repris-knapp { background:rgba(0,0,0,.25); color:#fff; border:1px solid rgba(255,255,255,.4); }
   .repris-knapp.ny { border-color:#ffeb3b; box-shadow:0 0 8px #ffeb3b; }
