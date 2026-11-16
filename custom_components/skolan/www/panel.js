@@ -274,6 +274,7 @@ const STRID_CSS = `
 #skolan-strid .ridaa b:nth-child(odd) { --dir:-1; } #skolan-strid .ridaa b:nth-child(even) { --dir:1; }
 .strid .ruta, .strid .namnruta { background:linear-gradient(#2a3fb8, #0b1660); border:3px solid #e8eaf6; border-radius:8px; box-shadow:0 0 0 2px #0b1660, 0 6px 18px rgba(0,0,0,.6); text-shadow:2px 2px 0 #000; }
 #skolan-strid .namnruta { position:absolute; top:6%; left:50%; transform:translateX(-50%); padding:8px 22px; font-size:20px; font-weight:800; white-space:nowrap; opacity:0; animation:sNamn calc(2.4s*var(--f)) ease-out forwards; animation-delay:calc(.45s*var(--f)); }
+#skolan-strid .vem { position:absolute; top:calc(6% + 52px); left:50%; transform:translateX(-50%); font-size:14px; font-weight:700; background:rgba(0,0,0,.45); padding:3px 12px; border-radius:12px; white-space:nowrap; }
 #skolan-strid .fiende { position:absolute; left:4%; top:30%; width:44%; height:40%; display:flex; align-items:center; justify-content:center; }
 #skolan-strid .figur { font-size:min(28vw,150px); filter:drop-shadow(0 10px 8px rgba(0,0,0,.6)); animation:sFiendeIdle 2s ease-in-out infinite, sTraff calc(.55s*var(--f)) ease-out calc(1.7s*var(--f)); }
 #skolan-strid.seger .figur { animation:sFiendeIdle 2s ease-in-out infinite, sTraff calc(.55s*var(--f)) ease-out calc(1.7s*var(--f)), sDo calc(1s*var(--f)) ease-in calc(2.8s*var(--f)) forwards; }
@@ -305,6 +306,11 @@ const STRID_CSS = `
 #skolan-strid .kommando { margin-top:4px; color:#fff59d; font-size:15px; animation:sBlink .6s steps(2) infinite; }
 @keyframes sBlink { 50% { opacity:.55; } }
 #skolan-strid .rad { display:flex; justify-content:space-between; gap:8px; }
+#skolan-strid .rad span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#skolan-strid .bosshp { position:absolute; top:-6px; left:50%; transform:translateX(-50%); width:70%; max-width:180px; height:16px; border-radius:8px; background:#300; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,.6); overflow:hidden; z-index:1; }
+#skolan-strid .bosshp div { height:100%; background:linear-gradient(#69f0ae, #00c853); transition:width calc(.8s*var(--f)) ease-out, background .3s; }
+#skolan-strid .bosshp span { position:absolute; inset:0; text-align:center; font-size:11px; font-weight:800; line-height:12px; text-shadow:1px 1px 0 #000; }
+#skolan-strid.seger .bosshp { animation:sUt .4s ease-in calc(2.8s*var(--f)) forwards; }
 #skolan-strid .hpbar { margin-top:6px; height:10px; border-radius:5px; background:#300; border:2px solid #000; overflow:hidden; }
 #skolan-strid .hpbar div { height:100%; background:linear-gradient(#ff8a80, #d50000); transition:width calc(.8s*var(--f)) ease-out; }
 #skolan-strid .segertext { position:absolute; left:0; right:0; top:30%; text-align:center; font-size:min(16vw,84px); font-weight:900; letter-spacing:6px; color:#ffe082; text-shadow:0 0 18px #ffb300, 4px 4px 0 #000; opacity:0; display:none; }
@@ -663,6 +669,7 @@ class SkolanPanel extends HTMLElement {
       <span class="van-djur">${x.art ? ritaDjur(x.art, "glad", 2, {}) : "🙂"}</span>
       <span class="van-namn"><b>${esc(x.smeknamn)}</b>${x.jag ? " (du)" : ""}${x.titel ? `<br><span class="titel-bricka">${esc(x.titel)}</span>` : ""}</span>
       <span class="van-niva">🗺️ ${x.niva}<br><span class="small">⭐ ${x.stjarnor}</span></span>
+      ${!x.jag && x.attack ? this._reprisKnapp(x.attack, x.smeknamn, { art: x.art, steg: x.steg || 1, namn: x.smeknamn }, `van:${x.kod}`, true) : ""}
       ${!x.jag ? `<button class="mini ghost" data-van-bort="${esc(x.kod)}" title="Ta bort">✕</button>` : ""}</li>`;
     const vard = (kod) => { try { return new URL(kod).hostname.split(".")[0].slice(0, 8) + "…"; } catch (e) { return "?"; } };
     const ut = v.utgaende.map((x) => `<li>Ny vän (${esc(vard(x.kod))}) · ⏳ väntar på förälder
@@ -1378,8 +1385,43 @@ class SkolanPanel extends HTMLElement {
         <div class="small">❤️ ${kvar} av ${k.hp} liv · 🎯 svag mot <b>${k.typer[mon.svag]}</b></div>
         <div class="small muted">Varje merit du tjänar gör skada.${mon.boss && mon.sak ? ` Besegra bossen för ${mon.sak.ikon} ${esc(mon.sak.namn)}!` : ""}${sen ? ` Senast: nivå ${sen.niva} ${"⭐".repeat(sen.stjarnor)}` : ""}</div>
         ${attacker}
+        ${this._reprisRad()}
         <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
       </div></div>`;
+  }
+
+  // Knappar för att titta på senaste attacken från syskon (och sig själv).
+  _reprisRad() {
+    const s = this._s;
+    const knappar = (s.topplista || []).filter((t) => t.karta?.repriser?.length).map((t) => {
+      const r = t.karta.repriser[t.karta.repriser.length - 1];
+      const egen = t.id === s.barn;
+      return this._reprisKnapp(r, egen ? "Din attack" : t.namn, { art: t.karta.art, steg: t.karta.steg || 1, namn: t.karta.djur }, `barn:${t.id}`, !egen);
+    });
+    return knappar.length ? `<div class="repris-rad">📺 ${knappar.join("")}</div>` : "";
+  }
+
+  _reprisKnapp(r, vem, djur, nyckel, markeraNy) {
+    if (!r) return "";
+    (this._repriser ||= {})[nyckel] = { r, vem, djur };
+    let sedd = "";
+    try { sedd = localStorage.getItem(`skolan_repris_${nyckel}`) || ""; } catch (e) { /* privat läge */ }
+    const ny = markeraNy && sedd !== r.tid;
+    const t = r.tid ? new Date(r.tid) : null;
+    const nar = t && !isNaN(t) ? (t.toDateString() === new Date().toDateString()
+      ? t.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })
+      : t.toLocaleDateString("sv-SE", { day: "numeric", month: "short" })) : "";
+    return `<button class="mini repris-knapp ${ny ? "ny" : ""}" data-repris="${esc(nyckel)}" title="Se attacken">${r.ikon} ${esc(vem)}${nar ? ` · ${nar}` : ""}${ny ? " 🆕" : ""}</button>`;
+  }
+
+  _spelaRepris(nyckel) {
+    const x = this._repriser?.[nyckel];
+    if (!x) return;
+    try { localStorage.setItem(`skolan_repris_${nyckel}`, x.r.tid || ""); } catch (e) { /* privat läge */ }
+    const r = x.r;
+    this._strid({ at: { ikon: r.ikon, namn: r.namn, typ: r.typ }, djur: x.djur, mon: r.mon, hp: r.hp, kvar: r.kvar,
+      skada: r.skada, svag: r.svag, klar: r.klar, vem: x.vem === "Din attack" ? "Repris" : `${x.vem} attackerar!` });
+    this._render();
   }
 
   // Stridsscen i stil med klassiska rollspel. Läggs i document.body så att omritningar inte avbryter den.
@@ -1407,8 +1449,8 @@ class SkolanPanel extends HTMLElement {
       <div class="ridaa">${Array.from({ length: 8 }, (_, i) => `<b style="--i:${i}"></b>`).join("")}</div>
       <div class="scen">
         <div class="mark"></div>
-        <div class="namnruta">${o.at.ikon} ${esc(o.at.namn)}</div>
-        <div class="fiende"><div class="figur">${o.mon?.ikon || "👾"}</div><div class="fx">${effekt}</div>
+        <div class="namnruta">${o.at.ikon} ${esc(o.at.namn)}</div>${o.vem ? `<div class="vem">📺 ${esc(o.vem)}</div>` : ""}
+        <div class="fiende"><div class="bosshp"><div style="width:${(o.kvar / o.hp) * 100}%"></div><span class="hpnum">${o.kvar}/${o.hp}</span></div><div class="figur">${o.mon?.ikon || "👾"}</div><div class="fx">${effekt}</div>
           <div class="tal ${o.svag ? "svag" : ""}">${siffror}${o.svag ? "<small>SVAG PUNKT!</small>" : ""}</div></div>
         <div class="hjalte">${o.djur ? ritaDjur(o.djur.art, "glad", Math.max(1, o.djur.steg), {}) : "🐾"}</div>
         <div class="segertext">SEGER!<small>Nivå klar 🎉</small></div>
@@ -1424,11 +1466,11 @@ class SkolanPanel extends HTMLElement {
     const timers = [];
     const vid = (ms, fn) => timers.push(setTimeout(fn, t(ms)));
     vid(1750, () => {
-      el.querySelector(".hpbar div").style.width = `${(efter / o.hp) * 100}%`;
-      const num = el.querySelector(".hpnum"), start = performance.now();
+      el.querySelectorAll(".hpbar div, .bosshp div").forEach((x) => { x.style.width = `${(efter / o.hp) * 100}%`; });
+      const num = el.querySelectorAll(".hpnum"), start = performance.now();
       const steg = (nu) => {
         const f = Math.min(1, (nu - start) / t(800));
-        num.textContent = `${Math.round(o.kvar - (o.kvar - efter) * f)}/${o.hp}`;
+        num.forEach((x) => { x.textContent = `${Math.round(o.kvar - (o.kvar - efter) * f)}/${o.hp}`; });
         if (f < 1) requestAnimationFrame(steg);
       };
       requestAnimationFrame(steg);
@@ -3531,6 +3573,7 @@ class SkolanPanel extends HTMLElement {
         this._render();
       })
     );
+    r.querySelectorAll("[data-repris]").forEach((b) => b.addEventListener("click", () => this._spelaRepris(b.dataset.repris)));
     r.querySelectorAll("[data-attack]").forEach((b) =>
       b.addEventListener("click", async () => {
         const x = (this._s.karta?.attacker || []).find((y) => y.id === b.dataset.attack);
@@ -4224,6 +4267,9 @@ const CSS = `
   .attack-knapp.svag { border-color:#ffeb3b; box-shadow:0 0 8px #ffeb3b; }
   .attack-knapp:disabled { opacity:.4; cursor:default; }
   .attack-sak.svag { outline:2px solid #fbc02d; }
+  .repris-rad { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:8px; }
+  .repris-knapp { background:rgba(0,0,0,.25); color:#fff; border:1px solid rgba(255,255,255,.4); }
+  .repris-knapp.ny { border-color:#ffeb3b; box-shadow:0 0 8px #ffeb3b; }
   .attack-anim { position:absolute; inset:0; pointer-events:none; z-index:2; }
   .anim-djur { position:absolute; left:58%; bottom:6px; width:64px; height:64px; animation:djurAnfall 1.8s ease-in-out forwards; }
   .anim-djur svg { width:100%; height:100%; }

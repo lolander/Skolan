@@ -18,6 +18,8 @@ from urllib.parse import urlparse
 
 from homeassistant.util import dt as dt_util
 
+from . import meriter
+
 PA = False  # dolt tills vidare; True visar Vänner i appen
 TIMEOUT = 10
 MAX_VANNER = 50
@@ -100,7 +102,8 @@ def kort(v: dict, karta: dict, titel: str | None) -> dict | None:
     if not (v["smeknamn"] and v["smeknamn_ok"]):
         return None
     return {"v": 1, "smeknamn": v["smeknamn"], "art": karta.get("art"), "niva": karta.get("niva", 1),
-            "stjarnor": karta.get("stjarnor", 0), "titel": titel or ""}
+            "stjarnor": karta.get("stjarnor", 0), "titel": titel or "", "steg": karta.get("steg", 0),
+            "attack": (karta.get("repriser") or [None])[-1]}
 
 
 def publik(v: dict, foralder: bool, bas: str) -> dict:
@@ -114,7 +117,8 @@ def publik(v: dict, foralder: bool, bas: str) -> dict:
 def _rensa_kort(k: dict) -> dict:
     return {"smeknamn": str(k.get("smeknamn") or "?")[:16], "art": str(k.get("art") or "")[:8],
             "niva": max(1, min(100000, int(k.get("niva") or 1))), "stjarnor": max(0, min(10**6, int(k.get("stjarnor") or 0))),
-            "titel": str(k.get("titel") or "")[:40]}
+            "titel": str(k.get("titel") or "")[:40], "steg": max(0, min(4, int(k.get("steg") or 0))),
+            "attack": meriter.repris(k["attack"]) if isinstance(k.get("attack"), dict) else None}
 
 
 # ---------- ändringar ----------

@@ -1404,7 +1404,25 @@ def karta_kort(data: dict) -> dict:
     """Det syskon och vänner får se."""
     k = _karta(data)
     d = _m(data).get("djur") or {}
-    return {"niva": k["niva"], "stjarnor": sum(k["stjarnor"].values()), "art": d.get("art"), "djur": d.get("namn")}
+    return {"niva": k["niva"], "stjarnor": sum(k["stjarnor"].values()), "art": d.get("art"), "djur": d.get("namn"),
+            "steg": d.get("steg", 0), "repriser": [repris(r) for r in k.get("repriser", [])[-3:]]}
+
+
+def repris(r: dict) -> dict | None:
+    """Gör om en sparad attack (egen, syskons eller väns) till det stridsscenen behöver.
+    Monstret räknas fram från nivån här, så att en vän inte kan skicka in egen text eller kod."""
+    try:
+        at = next(x for x in ATTACKER if x["id"] == r.get("id"))
+        niva = max(1, min(100000, int(r.get("niva") or 1)))
+        hp = max(1, min(10**6, int(r.get("hp") or 1)))
+        kvar = max(0, min(hp, int(r.get("kvar") or 0)))
+        skada = max(0, min(10**6, int(r.get("skada") or 0)))
+    except (StopIteration, TypeError, ValueError):
+        return None
+    mon = niva_info(niva)
+    return {"id": at["id"], "ikon": at["ikon"], "namn": at["namn"], "typ": at["typ"], "niva": niva, "hp": hp, "kvar": kvar,
+            "skada": skada, "svag": bool(r.get("svag")), "klar": bool(r.get("klar")), "tid": str(r.get("tid") or "")[:25],
+            "mon": {"ikon": mon["ikon"], "namn": mon["namn"], "boss": mon["boss"], "varld": {"farg": mon["varld"]["farg"]}}}
 
 
 # ---------- attacker mot monstren ----------
@@ -1476,6 +1494,7 @@ def attack(data: dict, at_id: str) -> dict:
     n = k["niva"]
     mon = niva_info(n)
     skada, svag = _attack_varde(data, at, mon)
+    hp_fore, kvar_fore = k["hp"], max(0, k["hp"] - k["skada"])
     k["energi"] -= at["energi"]
     if at_id == "a_super":
         k["super"] = vecka
@@ -1483,6 +1502,8 @@ def attack(data: dict, at_id: str) -> dict:
     _rakna(data, "attacker")
     _karta_skada(data, skada)
     k["senaste"]["klar"] = k["niva"] > n
+    k["repriser"] = (k.get("repriser", []) + [{"id": at_id, "niva": n, "hp": hp_fore, "kvar": kvar_fore, "skada": skada,
+                                               "svag": svag, "klar": k["senaste"]["klar"], "tid": k["senaste"]["tid"]}])[-5:]
     return k["senaste"]
 
 
