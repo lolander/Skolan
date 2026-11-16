@@ -920,7 +920,7 @@ def kop_tips(data: dict, typ: str = "tips") -> None:
     m = _m(data)
     pris, ikon = (P_FORSOK, "🔁") if typ == "forsok" else (P_TIPS, "💡")
     if m.get("saldo", 0) < pris:
-        raise ValueError(f"Du behöver {pris} ⭐ för ett försök till. Tryck Visa svaret." if typ == "forsok"
+        raise ValueError(f"Inte rätt. Du behöver {pris} ⭐ för att kolla fler fel svar. Tryck Visa svaret." if typ == "forsok"
                          else f"Du behöver {pris} ⭐ för ett tips.")
     nu = dt_util.now().isoformat(timespec="minutes")
     sista = m["logg"][-1] if m["logg"] else None
