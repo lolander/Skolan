@@ -3641,7 +3641,7 @@ class SkolanPanel extends HTMLElement {
                ${o.skrev && o.visat === "fel" ? `<div class="muted small">Du skrev: ${esc(o.skrev)}</div>` : ""}
                ${rattning}
                <button class="primary" id="nasta">Nästa →</button>
-               ${o.visat !== "ratt" ? `<button class="ghost" id="hade-ratt">Jag hade rätt</button>` : ""}`
+               ${this._hadeRattOk(o, svar) ? `<button class="ghost" id="hade-ratt">Jag hade rätt</button>` : ""}`
             : `${o.tips?.[k.i] ? `<div class="tips-rad">💡 ${[...String(svar)].map((c, j) => (j < o.tips[k.i] || c === " " ? esc(c) : "_")).join("&#8203;")}</div>` : ""}
                <input id="svar" placeholder="Skriv på ${esc(till.toLowerCase() || "det andra språket")}" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(o.utkast || "")}">
                <div class="actions center">
@@ -4548,7 +4548,12 @@ class SkolanPanel extends HTMLElement {
       this._render();
     });
     on("#hade-ratt", () => {
-      v.ova.visat = "ratt";
+      const o = v.ova, k = o.kvar[0];
+      if (!this._s.kan_valja) {  // barn: klart, men inte rätt på första försöket (inga extra meriter)
+        o.fel.add(k.i);
+        if (!(k.i in o.forsta)) o.forsta[k.i] = false;
+      }
+      o.visat = "ratt";
       this._next();
     });
     on("#nasta", () => this._next());
@@ -4588,6 +4593,16 @@ class SkolanPanel extends HTMLElement {
     if (lage === 4) this._tittaStart();
     this._render();
     if (lage === 3) las_upp(g.par[kvar[0].i][0], g.sprak[0], this._hass); // första uppläsningen i klicket (krävs på iPhone)
+  }
+
+  // "Jag hade rätt" (t.ex. en synonym eller ett litet stavfel som borde godkännas).
+  // Barn: bara efter ett eget svar som ligger nära rätt svar, och ordet räknas inte som rätt på första försöket.
+  _hadeRattOk(o, svar) {
+    if (o.visat === "ratt") return false;
+    if (this._s.kan_valja) return true;
+    if (o.visat !== "fel" || !o.skrev.trim()) return false;
+    const n = narmast(o.skrev, svar);
+    return n.avstand <= Math.max(1, Math.floor(String(svar).length / 4));
   }
 
   _tittaStart() {
