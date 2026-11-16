@@ -43,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.34.1"
+VERSION = "1.34.2"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -854,9 +854,9 @@ def _apply(data: dict, body: dict) -> list[str]:
     """Utför en ändring i barnets data. Returnerar filer som ska raderas."""
     op = body.get("op")
     amnen = data.setdefault("amnen", [])
-    if op == "ova_tips":
+    if op in ("ova_tips", "ova_forsok"):
         if body.get("_barn"):  # föräldrar som provar övningen betalar inget
-            meriter.kop_tips(data)
+            meriter.kop_tips(data, "forsok" if op == "ova_forsok" else "tips")
         return []
     if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck", "energi_kop", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):

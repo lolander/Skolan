@@ -2163,6 +2163,7 @@ class SkolanPanel extends HTMLElement {
         `Öva på <b>hela</b> glosläxan: ${p(5)} varje gång (högst 3 gånger per läxa och dag)`,
         `Alla rätt på första försöket: ${p(5)} extra`,
         `Öva minst 2 dagar före förhöret: ${p(10)} extra (en gång per dag)`,
+        `🔁 Du har 2 gratis försök på varje ord. Därefter kostar varje försök med <b>Kolla</b> 1 ⭐.`,
         `💡 Fastnar du? Köp ett <b>tips</b> för 1 ⭐. Då visas nästa bokstav. Ordet räknas inte som rätt på första försöket. Tips finns bara när du övar, aldrig i förhör.`,
         `🔊 <b>Svenska veckans ord</b> övar du genom att lyssna och stava, eller titta, gömma och skriva. I förhöret läses orden upp och du stavar dem.`,
         `🔥 <b>Öva svåra ord</b> hjälper dig att lära dig orden du ofta gör fel på. Det räknas för sviten men ger inga meriter.`,
@@ -3645,11 +3646,12 @@ class SkolanPanel extends HTMLElement {
             : `${o.tips?.[k.i] ? `<div class="tips-rad">💡 ${[...String(svar)].map((c, j) => (j < o.tips[k.i] || c === " " ? esc(c) : "_")).join("&#8203;")}</div>` : ""}
                <input id="svar" placeholder="Skriv på ${esc(till.toLowerCase() || "det andra språket")}" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(o.utkast || "")}">
                <div class="actions center">
-                 <button class="primary" id="kolla">Kolla</button>
+                 <button class="primary" id="kolla" ${this._busy ? "disabled" : ""}>Kolla${!this._s.kan_valja && (o.forsok?.[k.i] || 0) >= 2 ? " (1 ⭐)" : ""}</button>
                  ${(o.tips?.[k.i] || 0) < [...String(svar)].length - 1 ? `<button class="ghost" id="tips" ${this._busy ? "disabled" : ""}>💡 Tips (${this._s.kan_valja ? "gratis" : "1 ⭐"})</button>` : ""}
                  <button class="ghost" id="visa">Visa svaret</button>
                </div>
-               ${o.tips?.[k.i] ? `<div class="muted small">Med tips räknas ordet inte som rätt på första försöket.</div>` : ""}`
+               ${o.tips?.[k.i] ? `<div class="muted small">Med tips räknas ordet inte som rätt på första försöket.</div>` : ""}
+               ${!this._s.kan_valja && o.forsok?.[k.i] ? `<div class="muted small">${(o.forsok[k.i] || 0) >= 2 ? "Dina 2 gratis försök på ordet är slut. Nästa försök kostar 1 ⭐, eller tryck Visa svaret." : "1 gratis försök kvar på ordet."}</div>` : ""}`
         }
       </div>`;
   }
@@ -4526,11 +4528,22 @@ class SkolanPanel extends HTMLElement {
     r.querySelectorAll("[data-start]").forEach((b) =>
       b.addEventListener("click", () => this._startOva(Number(b.dataset.start)))
     );
-    const check = () => {
+    const check = async () => {
       const o = v.ova;
       const g = this._amne(v.amne).glosor.find((x) => x.id === v.glosor);
       const k = o.kvar[0];
       const skrev = $("#svar")?.value || "";
+      if (this._busy) return;
+      // 2 gratis försök per ord, sedan kostar varje försök 1 ⭐ (inte för föräldrar, inte för tomma svar)
+      if (skrev.trim()) {
+        o.forsok = o.forsok || {};
+        if (!this._s.kan_valja && (o.forsok[k.i] || 0) >= 2) {
+          o.utkast = skrev;
+          if (!(await this._act("ova_forsok"))) return;
+          o.utkast = "";
+        }
+        o.forsok[k.i] = (o.forsok[k.i] || 0) + 1;
+      }
       const facit = k.fran < 0 ? g.par[k.i][0] : g.par[k.i][1 - k.fran];
       const ratt = answers(facit);
       const ok = ratt.includes(norm(skrev)) || (ratt.length > 1 && norm(skrev) === norm(facit));

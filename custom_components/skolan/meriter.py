@@ -911,19 +911,27 @@ def foto_lon(data: dict, b: dict) -> int:
 P_TIPS = 1  # ett tips i en övning (nästa bokstav) kostar så här många meriter
 
 
-def kop_tips(data: dict) -> None:
+P_FORSOK = 1  # varje försök efter de 2 gratis på samma ord i en övning
+FORSOK_GRATIS = 2
+
+
+def kop_tips(data: dict, typ: str = "tips") -> None:
+    """Köp ett tips (💡) eller ett extra försök (🔁) i en övning."""
     m = _m(data)
-    if m.get("saldo", 0) < P_TIPS:
-        raise ValueError(f"Du behöver {P_TIPS} ⭐ för ett tips.")
+    pris, ikon = (P_FORSOK, "🔁") if typ == "forsok" else (P_TIPS, "💡")
+    if m.get("saldo", 0) < pris:
+        raise ValueError(f"Du behöver {pris} ⭐ för ett försök till. Tryck Visa svaret." if typ == "forsok"
+                         else f"Du behöver {pris} ⭐ för ett tips.")
     nu = dt_util.now().isoformat(timespec="minutes")
     sista = m["logg"][-1] if m["logg"] else None
-    if sista and sista.get("ikon") == "💡" and sista["tid"][:13] == nu[:13]:  # samla tipsen samma timme på en rad
-        sista["p"] -= P_TIPS
+    text = (lambda n: f"🔁 {n} extra försök i övningar") if typ == "forsok" else (lambda n: f"💡 {n} tips i övningar")
+    if sista and sista.get("ikon") == ikon and sista["tid"][:13] == nu[:13]:  # samla samma timme på en rad
+        sista["p"] -= pris
         sista["n"] = sista.get("n", 1) + 1
-        sista["orsak"] = f"💡 {sista['n']} tips i övningar"
-        m["saldo"] = m.get("saldo", 0) - P_TIPS
+        sista["orsak"] = text(sista["n"])
+        m["saldo"] = m.get("saldo", 0) - pris
     else:
-        ge(data, -P_TIPS, "💡 Tips i en övning", None, "💡")
+        ge(data, -pris, "🔁 Extra försök i en övning" if typ == "forsok" else "💡 Tips i en övning", None, ikon)
 
 
 def registrerat(data: dict, u: dict) -> None:
