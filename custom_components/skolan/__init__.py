@@ -19,9 +19,10 @@ import math
 import mimetypes
 import random
 import re
+import time
 import shutil
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import voluptuous as vol
@@ -36,14 +37,14 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import meriter, vanner
+from . import meriter, tillsammans, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.36.0"
+VERSION = "1.37.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -133,7 +134,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, VannerView, VanPublikView, VanForfraganView):
+    for view in (StateView, ActionView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -423,7 +424,7 @@ def _save(path: Path, data: dict) -> None:
 
 def _vanner_kort(hass: HomeAssistant, barn: str, v: dict) -> dict | None:
     data = _load(_dir(hass, barn))
-    return vanner.kort(v, meriter.karta_kort(data), meriter.titel(data))
+    return vanner.kort(v, {**meriter.karta_kort(data), "lag": meriter.lag_kort(data)}, meriter.titel(data))
 
 
 async def _vanner_foraldrar(hass: HomeAssistant, titel: str, text: str) -> None:
@@ -483,6 +484,19 @@ class VanPublikView(HomeAssistantView):
         k = await hass.async_add_executor_job(_vanner_kort, hass, b["id"], v)
         if not k:
             raise web.HTTPNotFound
+        for typ in ("stund", "duell"):  # en vän vill se hur vårt barn ligger till i en pluggstund/duell
+            if request.query.get(typ):
+                sid = request.query[typ][:20]
+                t = await hass.async_add_executor_job(tillsammans.las, hass.data[DOMAIN]["base"])
+                x = next((y for y in t["stunder" if typ == "stund" else "dueller"] if y["id"] == sid), None)
+                if not x:
+                    raise web.HTTPNotFound
+                ref = f"barn:{b['id']}"
+                if typ == "stund":
+                    data = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
+                    tillsammans.stund_uppdatera(x, {ref: data}, {})
+                    return self.json(tillsammans.stund_publik(x, ref))
+                return self.json(tillsammans.duell_publik(x, ref))
         if request.query.get("arena"):  # en vän vill strida: husdjurets stridsvärden + versioner
             data = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
             return self.json({"v": 1, "arena_ver": meriter.ARENA_VER, "skolan": VERSION, "kampe": meriter.arena_kampe(data)})
@@ -692,10 +706,28 @@ def _lag_las(hass: HomeAssistant, barn: str, data: dict) -> tuple[dict | None, l
         return None, []
     namn = {b["id"]: b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"]}
     medl = [(b, namn[b], data if b == barn else _load(_dir(hass, b))) for b in lag["medlemmar"] if b in namn]
-    st = meriter.lag_status(lag, medl)
+    st = meriter.lag_status(lag, medl, _lag_vanner(hass, lag))
     for _b, _n, d in medl:
         meriter.lag_satt(d, lag, st["bonus"])
     return lag, medl
+
+
+def _lag_van_val(hass: HomeAssistant) -> list[dict]:
+    return [{"kod": x["kod"], "smeknamn": x["smeknamn"], "barn": b["id"], "barn_namn": b["namn"]}
+            for b in hass.data[DOMAIN]["conf"]["barn"] for x in vanner.las(_dir(hass, b["id"]))["vanner"]]
+
+
+def _lag_vanner(hass: HomeAssistant, lag: dict) -> list[dict]:
+    """Vänner i andra hem som är med i laget (deras senast hämtade kort). Tomt när vänner är avstängda."""
+    if not vanner.pa():
+        return []
+    ut = []
+    for x in lag.get("vanner", []):
+        v = vanner.las(_dir(hass, x.get("barn", "")))
+        k = next((y for y in v["vanner"] if y["kod"] == x.get("kod")), None)
+        if k:
+            ut.append({"kod": k["kod"], "barn": x["barn"], **k})
+    return ut
 
 
 def _lag_andra(hass: HomeAssistant, body: dict) -> list:
@@ -716,6 +748,13 @@ def _lag_andra(hass: HomeAssistant, body: dict) -> list:
         for x in lagen:  # ett barn kan bara vara med i ett lag
             if x is not lag:
                 x["medlemmar"] = [b for b in x.get("medlemmar", []) if b not in medl]
+        vanlista = []
+        if vanner.pa():  # vänner i andra hem: måste vara vän med något av barnen i laget
+            for x in (body.get("vanner") or [])[: meriter.LAG_MAX]:
+                if isinstance(x, dict) and x.get("barn") in medl and any(
+                        y["kod"] == x.get("kod") for y in vanner.las(_dir(hass, x["barn"]))["vanner"]):
+                    vanlista.append({"kod": x["kod"], "barn": x["barn"]})
+        lag["vanner"] = vanlista[: max(0, meriter.LAG_MAX - len(medl))]
         lag.update({"namn": _name(body.get("namn") or "Laget"), "marke": body.get("marke") if body.get("marke") in meriter.LAG_MARKEN else "🏳️",
                     "medlemmar": medl[: meriter.LAG_MAX]})
         allt["lag"] = [x for x in lagen if len(x.get("medlemmar", [])) >= 2]
@@ -771,6 +810,7 @@ class StateView(HomeAssistantView):
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
                 "lag_lista": (await hass.async_add_executor_job(_load_fil, _lag_fil(hass))).get("lag", []) if parent else None,
                 "barn_lista": [{"id": b["id"], "namn": b["namn"]} for b in conf["barn"]] if parent else None,
+                "lag_van_val": await hass.async_add_executor_job(_lag_van_val, hass) if parent and vanner.pa() else None,
                 "rum_platser": meriter.RUM_PLATSER,
                 "varianter": meriter.VARIANTER,
                 "titel": meriter.titel(data),
@@ -830,6 +870,19 @@ class ActionView(HomeAssistantView):
                 return self.json_message(str(err), 400)
             jag = next(b for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn)
             body["_van"] = ("van:" + van["kod"].rsplit("/", 1)[-1][:12], van["smeknamn"], de, jag["namn"])
+        elif op == "lagstrid_start" and vanner.pa():  # vänner i laget hämtas från sina hem
+            from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+            lag_nu = next((x for x in (await hass.async_add_executor_job(_load_fil, _lag_fil(hass))).get("lag", [])
+                           if barn in x.get("medlemmar", [])), None)
+            vk = []
+            for x in (lag_nu or {}).get("vanner", []):
+                try:
+                    k = await vanner.hamta_kampe(async_get_clientsession(hass), x["kod"], "Vännen")
+                    vk.append(meriter.rensa_kampe(k, "van")[0])
+                except ValueError:
+                    pass  # vännen går inte att nå: laget strider utan hen
+            body["_vankampar"] = vk
         elif op == "arena_start":  # motståndarens data läses bara, ändras aldrig
             conf = hass.data[DOMAIN]["conf"]
             mot = next((b for b in conf["barn"] if b["id"] == body.get("mot") and b["id"] != barn), None)
@@ -971,7 +1024,8 @@ def _apply(data: dict, body: dict) -> list[str]:
                 raise ValueError("Du är inte med i något lag än. Be en förälder skapa ett lag.")
             jag = next(x for x in medl if x[2] is data)
             andra = [x for x in medl if x[2] is not data and (x[2].get("meriter") or {}).get("djur")]
-            kampar = [meriter._kampe(data, jag[1])] + [meriter._kampe(d, n) for _i, n, d in andra]
+            kampar = ([meriter._kampe(data, jag[1])] + [meriter._kampe(d, n) for _i, n, d in andra]
+                      + list(body.get("_vankampar") or []))[: meriter.LAG_MAX]
             meriter.lagstrid_start(data, jag[1], f"{lag['marke']} {lag['namn']}", kampar)
         elif op == "lagstrid_drag":
             meriter.lagstrid_drag(data, str(body.get("drag") or ""), int(body.get("mal") or 0))
@@ -2925,3 +2979,238 @@ async def _godkann(hass: HomeAssistant, barn: str, uid: str, datum: str | None, 
             except Exception:  # noqa: BLE001
                 pass
     return data
+
+
+# ---------- plugga tillsammans: pluggstund och glosduell ----------
+def _tlock(hass: HomeAssistant) -> asyncio.Lock:
+    return hass.data[DOMAIN].setdefault("tlock", asyncio.Lock())
+
+
+def _kompisar(hass: HomeAssistant, barn: str) -> list[dict]:
+    """Vem barnet kan bjuda in: syskon, och vänner när vänner är påslagna."""
+    ut = [{"ref": f"barn:{b['id']}", "namn": b["namn"], "typ": "syskon"} for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] != barn]
+    if vanner.pa():
+        v = vanner.las(_dir(hass, barn))
+        ut += [{"ref": f"van:{x['kod']}", "namn": x["smeknamn"], "typ": "van", "art": x.get("art")} for x in v["vanner"]]
+    return ut
+
+
+def _glos_listor(data: dict) -> list[dict]:
+    return [{"amne": a["id"], "id": g["id"], "namn": g["namn"], "amne_namn": a["namn"], "antal": len(g.get("par", []))}
+            for a in data.get("amnen", []) for g in a.get("glosor", []) if g.get("par") and not _stavord(g)]
+
+
+async def _van_framsteg(hass: HomeAssistant, kod: str, typ: str, sid: str) -> dict | None:
+    """Hämta vännens framsteg i en stund/duell från vännens hem (kort cache)."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    if not vanner.pa():
+        return None
+    cache = hass.data[DOMAIN].setdefault("tcache", {})
+    nyckel = (kod, typ, sid)
+    nu = time.monotonic()
+    if nyckel in cache and nu - cache[nyckel][0] < (3 if typ == "duell" else 60):
+        return cache[nyckel][1]
+    try:
+        async with async_get_clientsession(hass).get(f"{kod}?json=1&{typ}={sid}", timeout=vanner.TIMEOUT, allow_redirects=False) as r:
+            svar = json.loads(await r.content.read(2048)) if r.status == 200 else None
+    except Exception:  # noqa: BLE001
+        svar = None
+    if not isinstance(svar, dict):
+        svar = None
+    cache[nyckel] = (nu, svar)
+    return svar
+
+
+async def _van_bjud(hass: HomeAssistant, barn: str, kod: str, body: dict) -> None:
+    """Skicka en inbjudan till vännens hem."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    v = await hass.async_add_executor_job(vanner.las, _dir(hass, barn))
+    egen = vanner.egen_kod(_bas_url(hass), v)
+    if not egen or not v["smeknamn_ok"]:
+        raise ValueError("Du behöver ett godkänt smeknamn och en vänlänk först.")
+    try:
+        async with async_get_clientsession(hass).post(f"{kod}/tillsammans", json={**body, "kod": egen, "smeknamn": v["smeknamn"]},
+                                                      timeout=vanner.TIMEOUT, allow_redirects=False) as r:
+            if r.status != 200:
+                raise ValueError("Kompisens Skolan svarade inte. Har de samma version?")
+    except ValueError:
+        raise
+    except Exception as err:  # noqa: BLE001
+        raise ValueError("Kunde inte nå kompisens Skolan just nu.") from err
+
+
+async def _tillsammans_lage(hass: HomeAssistant, barn: str) -> dict:
+    """Uppdatera barnets stunder och dueller (egna barns poäng, vänners framsteg), dela ut belöningar."""
+    conf = hass.data[DOMAIN]["conf"]
+    bas = hass.data[DOMAIN]["base"]
+    jag = f"barn:{barn}"
+    async with _tlock(hass):
+        t = await hass.async_add_executor_job(tillsammans.las, bas)
+    stunder = [s for s in t["stunder"] if any(d["ref"] == jag for d in s["deltagare"])]
+    dueller = [x for x in t["dueller"] if any(d["ref"] == jag for d in x["deltagare"])]
+    van_svar: dict[tuple, dict] = {}
+    for typ, lista in (("stund", stunder), ("duell", dueller)):
+        for x in lista:
+            for d in x["deltagare"]:
+                if d["ref"].startswith("van:"):
+                    svar = await _van_framsteg(hass, d["ref"][4:], typ, x["id"])
+                    if svar:
+                        van_svar[(x["id"], d["ref"])] = svar
+    lokala_id = {f"barn:{b['id']}": b["id"] for b in conf["barn"]}
+    belona: list[tuple[str, str, dict]] = []
+    async with _tlock(hass):
+        t = await hass.async_add_executor_job(tillsammans.las, bas)
+        for s in t["stunder"]:
+            if not any(d["ref"] == jag for d in s["deltagare"]):
+                continue
+            lokala = {}
+            for d in s["deltagare"]:
+                if d["ref"] in lokala_id:
+                    lokala[d["ref"]] = await hass.async_add_executor_job(_load, _dir(hass, lokala_id[d["ref"]]))
+            tillsammans.stund_uppdatera(s, lokala, {d["ref"]: van_svar[(s["id"], d["ref"])] for d in s["deltagare"] if (s["id"], d["ref"]) in van_svar})
+            if s["klar"]:
+                belona += [("stund", d["ref"], s) for d in s["deltagare"] if d["ref"] in lokala_id and d["med"]]
+        for x in t["dueller"]:
+            if not any(d["ref"] == jag for d in x["deltagare"]):
+                continue
+            tillsammans.duell_uppdatera(x, {d["ref"]: van_svar[(x["id"], d["ref"])] for d in x["deltagare"] if (x["id"], d["ref"]) in van_svar})
+            if tillsammans.duell_status(x)["slut"]:
+                belona += [("duell", d["ref"], x) for d in x["deltagare"] if d["ref"] in lokala_id and d["med"]]
+        await hass.async_add_executor_job(tillsammans.spara, bas, t)
+    for typ, ref, x in belona:
+        bid = lokala_id[ref]
+        nyckel = f"{typ}:{x['id']}"
+        async with hass.data[DOMAIN]["locks"][bid]:
+            data = await hass.async_add_executor_job(_load, _dir(hass, bid))
+            if nyckel in meriter._m(data)["nycklar"]:
+                continue
+            if tillsammans.stund_belona(data, x) if typ == "stund" else tillsammans.duell_belona(data, x, ref):
+                await hass.async_add_executor_job(_save, _dir(hass, bid), data)
+    idag = dt_util.now().date().isoformat()
+    return {
+        "jag": jag, "vanner_pa": vanner.pa(), "stund_mal": tillsammans.STUND_MAL, "stund_bonus": tillsammans.STUND_BONUS,
+        "duell_delta": tillsammans.DUELL_DELTA, "duell_vinst": tillsammans.DUELL_VINST,
+        "stunder": [s for s in t["stunder"] if s["dag"] == idag and any(d["ref"] == jag for d in s["deltagare"])],
+        "dueller": [tillsammans.duell_for_barn(x, jag) for x in t["dueller"] if any(d["ref"] == jag for d in x["deltagare"])][-5:],
+    }
+
+
+class TillsammansView(HomeAssistantView):
+    url = "/api/skolan/tillsammans"
+    name = "api:skolan:tillsammans"
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        barn = _barn_for(hass, request, request.query.get("barn"))
+        lage = await _tillsammans_lage(hass, barn)
+        data = await hass.async_add_executor_job(_load, _dir(hass, barn))
+        lage["kompisar"] = await hass.async_add_executor_job(_kompisar, hass, barn)
+        lage["glosor"] = _glos_listor(data)
+        return self.json(lage)
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest
+        barn = _barn_for(hass, request, body.get("barn"))
+        if _ar_foralder(hass, request):
+            return self.json_message("Det är barnen som pluggar tillsammans 🙂", 400)
+        conf = hass.data[DOMAIN]["conf"]
+        jag_namn = next(b["namn"] for b in conf["barn"] if b["id"] == barn)
+        jag = f"barn:{barn}"
+        bas = hass.data[DOMAIN]["base"]
+        op = str(body.get("op") or "")
+        try:
+            kompisar = {k["ref"]: k for k in await hass.async_add_executor_job(_kompisar, hass, barn)}
+            if op == "stund_ny":
+                gaster = [(r, kompisar[r]["namn"]) for r in dict.fromkeys(body.get("gaster") or []) if r in kompisar][:6]
+                async with _tlock(hass):
+                    t = await hass.async_add_executor_job(tillsammans.las, bas)
+                    s = tillsammans.stund_ny(t, (jag, jag_namn), gaster)
+                    await hass.async_add_executor_job(tillsammans.spara, bas, t)
+                for r, _n in gaster:
+                    if r.startswith("van:"):
+                        try:
+                            await _van_bjud(hass, barn, r[4:], {"typ": "stund", "id": s["id"], "start": s["start"]})
+                        except ValueError:
+                            pass  # kompisen kan fortfarande se oss när den hämtar; stunden gäller ändå
+            elif op == "duell_ny":
+                gast = body.get("gast")
+                if gast not in kompisar:
+                    raise ValueError("Välj vem du vill utmana.")
+                data = await hass.async_add_executor_job(_load, _dir(hass, barn))
+                a = _find(data.get("amnen", []), body.get("amne"))
+                g = _find(a["glosor"], body.get("glosor"))
+                if _stavord(g):
+                    raise ValueError("Stavningsord går inte att duellera med än. Välj en glosa med översättning.")
+                ord_ = _fragor(g, 0)[: tillsammans.DUELL_ORD]
+                async with _tlock(hass):
+                    t = await hass.async_add_executor_job(tillsammans.las, bas)
+                    x = tillsammans.duell_ny(t, (jag, jag_namn), (gast, kompisar[gast]["namn"]), g["namn"], ord_)
+                    await hass.async_add_executor_job(tillsammans.spara, bas, t)
+                if gast.startswith("van:"):
+                    await _van_bjud(hass, barn, gast[4:], {"typ": "duell", "id": x["id"], "start": x["start"], "namn": x["namn"], "ord": x["ord"]})
+            elif op in ("stund_ga_med", "duell_ga_med", "duell_svara"):
+                async with _tlock(hass):
+                    t = await hass.async_add_executor_job(tillsammans.las, bas)
+                    svar = None
+                    if op == "stund_ga_med":
+                        tillsammans.stund_ga_med(t, str(body.get("id")), jag)
+                    elif op == "duell_ga_med":
+                        tillsammans.duell_ga_med(t, str(body.get("id")), jag)
+                    else:
+                        svar = tillsammans.duell_svara(t, str(body.get("id")), jag, int(body.get("i", -1)), body.get("svar"), _ratt_svar)
+                    await hass.async_add_executor_job(tillsammans.spara, bas, t)
+                if op == "duell_svara":
+                    hass.data[DOMAIN].get("tcache", {}).clear()
+                    return self.json({"ratt": svar})
+            else:
+                raise ValueError("Okänd åtgärd.")
+        except (ValueError, KeyError, TypeError) as err:
+            return self.json_message(str(err) if isinstance(err, ValueError) else "Det gick inte.", 400)
+        return self.json({"ok": True})
+
+
+class VanTillsammansView(HomeAssistantView):
+    """En vän i ett annat hem bjuder in vårt barn till en pluggstund eller glosduell."""
+
+    url = "/api/skolan/van/{nyckel}/tillsammans"
+    name = "api:skolan:van:tillsammans"
+    requires_auth = False
+
+    async def post(self, request: web.Request, nyckel: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        hitta = await _barn_for_vannyckel(hass, nyckel) if vanner.pa() else None
+        if not hitta:
+            raise web.HTTPNotFound
+        b, v = hitta
+        try:
+            body = json.loads(await request.content.read(16384))
+            kod = vanner.normal_kod(body.get("kod"))
+            van = next((x for x in v["vanner"] if x["kod"] == kod), None)
+            if not van:  # bara vänner som föräldrarna har godkänt får bjuda in
+                return self.json({"ok": False}, status_code=403)
+            sid = str(body.get("id") or "")[:20]
+            start = str(body.get("start") or "")[:25]
+            datetime.fromisoformat(start)
+            if not re.fullmatch(r"[A-Za-z0-9_\-]{6,20}", sid):
+                raise ValueError
+            bas = hass.data[DOMAIN]["base"]
+            async with _tlock(hass):
+                t = await hass.async_add_executor_job(tillsammans.las, bas)
+                if not any(x["id"] == sid for x in t["stunder"] + t["dueller"]):
+                    van_ref, mig = (f"van:{kod}", van["smeknamn"]), (f"barn:{b['id']}", b["namn"])
+                    if body.get("typ") == "stund":
+                        tillsammans.stund_ny(t, van_ref, [mig], sid, start)
+                    elif body.get("typ") == "duell":
+                        ord_ = [o for o in (body.get("ord") or []) if isinstance(o, dict) and o.get("fraga") and o.get("facit")]
+                        tillsammans.duell_ny(t, van_ref, mig, str(body.get("namn") or "Glosor"), ord_, sid, start)
+                    else:
+                        raise ValueError
+                    await hass.async_add_executor_job(tillsammans.spara, bas, t)
+        except (ValueError, TypeError, AttributeError):
+            return self.json({"ok": False}, status_code=400)
+        return self.json({"ok": True})

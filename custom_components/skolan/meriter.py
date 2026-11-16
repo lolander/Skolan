@@ -2269,8 +2269,15 @@ def lag_bonus(data: dict) -> float:
     return LAG_BONUS_PER * max(0, min(LAG_MAX, int(lag.get("bonus", 0))))
 
 
-def lag_status(lag: dict, medlemmar: list[tuple[str, str, dict]]) -> dict:
-    """Lagets läge. medlemmar = [(barn-id, namn, data)]."""
+def lag_kort(data: dict) -> dict:
+    """Det en vän i ett annat hem behöver för ett vänlag."""
+    return {"vecka_id": _vecka_nu(), "vecka": _vecko_poang(data).get(_vecka_nu(), 0), "dag": dt_util.now().date().isoformat(),
+            "idag": _dag_poang(data, dt_util.now().date().isoformat()) > 0, "mal": boss_mal_vecka(data),
+            "cp": djur_cp(data) if _m(data).get("djur") else 0, "def": djur_def(data)}
+
+
+def lag_status(lag: dict, medlemmar: list[tuple[str, str, dict]], vanner: list[dict] | None = None) -> dict:
+    """Lagets läge. medlemmar = [(barn-id, namn, data)], vanner = vänners senast hämtade kort."""
     idag = dt_util.now().date().isoformat()
     vecka = _vecka_nu()
     ar, v = int(vecka[:4]), int(vecka[-2:])
@@ -2282,6 +2289,13 @@ def lag_status(lag: dict, medlemmar: list[tuple[str, str, dict]]) -> dict:
         folk.append({"id": bid, "namn": namn, "art": dj.get("art"), "djur": dj.get("namn"), "steg": _djur_steg(d),
                      "cp": djur_cp(d) if dj else 0, "def": djur_def(d), "idag": _dag_poang(d, idag) > 0,
                      "vecka": _vecko_poang(d).get(vecka, 0)})
+    for v in vanner or []:
+        lk = v.get("lag") or {}
+        denna = lk.get("vecka_id") == vecka
+        hp += round((lk.get("mal") or 0) * LAGBOSS_ANDEL)
+        folk.append({"id": "van:" + v["kod"], "namn": v.get("smeknamn", "?"), "art": v.get("art"), "djur": "", "steg": v.get("steg", 0),
+                     "cp": lk.get("cp", 0), "def": lk.get("def", 0), "idag": bool(lk.get("idag")) and lk.get("dag") == idag,
+                     "vecka": lk.get("vecka", 0) if denna else 0, "van": True})
     skada = sum(x["vecka"] for x in folk)
     idag_n = sum(1 for x in folk if x["idag"])
     slut = dt_util.now().date() + timedelta(days=6 - dt_util.now().date().weekday())

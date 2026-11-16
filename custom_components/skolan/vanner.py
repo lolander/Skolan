@@ -103,7 +103,8 @@ def kort(v: dict, karta: dict, titel: str | None) -> dict | None:
         return None
     return {"v": 1, "smeknamn": v["smeknamn"], "art": karta.get("art"), "niva": karta.get("niva", 1),
             "stjarnor": karta.get("stjarnor", 0), "titel": titel or "", "steg": karta.get("steg", 0),
-            "attack": (karta.get("repriser") or [None])[-1], "arena_ver": meriter.ARENA_VER}
+            "attack": (karta.get("repriser") or [None])[-1], "arena_ver": meriter.ARENA_VER,
+            "lag": karta.get("lag")}  # för vänlag: veckans poäng, pluggat idag, vanlig vecka
 
 
 def publik(v: dict, foralder: bool, bas: str) -> dict:
@@ -117,9 +118,21 @@ def publik(v: dict, foralder: bool, bas: str) -> dict:
 def _rensa_kort(k: dict) -> dict:
     return {"smeknamn": str(k.get("smeknamn") or "?")[:16], "art": str(k.get("art") or "")[:8],
             "niva": max(1, min(100000, int(k.get("niva") or 1))), "stjarnor": max(0, min(10**6, int(k.get("stjarnor") or 0))),
-            "titel": str(k.get("titel") or "")[:40], "steg": max(0, min(4, int(k.get("steg") or 0))),
+            "titel": str(k.get("titel") or "")[:40], "steg": max(0, min(5, int(k.get("steg") or 0))),
             "attack": meriter.repris(k["attack"]) if isinstance(k.get("attack"), dict) else None,
-            "arena_ver": max(0, min(10**6, int(k.get("arena_ver") or 0)))}  # 0 = vännens Skolan kan inte vänstrider
+            "arena_ver": max(0, min(10**6, int(k.get("arena_ver") or 0))),  # 0 = vännens Skolan kan inte vänstrider
+            "lag": _rensa_lag(k.get("lag"))}
+
+
+def _rensa_lag(x) -> dict | None:
+    if not isinstance(x, dict):
+        return None
+    try:
+        return {"vecka_id": str(x.get("vecka_id") or "")[:10], "vecka": max(0, min(10**5, int(x.get("vecka") or 0))),
+                "idag": bool(x.get("idag")), "dag": str(x.get("dag") or "")[:10], "mal": max(0, min(10**5, int(x.get("mal") or 0))),
+                "cp": max(0, min(10**6, int(x.get("cp") or 0))), "def": max(0, min(100, int(x.get("def") or 0)))}
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------- ändringar ----------

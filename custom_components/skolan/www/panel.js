@@ -900,6 +900,8 @@ class SkolanPanel extends HTMLElement {
 
   _go(view) {
     if (view.name !== "uppdrag") this._liveStopp();
+    if (view.name === "tillsammans" || view.name === "duell") this._tillLoad();
+    if (view.name === "duell") this._duellPoll(); else if (this._duellTimer) { clearInterval(this._duellTimer); this._duellTimer = null; }
     const nyBok = view.name === "bok" && !(this._view.name === "bok" && this._view.bok === view.bok);
     this._view = view;
     if (nyBok && this._s) this._ebokStatus(view.bok);
@@ -971,6 +973,14 @@ class SkolanPanel extends HTMLElement {
       title = "🤝 Vänner";
       back = { name: "hem" };
       body = this._vannerView();
+    } else if (v.name === "tillsammans") {
+      title = "🤝 Plugga ihop";
+      back = { name: "hem" };
+      body = this._tillView();
+    } else if (v.name === "duell") {
+      title = "⚔️ Glosduell";
+      back = { name: "tillsammans" };
+      body = this._duellView(v.id);
     } else if (v.name === "lag") {
       title = this._s.lag ? `${this._s.lag.marke} ${this._s.lag.namn}` : "🏳️ Lag";
       back = { name: "hem" };
@@ -1629,7 +1639,7 @@ class SkolanPanel extends HTMLElement {
         ${d ? `<button class="mini primary strid-knapp" id="till-strid">${barn ? "⚔️ Till strid" : "👀 Se striden"}</button>` : ""}
         ${attacker}
         ${this._reprisRad()}
-        <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${d ? ` <button class="mini karta-knapp" id="open-arena">🏟️ Arenan${this._s.arena?.pagar ? " ⚔️" : ""}</button>` : ""}${this._s.lag || this._s.lag_lista ? ` <button class="mini karta-knapp" id="open-lag">${this._s.lag ? `${this._s.lag.marke} Laget${this._s.lag.bonus ? ` · +${this._s.lag.bonus_pct} %` : ""}${this._s.lagstrid?.pagar ? " ⚔️" : ""}` : "🏳️ Lag"}</button>` : ""}${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
+        <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${d ? ` <button class="mini karta-knapp" id="open-arena">🏟️ Arenan${this._s.arena?.pagar ? " ⚔️" : ""}</button>` : ""}${barn ? ` <button class="mini karta-knapp" id="open-till">🤝 Plugga ihop${this._tillNy ? " 🆕" : ""}</button>` : ""}${this._s.lag || this._s.lag_lista ? ` <button class="mini karta-knapp" id="open-lag">${this._s.lag ? `${this._s.lag.marke} Laget${this._s.lag.bonus ? ` · +${this._s.lag.bonus_pct} %` : ""}${this._s.lagstrid?.pagar ? " ⚔️" : ""}` : "🏳️ Lag"}</button>` : ""}${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
       </div></div>`;
   }
 
@@ -1672,6 +1682,127 @@ class SkolanPanel extends HTMLElement {
       <div class="sak-rutnat">${f.skoldar.map(kort).join("")}</div>`;
   }
 
+  // ---------- plugga ihop: pluggstund och glosduell ----------
+  async _tillLoad() {
+    try {
+      const res = await this._hass.fetchWithAuth(`/api/skolan/tillsammans?barn=${encodeURIComponent(this._s?.barn || "")}`);
+      if (!res.ok) return;
+      this._till = await res.json();
+      const jag = this._till.jag;
+      this._tillNy = (this._till.stunder || []).some((s) => s.deltagare.some((d) => d.ref === jag && !d.med))
+        || (this._till.dueller || []).some((x) => !x.slut && x.folk.some((f) => f.ref === jag && !f.med));
+      this._render();
+    } catch (e) { /* nätverk */ }
+  }
+
+  async _tillAct(body, ok) {
+    if (this._busy) return false;
+    this._busy = true;
+    this._render();
+    try {
+      const res = await this._hass.fetchWithAuth("/api/skolan/tillsammans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...body }) });
+      const svar = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(svar.message || res.statusText);
+      if (ok) this._msg = { type: "ok", text: ok };
+      await this._tillLoad();
+      return svar;
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+      return false;
+    } finally {
+      this._busy = false;
+      this._render();
+    }
+  }
+
+  _duellPoll() {
+    if (this._duellTimer) return;
+    this._duellTimer = setInterval(() => {
+      if (this._view?.name !== "duell") { clearInterval(this._duellTimer); this._duellTimer = null; return; }
+      const x = (this._till?.dueller || []).find((y) => y.id === this._view.id);
+      if (x?.slut) { clearInterval(this._duellTimer); this._duellTimer = null; this._load(); }
+      if (!this._shadowInputAktiv()) this._tillLoad();
+    }, 3000);
+  }
+
+  _shadowInputAktiv() {
+    const el = this.shadowRoot.activeElement;
+    return el && el.id === "duell-svar" && el.value;
+  }
+
+  async _duellSvara(id, i, svar) {
+    if (this._busy) return;
+    const x = (this._till?.dueller || []).find((y) => y.id === id);
+    const res = await this._tillAct({ op: "duell_svara", id, i, svar });
+    if (res) {
+      this._duellSenast = { i, ratt: res.ratt, svar };
+      this._duellFokus = false;
+      if (x && res.ratt) navigator.vibrate?.(30);
+    }
+  }
+
+  _tillView() {
+    const t = this._till, barn = !this._s.kan_valja;
+    if (!t) return `<p class="muted">Hämtar…</p>`;
+    const jag = t.jag, komp = t.kompisar || [];
+    const bar = (d, mal) => `<div class="progress"><div style="width:${Math.min(100, Math.round((d.poang / mal) * 100))}%"></div></div>`;
+    const stunder = (t.stunder || []).map((s) => {
+      const mig = s.deltagare.find((d) => d.ref === jag);
+      return `<div class="card stund ${s.klar ? "klar" : ""}"><b>🤝 Pluggstund ${new Date(s.start).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })}</b>
+        ${s.deltagare.map((d) => `<div class="stund-rad"><span>${d.ref === jag ? "Du" : esc(d.namn)}${d.med ? "" : " <span class='muted small'>(inte med än)</span>"}</span>${bar(d, s.mal)}<b>${Math.min(d.poang, s.mal)}/${s.mal} ⭐</b></div>`).join("")}
+        ${s.klar ? `<div>🎉 Alla klarade det! +${s.bonus} ⭐ till var och en.</div>`
+          : mig && !mig.med ? (barn ? `<button class="primary" data-stund-med="${s.id}">🙋 Gå med</button>` : "")
+          : `<div class="small muted">Alla som är med ska tjäna ${s.mal} ⭐ innan midnatt. Då får alla +${s.bonus} ⭐.</div>`}</div>`;
+    }).join("");
+    const dueller = (t.dueller || []).slice().reverse().map((x) => {
+      const mig = x.folk.find((f) => f.ref === jag), de = x.folk.find((f) => f.ref !== jag);
+      const status = x.slut ? (x.vinnare.length > 1 ? "🤝 Oavgjort" : x.vinnare.includes(jag) ? "🥇 Du vann" : `${esc(de?.namn || "")} vann`)
+        : !mig.med ? "Du är utmanad!" : !de?.med ? "Väntar på svar…" : "Pågår";
+      const knapp = !x.slut && !mig.med && barn ? `<button class="mini primary" data-duell-med="${x.id}">⚔️ Anta</button>`
+        : `<button class="mini" data-duell-se="${x.id}">${!x.slut && mig.med && !mig.klar ? "▶️ Spela" : "👀 Se"}</button>`;
+      return `<li>⚔️ <b>${esc(x.namn)}</b> mot ${esc(de?.namn || "?")} · ${status} ${mig.med ? `· ${mig.ratt}/${x.antal}` : ""} ${knapp}</li>`;
+    }).join("");
+    const glosor = t.glosor || [];
+    return `<p class="small muted">Plugga ihop med ${t.vanner_pa ? "syskon och kompisar" : "syskon"}! ${t.vanner_pa ? "Kompisar i andra hem ser bara ditt smeknamn och dina poäng." : ""}</p>
+      ${stunder || ""}
+      ${barn && komp.length ? `<div class="card"><b>🤝 Starta en pluggstund</b>
+        <div class="small muted">Ni pluggar samtidigt i kväll. Når alla som är med ${t.stund_mal} ⭐ får alla +${t.stund_bonus} ⭐ (och lagbossen tar skada).</div>
+        ${komp.map((k) => `<label class="kap-rad"><input type="checkbox" data-stund-gast="${esc(k.ref)}"> ${esc(k.namn)} ${k.typ === "van" ? "🤝" : ""}</label>`).join("")}
+        <button class="primary" id="stund-ny" ${this._busy ? "disabled" : ""}>🤝 Starta pluggstund</button></div>` : ""}
+      ${dueller ? `<h3>⚔️ Glosdueller</h3><ul class="lista">${dueller}</ul>` : ""}
+      ${barn && komp.length ? `<div class="card"><b>⚔️ Utmana till glosduell</b>
+        <div class="small muted">Ni får samma ${10} ord. Flest rätt vinner, och vid lika vinner den snabbaste. Alla som spelar klart får ${t.duell_delta} ⭐, vinnaren ${t.duell_delta + t.duell_vinst} ⭐.</div>
+        ${glosor.length ? `<label class="small">Glosor <select id="duell-glosa">${glosor.map((g) => `<option value="${g.amne}|${g.id}">${esc(g.amne_namn)}: ${esc(g.namn)} (${g.antal})</option>`).join("")}</select></label>
+        <label class="small">Mot <select id="duell-gast">${komp.map((k) => `<option value="${esc(k.ref)}">${esc(k.namn)}</option>`).join("")}</select></label>
+        <button class="primary" id="duell-ny" ${this._busy ? "disabled" : ""}>⚔️ Utmana</button>` : `<p class="small muted">Du har inga glosor att duellera med än.</p>`}</div>` : ""}
+      ${!komp.length ? `<p class="muted">Det finns ingen att plugga ihop med än.</p>` : ""}`;
+  }
+
+  _duellView(id) {
+    const t = this._till, x = (t?.dueller || []).find((y) => y.id === id);
+    if (!x) return `<p class="muted">Hämtar…</p>`;
+    const jag = t.jag, mig = x.folk.find((f) => f.ref === jag), de = x.folk.find((f) => f.ref !== jag);
+    const rad = (f, namn) => `<div class="stund-rad"><span>${namn}</span><div class="progress duell-bar"><div style="width:${Math.round((f.besvarade / x.antal) * 100)}%"></div></div><b>✅ ${f.ratt}</b></div>`;
+    const topp = `<div class="card">${rad(mig, "Du")}${de ? rad(de, esc(de.namn) + (de.med ? "" : " <span class='muted small'>(inte med än)</span>")) : ""}</div>`;
+    const sen = this._duellSenast;
+    const senText = sen ? `<div class="duell-senast ${sen.ratt ? "ratt" : "fel"}">${sen.ratt ? "✅ Rätt!" : "❌ Fel"}</div>` : "";
+    if (x.slut) {
+      const vann = x.vinnare.includes(jag), lika = x.vinnare.length > 1;
+      if (vann && !lika && !this._duellFirad?.[id]) { (this._duellFirad ||= {})[id] = true; setTimeout(() => this._fanfar?.(), 100); }
+      return `${topp}<div class="ls-slut ${vann ? "vinst" : ""}">${lika ? "🤝 Oavgjort!" : vann ? "🥇 Du vann!" : `${esc(de?.namn || "")} vann!`}</div>
+        <p class="small">Du fick ${mig.ratt} av ${x.antal} rätt${mig.tid != null ? ` på ${mig.tid} s` : ""}.</p>
+        ${x.facit ? `<details><summary>Facit</summary><ul class="lista">${x.fragor.map((q, i) => `<li>${x.mina[i] === true ? "✅" : x.mina[i] === false ? "❌" : "–"} ${esc(q.fraga)} → <b>${esc(x.facit[i])}</b></li>`).join("")}</ul></details>` : ""}`;
+    }
+    if (!mig.med) return `${topp}<button class="primary" data-duell-med="${x.id}">⚔️ Anta utmaningen</button>`;
+    if (mig.klar) return `${topp}${senText}<p>⏳ Du är klar! Väntar på ${esc(de?.namn || "kompisen")}…</p>`;
+    const i = x.fragor.findIndex((_q, j) => !(String(j) in x.mina));
+    const q = x.fragor[i];
+    return `${topp}${senText}<div class="card duell-fraga"><div class="small muted">Ord ${i + 1} av ${x.antal} · ${esc(q.fran)} → ${esc(q.till)}</div>
+      <div class="duell-ord">${esc(q.fraga)}</div>
+      <input id="duell-svar" data-i="${i}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Skriv på ${esc(q.till.toLowerCase())}…">
+      <button class="primary" id="duell-skicka" ${this._busy ? "disabled" : ""}>Svara</button></div>`;
+  }
+
   // ---------- lag ----------
   _lagView() {
     const s = this._s, L = s.lag, barn = !s.kan_valja, k = s.karta;
@@ -1682,7 +1813,7 @@ class SkolanPanel extends HTMLElement {
       html += `<div class="card lag-kort">
         <h3 style="margin:0">${L.marke} ${esc(L.namn)}</h3>
         <div class="lag-folk">${L.medlemmar.map((x) => `<div class="lag-pers"><div class="lag-djur">${x.art ? ritaDjur(x.art, "glad", Math.max(1, x.steg), {}) : "🥚"}</div>
-          <b>${esc(x.namn)}</b><span class="small">${x.djur ? esc(x.djur) : "Inget husdjur"}</span>
+          <b>${esc(x.namn)}${x.van ? " 🤝" : ""}</b><span class="small">${x.djur ? esc(x.djur) : x.van ? "Vän" : "Inget husdjur"}</span>
           <span class="small">💪 ${x.cp} · 🛡️ ${x.def}</span><span class="small">${x.idag ? "✅ Pluggat idag" : "⏳ Inte pluggat idag"}</span>
           <span class="small muted">${x.vecka} ⭐ i veckan</span></div>`).join("")}</div>
         <div class="small">💪 <b>Lagbonus idag: +${L.bonus_pct} % skada</b> för alla i laget (+${L.bonus_per} % för varje lagmedlem som har pluggat idag).</div></div>
@@ -1718,6 +1849,7 @@ class SkolanPanel extends HTMLElement {
         <div class="small">Märke</div><div class="lag-marken">${s.lag_marken.map((m, i) => `<label><input type="radio" name="lag-marke" value="${m}" ${(lag ? lag.marke === m : i === 0) ? "checked" : ""}> ${m}</label>`).join("")}</div>
         <div class="small">Barn i laget (minst 2, ett barn kan bara vara med i ett lag)</div>
         ${s.barn_lista.map((b) => `<label class="kap-rad"><input type="checkbox" data-lag-barn="${b.id}" ${lag ? (lag.medlemmar.includes(b.id) ? "checked" : "") : "checked"}> ${esc(b.namn)}</label>`).join("")}
+        ${(s.lag_van_val || []).length ? `<div class="small">Vänner i andra hem (högst 4 i laget totalt)</div>${s.lag_van_val.map((x) => `<label class="kap-rad"><input type="checkbox" data-lag-van="${esc(x.kod)}" data-lag-van-barn="${esc(x.barn)}" ${lag?.vanner?.some((y) => y.kod === x.kod) ? "checked" : ""}> 🤝 ${esc(x.smeknamn)} <span class="small muted">(${esc(x.barn_namn)}s vän)</span></label>`).join("")}` : ""}
         <button class="primary" id="lag-spara">${lag ? "💾 Spara" : "➕ Skapa lag"}</button>${lag ? ` <button class="mini" data-lag-redigera="">Avbryt</button>` : ""}</div>
       <p class="small muted">Laget får en lagboss varje vecka som alla skadar när de pluggar, lagbonus (+5 % skada per lagmedlem som pluggat idag) och lagstrider i arenan.</p>`;
   }
@@ -1727,7 +1859,8 @@ class SkolanPanel extends HTMLElement {
     const args = bort ? { op: "lag_ta_bort", id: bort } : {
       op: "lag_spara", id: this._lagRed || "", namn: r.querySelector("#lag-namn")?.value || "",
       marke: r.querySelector("input[name=lag-marke]:checked")?.value || "🏳️",
-      medlemmar: [...r.querySelectorAll("[data-lag-barn]")].filter((x) => x.checked).map((x) => x.dataset.lagBarn) };
+      medlemmar: [...r.querySelectorAll("[data-lag-barn]")].filter((x) => x.checked).map((x) => x.dataset.lagBarn),
+      vanner: [...r.querySelectorAll("[data-lag-van]")].filter((x) => x.checked).map((x) => ({ kod: x.dataset.lagVan, barn: x.dataset.lagVanBarn })) };
     if (bort && !confirm("Ta bort laget?")) return;
     try {
       const res = await this._hass.fetchWithAuth("/api/skolan/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...args }) });
@@ -2463,6 +2596,12 @@ class SkolanPanel extends HTMLElement {
         `När någon utmanar ditt husdjur i arenan styr datorn det. I arenan kan du köpa träning för stjärnor (5 nivåer).`,
         `Ett tränat husdjur får mer ❤️ liv och gör mer skada när det försvarar sig. Det väljer också smartare drag.`,
         `Träningen hjälper bara när du blir utmanad, inte när du själv anfaller.`,
+      ])}
+
+      ${kort("🤝", "Plugga ihop", [
+        `Tryck <b>🤝 Plugga ihop</b> på bosskortet.`,
+        `<b>Pluggstund:</b> bjud in ett syskon. Ni pluggar samma kväll, och når alla som är med 20 ⭐ före midnatt får alla +10 ⭐.`,
+        `<b>Glosduell:</b> utmana någon på 10 ord från dina glosor. Ni ser varandras framsteg medan ni spelar. Flest rätt vinner, och vid lika vinner den snabbaste.`,
       ])}
 
       ${kort("🏳️", "Lag", [
@@ -4356,6 +4495,24 @@ class SkolanPanel extends HTMLElement {
     on("#open-karta", () => this._go({ name: "karta" }));
     on("#open-arena", () => this._go({ name: "arena" }));
     on("#open-lag", () => this._go({ name: "lag" }));
+    on("#open-till", () => this._go({ name: "tillsammans" }));
+    on("#stund-ny", () => this._tillAct({ op: "stund_ny", gaster: [...r.querySelectorAll("[data-stund-gast]")].filter((x) => x.checked).map((x) => x.dataset.stundGast) }, "🤝 Pluggstunden är startad! Nu pluggar ni."));
+    on("#duell-ny", () => {
+      const g = (r.querySelector("#duell-glosa")?.value || "").split("|"), gast = r.querySelector("#duell-gast")?.value;
+      this._tillAct({ op: "duell_ny", amne: g[0], glosor: g[1], gast }, "⚔️ Utmaningen är skickad!");
+    });
+    r.querySelectorAll("[data-stund-med]").forEach((b) => b.addEventListener("click", () => this._tillAct({ op: "stund_ga_med", id: b.dataset.stundMed }, "Du är med! Plugga på 💪")));
+    r.querySelectorAll("[data-duell-med]").forEach((b) => b.addEventListener("click", async () => {
+      if (await this._tillAct({ op: "duell_ga_med", id: b.dataset.duellMed })) this._go({ name: "duell", id: b.dataset.duellMed });
+    }));
+    r.querySelectorAll("[data-duell-se]").forEach((b) => b.addEventListener("click", () => this._go({ name: "duell", id: b.dataset.duellSe })));
+    const dsvar = r.querySelector("#duell-svar");
+    if (dsvar) {
+      if (!this._duellFokus) { this._duellFokus = true; setTimeout(() => dsvar.focus(), 50); }
+      const skicka = () => this._duellSvara(v.id, Number(dsvar.dataset.i), dsvar.value);
+      dsvar.addEventListener("keydown", (e) => { if (e.key === "Enter") skicka(); });
+      on("#duell-skicka", skicka);
+    }
     on("#traning-kop", async () => {
       const n = this._s.arena?.traning?.nasta;
       if (!n || !confirm(`Träna ${this._s.meriter?.djur?.namn || "husdjuret"} till ${n.namn} för ${n.pris} ⭐?`)) return;
@@ -5255,6 +5412,13 @@ const CSS = `
   .attack-knapp:disabled { opacity:.4; cursor:default; }
   .attack-sak.svag { outline:2px solid #fbc02d; }
   .sak-kort.svag { outline:2px solid #fbc02d; }
+  .stund { display:flex; flex-direction:column; gap:6px; }
+  .stund.klar { outline:2px solid #fbc02d; }
+  .stund-rad { display:grid; grid-template-columns:minmax(70px,auto) 1fr auto; gap:8px; align-items:center; }
+  .duell-ord { font-size:28px; font-weight:800; text-align:center; margin:10px 0; }
+  .duell-fraga input { width:100%; font-size:20px; padding:10px; box-sizing:border-box; margin-bottom:8px; }
+  .duell-senast { text-align:center; font-weight:800; font-size:18px; animation:lsTraff .4s; }
+  .duell-senast.ratt { color:#2e7d32; } .duell-senast.fel { color:#c62828; }
   .lag-folk { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0; }
   .lag-pers { flex:1 1 120px; display:flex; flex-direction:column; align-items:center; gap:2px; background:rgba(127,127,127,.08); border-radius:12px; padding:8px; text-align:center; }
   .lag-djur, .ls-djur { width:64px; height:64px; position:relative; font-size:44px; }
