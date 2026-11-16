@@ -34,7 +34,7 @@ try:
     else:
         raise SystemExit("FEL: servern startade inte")
     print("✓ servern svarar, version", lage["version"])
-    assert b"Skolan L" in anrop("/") and b"<svg" in anrop("/api/qr.svg") and b"Ansluter" in anrop("/elev")
+    assert "Läxspelet L".encode() in anrop("/") and b"<svg" in anrop("/api/qr.svg") and b"Ansluter" in anrop("/elev")
     print("✓ sidorna och QR-koden")
     anrop("/api/andra", {"op": "installningar", "klass": "4B", "veckobrev": True, "grupper": True, "klasslag": True})
     l = json.loads(anrop("/api/andra", {"op": "veckobrev", "titel": "Test", "ai": {"ord": ["hund"]}}))
