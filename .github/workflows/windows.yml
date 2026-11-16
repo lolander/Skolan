@@ -49,3 +49,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: fristaende/windows/Output/*.exe
+          prerelease: true
+          body: |
+            Förhandsversion av Skolan för Windows. Ladda ner Skolan-Setup och installera på familjens dator.
+            Windows kan varna för att programmet är okänt (det är inte signerat): tryck "Mer information" → "Kör ändå".
