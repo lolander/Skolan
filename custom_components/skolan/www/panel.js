@@ -4095,9 +4095,12 @@ class SkolanPanel extends HTMLElement {
           return `<button class="row skicka-forhor" id="ova-papper">✍️ Jag har övat på papper idag ›</button>`;
         })()}
       <table class="glos">
-        <tr><th>${esc(g.sprak[0] || "Ord")}</th><th>${esc(g.sprak[1] || "Översättning")}</th></tr>
-        ${g.par.map((p, i) => `<tr><td>${svara.has(i) ? "🔥 " : ""}${esc(p[0])}</td><td>${esc(p[1])}</td></tr>`).join("")}
+        <tr><th>${esc(g.sprak[0] || "Ord")}</th><th>${esc(g.sprak[1] || "Översättning")}</th>${gTyp(g) !== "formler" ? "<th></th>" : ""}</tr>
+        ${g.par.map((p, i) => `<tr><td>${svara.has(i) ? "🔥 " : ""}${esc(p[0])}</td><td>${esc(p[1])}</td>${gTyp(g) !== "formler"
+          ? `<td class="ex-knapp"><button class="mini" data-exempel="${i}" title="Visa en exempelmening">💬</button></td>` : ""}</tr>
+          ${this._exVisa?.has(`${g.id}:${i}`) ? `<tr class="ex-rad"><td colspan="3">${this._exempelRuta(g, i)}</td></tr>` : ""}`).join("")}
       </table>
+      ${gTyp(g) !== "formler" ? `<p class="muted small">💬 = AI:n visar hur ordet används i en mening.</p>` : ""}
       ${svara.size ? `<p class="muted small">🔥 = ord du ofta stavar fel. De försvinner när du har klarat dem några gånger.</p>` : ""}
       ${
         res.length
@@ -4109,6 +4112,58 @@ class SkolanPanel extends HTMLElement {
       <div class="actions">
         <button class="ghost danger" id="del-glosor">${LISTTYP[gTyp(g)].knapp}</button>
       </div>`;
+  }
+
+  // Exempelmening från AI:n (sparas på glosan, så samma ord kostar bara en gång).
+  _exempelRuta(g, i) {
+    const p = g.par[i] || [];
+    const ex = g.exempel?.[`${String(p[0] ?? "").trim()}|${String(p[1] ?? "").trim()}`.slice(0, 250)];
+    const nyckel = `${g.id}:${i}`;
+    if (this._exLaddar?.has(nyckel)) return `<div class="exempel muted">💬 AI:n skriver en mening…</div>`;
+    if (!ex) return `<div class="exempel muted">${esc(this._exFel?.[nyckel] || "Ingen mening än.")}</div>`;
+    const ordet = String(ex.ord || "").trim();
+    let mening = esc(ex.mening);
+    if (ordet) {
+      const re = new RegExp(`(${ordet.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\S*)`, "i");
+      mening = mening.replace(re, "<b>$1</b>");
+    }
+    return `<div class="exempel">
+      <div class="ex-mening">💬 ${mening}</div>
+      ${ex.svenska ? `<div class="muted small">🇸🇪 ${esc(ex.svenska)}</div>` : ""}
+      ${ex.forklaring ? `<div class="small">💡 ${esc(ex.forklaring)}</div>` : ""}
+      <button class="mini ghost" data-exempel-ny="${i}">🔄 En annan mening</button>
+    </div>`;
+  }
+
+  async _exempel(amne, gid, i, ny = false) {
+    const nyckel = `${gid}:${i}`;
+    this._exVisa = this._exVisa || new Set();
+    this._exLaddar = this._exLaddar || new Set();
+    this._exFel = this._exFel || {};
+    const g = this._amne(amne)?.glosor.find((x) => x.id === gid);
+    const p = g?.par[i];
+    if (!p) return;
+    this._exVisa.add(nyckel);
+    if (g.exempel?.[`${String(p[0] ?? "").trim()}|${String(p[1] ?? "").trim()}`.slice(0, 250)] && !ny) return this._render();
+    this._exLaddar.add(nyckel);
+    delete this._exFel[nyckel];
+    this._render();
+    try {
+      const res = await this._hass.fetchWithAuth("/api/skolan/exempel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barn: this._s.barn, amne, glosor: gid, i, ny }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || res.statusText);
+      const g2 = this._amne(amne)?.glosor.find((x) => x.id === gid);
+      if (g2) g2.exempel = { ...(g2.exempel || {}), [body.nyckel]: body.exempel };
+    } catch (e) {
+      this._exFel[nyckel] = e.message || String(e);
+    } finally {
+      this._exLaddar.delete(nyckel);
+      this._render();
+    }
   }
 
   _redigeraView(a) {
@@ -4223,6 +4278,7 @@ class SkolanPanel extends HTMLElement {
             ? `<div class="answer ${o.visat}">${o.visat === "ratt" ? "✓ Rätt!" : o.visat === "fel" ? "✗ Rätt svar:" : "Svar:"} <b>${esc(svar)}</b></div>
                ${o.skrev && o.visat === "fel" ? `<div class="muted small">Du skrev: ${esc(o.skrev)}</div>` : ""}
                ${rattning}
+               ${gTyp(g) !== "formler" && k.fran >= 0 ? (this._exVisa?.has(`${g.id}:${k.i}`) ? this._exempelRuta(g, k.i) : `<button class="ghost" id="ova-exempel">💬 Visa en exempelmening</button>`) : ""}
                <button class="primary" id="nasta">Nästa →</button>
                ${this._hadeRattOk(o, svar) ? `<button class="ghost" id="hade-ratt">Jag hade rätt</button>` : ""}`
             : `${o.tips?.[k.i] ? `<div class="tips-rad">💡 ${[...String(svar)].map((c, j) => (j < o.tips[k.i] || c === " " ? esc(c) : "_")).join("&#8203;")}</div>` : ""}
@@ -5192,6 +5248,15 @@ class SkolanPanel extends HTMLElement {
     on("#fh-ta-bort", async () => {
       if (confirm("Ta bort förhöret?") && (await this._forhorAct("ta_bort", { forhor: v.forhor }))) this._go({ name: "hem" });
     });
+    r.querySelectorAll("[data-exempel]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const nyckel = `${v.glosor}:${b.dataset.exempel}`;
+        if (this._exVisa?.has(nyckel)) { this._exVisa.delete(nyckel); return this._render(); }
+        this._exempel(v.amne, v.glosor, Number(b.dataset.exempel));
+      })
+    );
+    r.querySelectorAll("[data-exempel-ny]").forEach((b) => b.addEventListener("click", () => this._exempel(v.amne, v.glosor, Number(b.dataset.exempelNy), true)));
+    on("#ova-exempel", () => this._exempel(v.amne, v.glosor, v.ova.kvar[0].i));
     on("#ova-svara", () => this._go({ name: "ova", amne: v.amne, glosor: v.glosor, svara: true }));
     on("#edit-glosor", () => {
       const g = this._amne(v.amne).glosor.find((x) => x.id === v.glosor);
@@ -5447,6 +5512,8 @@ const CSS = `
   .danger { color:var(--error-color, #db4437); }
   .mini { background:none; border:1px solid var(--divider-color); border-radius:8px; padding:4px 9px; cursor:pointer; }
   .msg { padding:12px 14px; border-radius:10px; margin-bottom:14px; }
+  .exempel { background:rgba(3,169,244,.10); border-radius:10px; padding:8px 10px; margin:6px 0; text-align:left; display:grid; gap:4px; }
+  .ex-mening { font-size:1.05em; } .exempel .mini { justify-self:start; } .ex-knapp { width:36px; text-align:right; } .ex-rad td { padding-top:0; }
   .del-val { cursor:pointer; } .del-val.vald-rad .muted { font-weight:400; } .del-val input { width:22px; height:22px; flex:none; }
   .uppg { gap:8px; } .uppg.klar .uppg-text span { text-decoration:line-through; opacity:.6; }
   .uppg-text { display:flex; gap:10px; align-items:flex-start; flex:1; cursor:pointer; } .uppg-text input { width:20px; height:20px; margin-top:2px; flex:none; }

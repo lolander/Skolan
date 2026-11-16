@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.40.0"
+VERSION = "1.41.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -154,7 +154,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -1430,6 +1430,107 @@ class UttalView(HomeAssistantView):
 
             await hass.async_add_executor_job(_spara)
         return web.FileResponse(f, headers={"Cache-Control": "private, max-age=604800", "Content-Type": "audio/mpeg"})
+
+
+EXEMPEL_PROMPT = (
+    "Du hjälper ett barn i grundskolan (10–13 år) att förstå hur ett ord används.\n"
+    "Ord: \"{ord}\" ({sprak}). {betydelse}\n"
+    "Skriv EN kort, naturlig och vardaglig mening på {sprak} där ordet används i sin vanliga betydelse. "
+    "Meningen ska vara lätt att förstå, högst 15 ord, och ordet ska finnas med (gärna i samma form). "
+    "{variant}\n"
+    "Svara bara med JSON: {{\"mening\": \"...\", \"svenska\": \"...\", \"forklaring\": \"...\"}}\n"
+    "svenska = meningen översatt till svenska ({svenska_regel}).\n"
+    "forklaring = vad ordet betyder, förklarat enkelt på svenska med högst 12 ord."
+)
+EXEMPEL_PER_DAG = 80  # nya meningar per barn och dag
+SVENSKA = ("", "svenska", "sv", "swedish")
+
+
+def _exempel_nyckel(p: list) -> str:
+    return f"{str(p[0]).strip()}|{str(p[1] if len(p) > 1 else '').strip()}"[:250]
+
+
+def _exempel_ord(g: dict, p: list) -> tuple[str, str, str]:
+    """(ordet meningen ska innehålla, dess språk, betydelsen). Det främmande språket går före svenskan."""
+    sp = [str(x or "").strip() for x in (g.get("sprak") or [])] + ["", ""]
+    a, b = str(p[0]).strip(), str(p[1] if len(p) > 1 else "").strip()
+    if g.get("typ") == "begrepp":
+        return a, "svenska", b
+    if sp[0].lower() in SVENSKA and sp[1].lower() not in SVENSKA and b:
+        return b, sp[1], a
+    return a, sp[0] or "svenska", "" if b.lower() == a.lower() else b
+
+
+class ExempelView(HomeAssistantView):
+    """En exempelmening från AI:n som visar hur ett glosord används. Sparas på glosan."""
+
+    url = "/api/skolan/exempel"
+    name = "api:skolan:exempel"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        body = await request.json()
+        barn = _barn_for(hass, request, body.get("barn"))
+        path = _dir(hass, barn)
+        data = await hass.async_add_executor_job(_load, path)
+        try:
+            g = _find(_find(data.get("amnen", []), body.get("amne"))["glosor"], body.get("glosor"))
+            par = g["par"][int(body.get("i", -1))]
+        except (ValueError, IndexError, TypeError):
+            return self.json_message("Ordet finns inte längre.", 404)
+        if g.get("typ") == "formler":
+            return self.json_message("Exempelmeningar finns bara för ord och begrepp.", 400)
+        nyckel = _exempel_nyckel(par)
+        gammal = (g.get("exempel") or {}).get(nyckel)
+        if gammal and not body.get("ny"):
+            return self.json({"nyckel": nyckel, "exempel": gammal})
+        ord_, sprak, betydelse = _exempel_ord(g, par)
+        if not ord_:
+            return self.json_message("Ordet är tomt.", 400)
+        rakna = hass.data[DOMAIN].setdefault("exempel_idag", {})
+        dag = dt_util.now().date().isoformat()
+        if rakna.get("dag") != dag:
+            rakna.clear()
+            rakna["dag"] = dag
+        if rakna.get(barn, 0) >= EXEMPEL_PER_DAG:
+            return self.json_message("Nu har AI:n gjort många meningar idag. Försök igen imorgon!", 429)
+        conf = hass.data[DOMAIN]["conf"]
+        entity = conf.get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+        if not entity:
+            return self.json_message("Ingen AI-uppgift finns i Home Assistant.", 500)
+        svensk = sprak.lower() in SVENSKA
+        instr = EXEMPEL_PROMPT.format(
+            ord=ord_[:80], sprak=sprak[:30] or "svenska",
+            betydelse=f'Det betyder "{betydelse[:150]}".' if betydelse else "",
+            variant=f"Skriv en annan mening än den här: \"{gammal['mening'][:200]}\"" if gammal else "",
+            svenska_regel="tom sträng, meningen är redan på svenska" if svensk else "kort och naturlig svenska",
+        )
+        rakna[barn] = rakna.get(barn, 0) + 1
+        try:
+            resp = await hass.services.async_call(
+                "ai_task", "generate_data", {"task_name": "Läxspelet exempelmening", "entity_id": entity, "instructions": instr},
+                blocking=True, return_response=True,
+            )
+            raw = (resp or {}).get("data")
+            x = _parse_json(raw if isinstance(raw, str) else json.dumps(raw))
+            ex = {"mening": str(x.get("mening") or "").strip()[:300], "svenska": "" if svensk else str(x.get("svenska") or "").strip()[:300],
+                  "forklaring": str(x.get("forklaring") or "").strip()[:200], "ord": ord_[:80]}
+            if not ex["mening"]:
+                raise ValueError("tomt svar")
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Läxspelet: kunde inte göra exempelmening: %s", err)
+            return self.json_message("AI:n kunde inte göra en mening just nu. Försök igen om en stund.", 503)
+        async with hass.data[DOMAIN]["locks"][barn]:
+            data = await hass.async_add_executor_job(_load, path)
+            try:
+                g = _find(_find(data.get("amnen", []), body.get("amne"))["glosor"], body.get("glosor"))
+            except ValueError:
+                return self.json({"nyckel": nyckel, "exempel": ex})
+            nu = {_exempel_nyckel(q) for q in g.get("par", [])}
+            g["exempel"] = {k: v for k, v in (g.get("exempel") or {}).items() if k in nu}  # glömmer ord som tagits bort
+            g["exempel"][nyckel] = ex
+            await hass.async_add_executor_job(_save, path, data)
+        return self.json({"nyckel": nyckel, "exempel": ex})
 
 
 class InspelningView(HomeAssistantView):
