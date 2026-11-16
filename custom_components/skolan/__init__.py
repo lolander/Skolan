@@ -43,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.32.0"
+VERSION = "1.33.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 FARGER = ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"]
@@ -793,6 +793,9 @@ class ActionView(HomeAssistantView):
 
             if remove_files:
                 await hass.async_add_executor_job(_rm)
+        if op == "bok_lon_be":
+            b = _find(_find(data["amnen"], body.get("amne"))["bocker"], body.get("bok"))
+            await _be_om_godkannande(hass, barn, {"typ": "bok", "id": f"bok-{b['id']}", "namn": b["namn"], "sidor": b["foto_vantar"]["sidor"], "pris": meriter.foto_pris(b)}, None)
         return self.json({"data": _ut(data, _ar_foralder(hass, request))})
 
 
@@ -976,6 +979,19 @@ def _apply(data: dict, body: dict) -> list[str]:
             b["sidor"].remove(fil)
             return [fil]
         return []
+    if op == "bok_lon_be":  # barnet har fotat klart och ber om lön
+        if not body.get("_barn"):
+            raise ValueError("Det är barnet som ber om lön för sina foton.")
+        b = _find(a["bocker"], body.get("bok"))
+        n = len(meriter.foto_obetalda(b))
+        if b.get("foto_vantar"):
+            raise ValueError("Du har redan frågat. Vänta på mamma eller pappa.")
+        if n < meriter.FOTO_MIN_SIDOR:
+            raise ValueError(f"Fota minst {meriter.FOTO_MIN_SIDOR} nya sidor först (du har {n}).")
+        if not meriter.foto_pris(b, n):
+            raise ValueError("Den här boken har redan gett all lön som går.")
+        b["foto_vantar"] = {"tid": dt_util.now().isoformat(timespec="minutes"), "sidor": n}
+        return []
     if op == "move_sida":
         b = _find(a["bocker"], body.get("bok"))
         fil, steg = body.get("fil"), int(body.get("steg") or 0)
@@ -1101,6 +1117,7 @@ class UploadView(HomeAssistantView):
             else:
                 b["sidor"].extend(saved)
                 if not _ar_foralder(hass, request):
+                    b.setdefault("barn_sidor", []).extend(saved)  # barnets egna foton kan ge lön (efter godkännande)
                     meriter.lagt_in(data, a["id"], "bok")
             await hass.async_add_executor_job(_save, path, data)
             if old:
@@ -2703,6 +2720,18 @@ def _godkann_glosor(data: dict, gid: str, datum: str | None, ok: bool) -> str | 
     return f"👍 Övningen på papper ({g['namn']}) är godkänd!"
 
 
+def _godkann_bok(data: dict, bok_id: str, ok: bool) -> str | None:
+    """Förälder har kollat barnets bokfoton."""
+    b = next((b for a in data.get("amnen", []) for b in a.get("bocker", []) if b["id"] == bok_id), None)
+    if not b or not b.get("foto_vantar"):
+        return None
+    b.pop("foto_vantar")
+    if ok:
+        p = meriter.foto_lon(data, b)
+        return f"📸 Fotona i {b['namn']} är godkända! +{p} ⭐"
+    return f"📸 Fotona i {b['namn']} blev inte godkända än. Kolla att alla sidor är skarpa och i rätt ordning, och fråga igen."
+
+
 def _godkann_i(data: dict, u: dict, datum: str | None, ok: bool) -> str | None:
     """Förälder godkänner eller nekar högläsning (en dag) eller läxboken. Returnerar notis till barnet."""
     if u["typ"] == "hogl":
@@ -2741,11 +2770,15 @@ async def _be_om_godkannande(hass: HomeAssistant, barn: str, u: dict, datum: str
         titel = f"🗣️ {namn} har läst högt" + (" 🎙️" if d.get("inspelning") else "")
         text = f"{u['namn']}{': ' + u['kapitel'] if u.get('kapitel') else ''} ({VECKODAG[date.fromisoformat(datum).weekday()]}). " + (
             f"Tryck här för att lyssna på inspelningen ({d.get('insp_sek', 0) // 60} min). Godkänn?" if d.get("inspelning") else "Godkänn?")
+    elif u["typ"] == "bok":
+        titel = f"📸 {namn} har fotat en bok"
+        text = f"{u['namn']}: {u['sidor']} nya sidor (+{u['pris']} ⭐). Kolla att sidorna är skarpa och i rätt ordning. Godkänn?"
     else:
         titel = f"✍️ {namn} har gjort läxboken"
         text = f"{u['namn']}. Har du kollat? Godkänn?"
     nyckel = f"{barn}__{u['id']}__{datum or '-'}"
-    url = f"/skolan?barn={barn}&glosor={u['id'][7:]}" if u["typ"] == "glosor" else f"/skolan?barn={barn}&uppdrag={u['id']}"
+    url = (f"/skolan?barn={barn}&glosor={u['id'][7:]}" if u["typ"] == "glosor"
+           else f"/skolan?barn={barn}&bok={u['id'][4:]}" if u["typ"] == "bok" else f"/skolan?barn={barn}&uppdrag={u['id']}")
     for tjanst in conf.get("foralder_notify", {}).values():
         try:
             await hass.services.async_call("notify", tjanst, {
@@ -2765,12 +2798,14 @@ async def _godkann(hass: HomeAssistant, barn: str, uid: str, datum: str | None, 
         data = await hass.async_add_executor_job(_load, path)
         if uid.startswith("glosor-"):
             svar = _godkann_glosor(data, uid[7:], datum, ok)
+        elif uid.startswith("bok-"):
+            svar = _godkann_bok(data, uid[4:], ok)
         else:
             svar = _godkann_i(data, _find(data.get("uppdrag", []), uid), datum, ok)
         await hass.async_add_executor_job(_save, path, data)
     if svar:
         b = next(x for x in hass.data[DOMAIN]["conf"]["barn"] if x["id"] == barn)
-        await _notis(hass, b.get("notify"), "Skolan", svar, f"/skolan?glosor={uid[7:]}" if uid.startswith("glosor-") else f"/skolan?uppdrag={uid}")
+        await _notis(hass, b.get("notify"), "Skolan", svar, f"/skolan?glosor={uid[7:]}" if uid.startswith("glosor-") else f"/skolan?bok={uid[4:]}" if uid.startswith("bok-") else f"/skolan?uppdrag={uid}")
         for tjanst in hass.data[DOMAIN]["conf"].get("foralder_notify", {}).values():  # ta bort frågan hos den andra föräldern
             try:
                 await hass.services.async_call("notify", tjanst, {"message": "clear_notification", "data": {"tag": f"skolan-{barn}__{uid}__{datum or '-'}"}})

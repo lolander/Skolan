@@ -879,6 +879,34 @@ def prov_resultat(data: dict, u: dict, res: dict | None) -> int:
     return diff
 
 
+# Barnet fotar en bok (sidorna blir e-bok). Lön efter att en förälder har kollat fotona.
+FOTO_SIDOR_PER_STJARNA = 2  # 1 ⭐ per 2 nya sidor
+FOTO_MAX_PER_BOK = 50
+FOTO_MIN_SIDOR = 10  # så många nya sidor behövs för att be om lön
+
+
+def foto_obetalda(b: dict) -> list[str]:
+    betalda = set(b.get("foto_betalda", []))
+    return [f for f in b.get("barn_sidor", []) if f in b.get("sidor", []) and f not in betalda]
+
+
+def foto_pris(b: dict, n: int | None = None) -> int:
+    n = len(foto_obetalda(b)) if n is None else n
+    return max(0, min(n // FOTO_SIDOR_PER_STJARNA, FOTO_MAX_PER_BOK - int(b.get("foto_lon", 0))))
+
+
+def foto_lon(data: dict, b: dict) -> int:
+    nya = foto_obetalda(b)
+    p = foto_pris(b, len(nya))
+    b.setdefault("foto_betalda", []).extend(nya)
+    b["foto_lon"] = int(b.get("foto_lon", 0)) + p
+    if p:
+        ge(data, p, f"Fotade {len(nya)} sidor i {b['namn']}", None, "📸")
+        _rakna(data, "foto_sidor", len(nya))
+        kolla_medaljer(data)
+    return p
+
+
 P_TIPS = 1  # ett tips i en övning (nästa bokstav) kostar så här många meriter
 
 

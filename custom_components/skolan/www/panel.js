@@ -679,6 +679,10 @@ class SkolanPanel extends HTMLElement {
         barn = barn || q.get("barn") || undefined;
         this._view = { name: "forhor", forhor: q.get("forhor") };
         try { history.replaceState(null, "", window.location.pathname); } catch (e) { /* ok */ }
+      } else if (q.get("bok")) {
+        barn = barn || q.get("barn") || undefined;
+        this._lankBok = q.get("bok");
+        try { history.replaceState(null, "", window.location.pathname); } catch (e) { /* ok */ }
       } else if (q.get("glosor")) {
         barn = barn || q.get("barn") || undefined;
         this._lankGlosor = q.get("glosor");
@@ -696,6 +700,11 @@ class SkolanPanel extends HTMLElement {
       const body = await res.json();
       if (!res.ok) throw new Error(body.message || res.statusText);
       this._s = body;
+      if (this._lankBok) {
+        const a = (body.data.amnen || []).find((x) => (x.bocker || []).some((b) => b.id === this._lankBok));
+        if (a) this._view = { name: "bok", amne: a.id, bok: this._lankBok };
+        this._lankBok = null;
+      }
       if (this._lankGlosor) {
         const a = (body.data.amnen || []).find((x) => x.glosor.some((g) => g.id === this._lankGlosor));
         if (a) this._view = { name: "glosor", amne: a.id, glosor: this._lankGlosor };
@@ -2174,6 +2183,7 @@ class SkolanPanel extends HTMLElement {
         `Plugga inför provet en dag före provet: ${p(10)} per dag (högst 5 dagar)`,
         `📝 När mamma eller pappa lägger in provresultatet: minst 90 % rätt (eller betyg A/B) ${p(50)}, 75 % (C) ${p(30)}, 60 % (D/E) ${p(15)}. Toppresultat ger medaljen 🌟 Provstjärna.`,
         `Allt läst och kontrollfrågorna klara före provdagen: ${p(40)}`,
+        `📸 Fotar du en bok själv (minst 10 sidor) kan du be om lön: ${p(1)} per 2 sidor, högst 50 per bok. Mamma eller pappa kollar först att fotona är skarpa och i rätt ordning.`,
       ])}
 
       ${kort("🔥", "Sviten", [
@@ -3419,6 +3429,7 @@ class SkolanPanel extends HTMLElement {
       return `
         ${b.framsida ? `<img class="stort-omslag" data-fil="${esc(b.framsida)}" ${b.ebok ? 'id="omslag-las"' : `data-open-fil="${esc(b.framsida)}"`} alt="Omslag">` : ""}
         ${this._ebokKort(b, false)}
+        ${this._fotoLon(b)}
         <div class="actions">
           ${b.sidor.length || b.framsida ? `<button class="ghost" id="skriv-ut">🖨️ Skriv ut</button>` : ""}
           <button class="ghost" id="redigera-bok">✏️ Redigera</button>
@@ -3441,6 +3452,25 @@ class SkolanPanel extends HTMLElement {
         <button class="ghost" id="rename-bok">Byt namn på boken</button>
         <button class="ghost danger" id="del-bok">Ta bort boken</button>
       </div>`;
+  }
+
+  _fotoLon(b) {
+    // Lön för att fota boken: barnet ber om den, en förälder kollar fotona och godkänner.
+    const s = this._s;
+    const betalda = new Set(b.foto_betalda || []);
+    const nya = (b.barn_sidor || []).filter((f) => b.sidor.includes(f) && !betalda.has(f)).length;
+    const pris = Math.max(0, Math.min(Math.floor(nya / 2), 50 - (b.foto_lon || 0)));
+    const v = b.foto_vantar;
+    if (s.kan_valja) {
+      if (!v) return b.foto_lon ? `<div class="muted small">📸 ${esc(s.namn)} har fått ${b.foto_lon} ⭐ för att fota boken.</div>` : "";
+      return `<div class="forhor-kort foto-lon">📸 <b>${esc(s.namn)} har fotat ${v.sidor} nya sidor</b> och ber om lön (<b>+${pris} ⭐</b>).
+        <div class="muted small">Tryck ✏️ Redigera för att se sidorna. Kolla att de är skarpa, hela och i rätt ordning.</div>
+        <div class="actions" style="margin-top:6px"><button class="primary" data-foto-lon="1">👍 Godkänn</button><button class="ghost danger" data-foto-lon="0">Neka</button></div></div>`;
+    }
+    if (v) return `<div class="forhor-kort">⏳ Väntar på att mamma eller pappa kollar dina foton (${v.sidor} sidor).</div>`;
+    if (!pris) return b.foto_lon ? `<div class="muted small">📸 Du har fått ${b.foto_lon} ⭐ för att fota boken. Tack!</div>` : "";
+    if (nya < 10) return `<div class="muted small">📸 Fotar du minst 10 sidor själv kan du be om lön: 1 ⭐ per 2 sidor (du har ${nya}).</div>`;
+    return `<button class="row foto-lon" id="foto-lon-be"><span>📸 <b>Jag har fotat klart, be om lön</b><br><span class="muted small">${nya} nya sidor ger +${pris} ⭐ när mamma eller pappa har kollat fotona</span></span><span>›</span></button>`;
   }
 
   _svara(g) {
@@ -3697,6 +3727,21 @@ class SkolanPanel extends HTMLElement {
     });
     on("#las-ebok", () => this._ebokOppna());
     on("#omslag-las", () => this._ebokOppna());
+    on("#foto-lon-be", async () => {
+      if (await this._act("bok_lon_be", { amne: v.amne, bok: v.bok })) {
+        this._msg = { type: "ok", text: "Mamma och pappa har fått en fråga. När de har kollat fotona får du din lön 📸" };
+        this._render();
+      }
+    });
+    r.querySelectorAll("[data-foto-lon]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const ok = b.dataset.fotoLon === "1";
+        if (await this._uppdragAct("godkann", { id: `bok-${v.bok}`, ok })) {
+          this._msg = { type: "ok", text: ok ? `Godkänt! ${this._s.namn} har fått sin lön 📸` : `Nekat. ${this._s.namn} får veta att fotona behöver göras om.` };
+          this._render();
+        }
+      })
+    );
     on("#bok-meny", () => this._go({ name: "bok", amne: v.amne, bok: v.bok }));
     on("#visa-toc", () => { v.e.visaToc = true; this._render(); });
     on("#stang-toc", () => { v.e.visaToc = false; this._render(); });
