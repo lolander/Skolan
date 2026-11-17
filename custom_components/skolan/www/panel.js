@@ -2988,7 +2988,7 @@ class SkolanPanel extends HTMLElement {
         `🎁 <b>Kistor:</b> varje gång du lägger in en läxa eller ett prov får du en kista med ⭐, ⚡ eller ett kort. Ett prov inlagt minst 3 dagar innan ger en 💎 silverkista, minst 7 dagar innan en 👑 guldkista. Högst 4 kistor per dag.`,
         `📝 <b>Provbossar:</b> varje prov blir en boss. Varje dag du pluggar inför provet tar den 15 % skada (allt klart i tid ger 20 % till). Dagen före provet öppnar slutstriden. Vinst: +20 ⭐ och en 🏆 provtrofé.`,
         `📅 <b>Veckans koll:</b> lägg in alla läxor i läxschemat i tid under veckan så får du +15 ⭐, ett 🛡️ svitskydd och en 👑 guldkista.`,
-        `🗓️ <b>Mitt schema:</b> fota ditt lektionsschema så läser AI:n av dina ämnen. Efter skolan frågar husdjuret om du fick någon läxa. Svarar du ärligt nej får du +2 ⭐.`,
+        `🗓️ <b>Mitt schema:</b> fota ditt lektionsschema så läser AI:n av dina ämnen. Efter skolan frågar husdjuret om du fick någon läxa. Svarar du ärligt nej får du +2 ⭐. Husdjuret frågar också efter studiematerial till ämnen som inte har något än, och första materialet i ett ämne ger en 💎 silverkista.`,
         `🎒 <b>Stridsuppsättning:</b> i arenan och mot världsbossar får djuret bara ta med 4 attacker. Välj dem i butiken. Mot bossen låses de när striden har börjat.`,
         `🎯 I arenan är varje djur svagt mot en typ: 🔥 mot 🌊, 🌊 mot ⚡, ⚡ mot 🍃, 🍃 mot 🔥, ❄️ mot 💥 och 💥 mot ❄️. Träffar du den svaga punkten blir det <b>×1,5</b> skada.`,
         `🌟 <b>Laddattacker</b> köps i butiken. De laddas upp av bra träffar (mest av träffar på den svaga punkten) och kan bara användas 1–2 gånger per strid.`,
@@ -3974,6 +3974,18 @@ class SkolanPanel extends HTMLElement {
     </div>`;
   }
 
+  // Husdjuret frågar efter studiematerial till ett ämne som saknar det.
+  _materialKort() {
+    const f = this._s.material, d = this._s.meriter?.djur;
+    if (!f || this._s.kan_valja || this._s.laxfraga) return "";
+    return `<div class="card laxfraga-kort">
+      ${d ? `<div class="laxfraga-djur">${ritaDjur(d.art, "nojd", Math.max(1, d.steg), {})}</div>` : ""}
+      <div><div class="pratbubbla"><b>${d ? esc(d.namn) : "Husdjuret"}:</b> ${f.idag ? `Du hade ${esc(f.namn)} idag! ` : ""}Vi har inget att plugga med i <b>${esc(f.namn)}</b> än.
+        Fota en sida ur boken, lägg in glosor eller skriv anteckningar, så kan vi öva tillsammans! Du får en 💎 silverkista.${f.fler ? ` <span class="small muted">(${f.fler} ämne${f.fler === 1 ? "" : "n"} till saknar material)</span>` : ""}</div>
+        <div class="actions"><button class="primary" id="material-ja" data-amne="${f.amne}">📷 Lägg in material</button><button class="ghost" id="material-sen" data-amne="${f.amne}">Inte nu</button></div></div>
+    </div>`;
+  }
+
   _veckokollRad() {
     const v = this._s.veckokoll;
     if (!v || this._s.kan_valja) return "";
@@ -4349,6 +4361,7 @@ class SkolanPanel extends HTMLElement {
       ${this._kistKort()}
       ${this._nyaKort()}
       ${this._laxfragaKort()}
+      ${this._materialKort()}
       ${this._hejaropKort()}
       ${this._dagensKort()}
       ${this._syskonKort()}
@@ -5789,6 +5802,8 @@ class SkolanPanel extends HTMLElement {
       this._arenaVisa();
     }));
     on("#open-lektioner", () => this._go({ name: "lektioner" }));
+    on("#material-ja", () => this._go({ name: "amne", amne: r.querySelector("#material-ja").dataset.amne }));
+    on("#material-sen", async () => { if (await this._act("laxfraga_svar", { material: r.querySelector("#material-sen").dataset.amne })) { await this._load(this._s.barn); this._render(); } });
     $("#ls-foto")?.addEventListener("change", (e) => { const file = e.target.files?.[0]; if (file) this._lektionLas(file); });
     r.querySelectorAll("[data-ls-skapa]").forEach((el) => el.addEventListener("change", () => { v.f.amnen[Number(el.dataset.lsSkapa)].skapa = el.checked; }));
     on("#ls-spara", async () => {

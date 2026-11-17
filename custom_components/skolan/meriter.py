@@ -3465,3 +3465,38 @@ def _veckokoll_kolla(data: dict) -> None:
     if ge(data, P_VECKOKOLL, "📅 Veckans koll: alla läxor inlagda i tid!", f"veckokoll:{mandag}", "📅"):
         m["skydd"] = min(SKYDD_MAX, m.get("skydd", 0) + 1)
         kista_ge(data, "guld", "Veckans koll", f"kista:veckokoll:{mandag}")
+
+
+# ---------- husdjuret frågar efter studiematerial till ämnen som saknar det ----------
+MATERIAL_VANTA = 3  # "inte nu" = frågar inte om ämnet igen på så här många dagar
+
+
+def har_material(a: dict) -> bool:
+    return any(b.get("sidor") for b in a.get("bocker", [])) or bool(a.get("glosor")) or bool((a.get("anteckningar") or "").strip())
+
+
+def material_fraga(data: dict) -> dict | None:
+    """Ett ämne utan studiematerial som husdjuret frågar om. Ämnen man har lektion i idag först."""
+    nu = dt_util.now()
+    idag = nu.date().isoformat()
+    vanta = _m(data).get("material_vanta", {})
+    lekt = data.get("lektioner", [])
+    idag_amnen = {x.get("amne") for x in lekt if x.get("dag") == nu.weekday()}
+    vecka_amnen = {x.get("amne") for x in lekt}
+    saknar = [a for a in data.get("amnen", []) if not har_material(a) and vanta.get(a["id"], "") <= idag]
+    if not saknar:
+        return None
+    saknar.sort(key=lambda a: (a["id"] not in idag_amnen, a["id"] not in vecka_amnen))
+    a = saknar[0]
+    return {"amne": a["id"], "namn": a["namn"], "idag": a["id"] in idag_amnen and nu.weekday() < 5, "fler": len(saknar) - 1}
+
+
+def material_vanta(data: dict, amne_id: str) -> None:
+    v = _m(data).setdefault("material_vanta", {})
+    v[amne_id] = (dt_util.now().date() + timedelta(days=MATERIAL_VANTA)).isoformat()
+
+
+def material_ny(data: dict, a: dict) -> None:
+    """Barnet lade in det första studiematerialet i ett ämne."""
+    _m(data).get("material_vanta", {}).pop(a["id"], None)
+    kista_ge(data, "silver", f"Första materialet i {a['namn']}", f"kista:material:{a['id']}")

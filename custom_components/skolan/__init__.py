@@ -880,7 +880,7 @@ class StateView(HomeAssistantView):
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
-                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data),
+                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []),
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
                 "skola": await _skola_status(hass, barn, parent) if skola.PA else None,
@@ -1283,6 +1283,8 @@ def _apply(data: dict, body: dict) -> list[str]:
             raise ValueError("Det är barnet som gör det här.")
         if op == "kista_oppna":
             meriter.kista_oppna(data, str(body.get("id") or ""))
+        elif body.get("material"):
+            meriter.material_vanta(data, str(body.get("material")))
         else:
             meriter.laxfraga_svar(data, bool(body.get("ja")))
         return []
@@ -1524,7 +1526,10 @@ def _apply(data: dict, body: dict) -> list[str]:
         a["uppgifter"].remove(_find(a.get("uppgifter", []), body.get("uppgift")))
         return []
     if op == "anteckning_spara":
+        hade = meriter.har_material(a)
         a["anteckningar"] = str(body.get("text") or "")[:10000]
+        if body.get("_barn") and not hade and len(a["anteckningar"].strip()) >= 40:
+            meriter.material_ny(data, a)
         return []
     if op == "save_glosor":
         namn = _name(body.get("namn"))
@@ -1543,7 +1548,10 @@ def _apply(data: dict, body: dict) -> list[str]:
             g.update({"namn": namn, "sprak": sprak, "par": par, "forhor": forhor or None, "typ": typ})
         else:
             ny_g = {"id": _new_id(), "namn": namn, "sprak": sprak, "par": par, "forhor": forhor or None, "skapad": dt_util.now().date().isoformat(), "typ": typ}
+            hade = meriter.har_material(a)
             a["glosor"].append(ny_g)
+            if body.get("_barn") and not hade:
+                meriter.material_ny(data, a)
             _sla_pa_del(a, typ)
             if body.get("_barn"):
                 meriter.lagt_in(data, a["id"], "glosor", ny_g)
@@ -1643,7 +1651,10 @@ class UploadView(HomeAssistantView):
                 old = b.get(OMSLAG[omslag])
                 b[OMSLAG[omslag]] = saved[0]
             else:
+                hade = meriter.har_material(a)
                 b["sidor"].extend(saved)
+                if not _ar_foralder(hass, request) and not hade:
+                    meriter.material_ny(data, a)
                 if not _ar_foralder(hass, request):
                     b.setdefault("barn_sidor", []).extend(saved)  # barnets egna foton kan ge lön (efter godkännande)
                     meriter.lagt_in(data, a["id"], "bok")
