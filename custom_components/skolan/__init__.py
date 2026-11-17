@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.55.0"
+VERSION = "1.56.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -870,7 +870,7 @@ class StateView(HomeAssistantView):
                 },
                 "topplista": topplista,
                 "dagens": dagens.dagens(data, next((b["namn"] for b in conf["barn"] if b["id"] == barn), "")),
-                "handelse": meriter.vecko_handelse(), "rekord": dagens.rekord(data), "prat": dagens.prat(data), "syskon": syskon_st,
+                "handelse": meriter.vecko_handelse(), "rekord": dagens.rekord(data), "prat": dagens.prat(data), "syskon": syskon_st, "kort": meriter.kort_status(data),
                 "djurlista": meriter.DJUR,
                 "djurbutik": meriter.butik_lista(),
                 "pass": meriter.pass_status(data),
@@ -1183,6 +1183,10 @@ def _apply(data: dict, body: dict) -> list[str]:
             dagens.fokus_klar(data)
         else:
             dagens.fokus_avbryt(data)
+        return []
+    if op == "kort_sett":
+        if body.get("_barn"):
+            meriter.kort_sett(data)
         return []
     if op in ("gata_gissa", "gata_svar"):  # dagens gåta (bara barnet själv)
         if not body.get("_barn"):

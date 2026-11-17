@@ -104,6 +104,7 @@ def ge(data: dict, poang: int, orsak: str, nyckel: str | None = None, ikon: str 
             _djur_laka(data, int(poang))
             _djur_xp(data, int(poang))
             _karta_skada(data, int(poang))
+            _kort_dela(data)
     m["saldo"] = m.get("saldo", 0) + int(poang)
     return True
 
@@ -1496,6 +1497,7 @@ def _klara_niva(data: dict, k: dict) -> None:
         if d and info["sak"]["id"] not in d.setdefault("agt", []):
             d["agt"].append(info["sak"]["id"])
         _rakna(data, "bossar")
+        _kort_ge(data, f"{info['varld']['id']}:9")  # bossens eget kort
     _rakna(data, "nivaer")
     k.setdefault("klara", []).append({"niva": n, "stjarnor": st, "tid": dt_util.now().isoformat(timespec="minutes")})
     del k["klara"][:-20]
@@ -2002,6 +2004,81 @@ def attack_kop(data: dict, at_id: str) -> None:
         raise ValueError(f"Du behöver {at['pris']} ⭐ (du har {m.get('saldo', 0)}).")
     ge(data, -at["pris"], f"⚔️ {d['namn']} lärde sig {at['namn']} {at['ikon']}", None, "🛍️")
     agda.append(at_id)
+
+
+# ---------- samlarkort: ett album per värld (9 monster + bossen) ----------
+KORT_NAMN = {
+    "skog": ["Larven Lexi", "Snigeln Sega", "Igelkotten Tagg", "Biet Surr", "Spindeln Spinn", "Fladdermusen Natt", "Ormen Väs", "Skorpionen Stick", "Skalbaggen Bom"],
+    "hav": ["Krabban Klo", "Blåsfisken Puff", "Räkan Rosa", "Maneten Bränn", "Snäckan Sus", "Hummern Knip", "Krokodilen Grin", "Sälen Plask", "Valen Jätte"],
+    "berg": ["Vargen Yl", "Örnen Skarp", "Vildsvinet Bök", "Bisonen Dunder", "Geten Klätter", "Bävern Gnag", "Grävlingen Grop", "Skunken Pyst", "Trollet Grus"],
+    "trask": ["Myggan Bzz", "Flugan Surr", "Råttan Smyg", "Ödlan Kvick", "Nätet Klibb", "Dimman Grå", "Vampyren Gäsp", "Sengångaren Slö", "Träskkrokodilen"],
+    "fabrik": ["Kugghjulet Gnissel", "Skruven Snurr", "Batteriet Watt", "Personsökaren Pip", "Skrivaren Trassel", "Disketten Minne", "Joysticken Spak", "Antennen Signal", "Ufot Zorp"],
+    "vulkan": ["Kometen Svisch", "Chilin Het", "Lavaskorpionen", "Eldormen", "Smällaren Pang", "Bomben Tick", "Tornadon Virvel", "T-rexen Stamp", "Lågan Fräs"],
+    "slott": ["Ljuset Fladder", "Skallen Skrammel", "Trollkarlen Hokus", "Pumpan Flin", "Graven Tyst", "Ögat Stirr", "Ugglan Uhu", "Spindelväven", "Zombien Stönk"],
+    "tid": ["Väckarklockan Ring", "Timglaset Rinn", "Pendeln Ticktack", "Tidtagaren Snabb", "Kalendern Datum", "Tidsfisken", "Korallen Evig", "Virveln Snurr", "Tidsbläckfisken"],
+}
+KORT_GRANSER = (20, 60, 120)  # ⭐ samma dag som ger ett nytt kort
+KORT_SALLSYNT = [("vanlig", 70, range(0, 6)), ("ovanlig", 26, range(6, 9)), ("legendarisk", 4, range(9, 10))]
+P_KORT_DUBBLETT = 3
+P_ALBUM = 100
+
+
+def _kort_info(kid: str) -> dict:
+    vid, i = kid.split(":")
+    vi = next(n for n, v in enumerate(VARLDAR) if v["id"] == vid)
+    i = int(i)
+    v = VARLDAR[vi]
+    if i == 9:
+        b = BOSSAR[vi]
+        return {"id": kid, "ikon": b["ikon"], "namn": b["namn"], "sallsynt": "legendarisk", "varld": vid}
+    return {"id": kid, "ikon": v["monster"][i], "namn": KORT_NAMN[vid][i], "sallsynt": "vanlig" if i < 6 else "ovanlig", "varld": vid}
+
+
+def _kort_ge(data: dict, kid: str) -> None:
+    m = _m(data)
+    kort = m.setdefault("kort", {})
+    ny = kid not in kort
+    kort[kid] = kort.get(kid, 0) + 1
+    m["kort_nya"] = (m.get("kort_nya", []) + [{"id": kid, "ny": ny}])[-5:]
+    if not ny:
+        ge(data, P_KORT_DUBBLETT, f"🃏 Dubblett: {_kort_info(kid)['namn']}", None, "🃏")
+        return
+    vid = kid.split(":")[0]
+    if all(f"{vid}:{i}" in kort for i in range(10)):
+        namn = next(v["namn"] for v in VARLDAR if v["id"] == vid)
+        ge(data, P_ALBUM, f"📖 Albumet {namn} är komplett!", f"album:{vid}", "🃏")
+
+
+def _kort_dela(data: dict) -> None:
+    """Nytt kort när barnet passerar 20, 60 och 120 ⭐ samma dag."""
+    m = _m(data)
+    idag = dt_util.now().date().isoformat()
+    dagens = _dag_poang(data, idag)
+    k = m.get("karta") or {}
+    hogsta = min(len(VARLDAR) - 1, (k.get("niva", 1) - 1) // NIVA_PER_VARLD + 1)  # världarna man har nått + nästa
+    for n, grans in enumerate(KORT_GRANSER):
+        nyckel = f"kort:{idag}:{n}"
+        if dagens >= grans and nyckel not in m["nycklar"]:
+            m["nycklar"].append(nyckel)
+            sallsynt = random.choices(KORT_SALLSYNT, weights=[x[1] for x in KORT_SALLSYNT])[0]
+            vid = VARLDAR[random.randint(0, hogsta)]["id"]
+            _kort_ge(data, f"{vid}:{random.choice(list(sallsynt[2]))}")
+
+
+def kort_status(data: dict) -> dict:
+    m = _m(data)
+    kort = m.get("kort", {})
+    album = []
+    for v in VARLDAR:
+        album.append({"id": v["id"], "namn": v["namn"], "ikon": v["ikon"], "farg": v["farg"],
+                      "kort": [{**_kort_info(f"{v['id']}:{i}"), "antal": kort.get(f"{v['id']}:{i}", 0)} for i in range(10)]})
+    return {"album": album, "antal": sum(1 for x in kort.values() if x), "totalt": len(VARLDAR) * 10,
+            "nya": [{**_kort_info(x["id"]), "ny": x["ny"]} for x in m.get("kort_nya", [])], "granser": KORT_GRANSER,
+            "p_album": P_ALBUM}
+
+
+def kort_sett(data: dict) -> None:
+    _m(data)["kort_nya"] = []
 
 
 # ---------- syskonuppdrag: ett gemensamt mål varje vecka ----------

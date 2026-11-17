@@ -1062,6 +1062,10 @@ class SkolanPanel extends HTMLElement {
       title = "🏟️ Arenan";
       back = { name: "hem" };
       body = this._arenaView();
+    } else if (v.name === "album") {
+      title = "🃏 Samlaralbum";
+      back = { name: "hem" };
+      body = this._albumView();
     } else if (v.name === "lar") {
       title = `🎓 Lär ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "glosor", amne: v.amne, glosor: v.glosor };
@@ -1525,7 +1529,7 @@ class SkolanPanel extends HTMLElement {
         <div class="small">${agg ? `Ägget kläcks om ${kvar} ⭐. Gör läxor för att värma det!` : DJUR_HUMOR[d.humor](esc(d.namn))}</div>
         ${d.nasta ? `<div class="progress"><div style="width:${Math.min(100, Math.round((d.intjanat / d.nasta) * 100))}%"></div></div>
         <div class="small muted">${kvar} ⭐ kvar tills ${esc(d.namn)} växer</div>` : `<div class="small">👑 ${esc(d.namn)} är en legend!</div>`}
-        <div class="djur-knappar">${this._s.kan_valja ? "" : `<button class="mini butik-knapp" id="open-fokus">⏱️ Fokus</button>`}<button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button></div>
+        <div class="djur-knappar">${this._s.kan_valja ? "" : `<button class="mini butik-knapp" id="open-fokus">⏱️ Fokus</button>`}<button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-album">🃏 Album${this._s.kort ? ` ${this._s.kort.antal}/${this._s.kort.totalt}` : ""}</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button></div>
         <button class="mini butik-knapp" id="open-widget">📱 ${this._s.kan_valja ? `${esc(this._s.namn)}s husdjur` : "Husdjuret"} på hemskärmen</button>
       </div></div>`;
   }
@@ -3678,6 +3682,34 @@ class SkolanPanel extends HTMLElement {
     }
   }
 
+  // Nya samlarkort: vänds upp när barnet trycker.
+  _kortRuta(k, dold = false) {
+    return `<div class="samlarkort ${k.sallsynt} ${dold ? "dold" : ""}" style="--farg:${(this._s.kort?.album || []).find((a) => a.id === k.varld)?.farg || "#5c6bc0"}">
+      <div class="sk-ikon">${dold ? "❓" : k.ikon}</div><div class="sk-namn">${dold ? "???" : esc(k.namn)}</div>
+      ${dold ? "" : `<div class="sk-sallsynt">${{ vanlig: "Vanlig", ovanlig: "✨ Ovanlig", legendarisk: "🌟 Legendarisk" }[k.sallsynt]}</div>`}
+      ${!dold && k.antal > 1 ? `<div class="sk-antal">×${k.antal}</div>` : ""}</div>`;
+  }
+
+  _nyaKort() {
+    const nya = this._s.kort?.nya || [];
+    if (this._s.kan_valja || !nya.length) return "";
+    const vand = this._kortVanda;
+    return `<div class="card kort-nya"><b>🃏 ${nya.length === 1 ? "Ett nytt kort" : `${nya.length} nya kort`}!</b>
+      <div class="kort-rad">${nya.map((k, i) => `<div class="kort-vand ${vand ? "vand" : ""}" style="animation-delay:${i * 0.15}s">${this._kortRuta(k, !vand)}${vand ? `<div class="small center">${k.ny ? "🆕 Nytt!" : "Dubblett +3 ⭐"}</div>` : ""}</div>`).join("")}</div>
+      ${vand ? `<div class="actions"><button class="primary" id="kort-album">📖 Till albumet</button><button class="ghost" id="kort-ok">OK</button></div>`
+        : `<button class="primary" id="kort-vand">✨ Vänd korten</button>`}</div>`;
+  }
+
+  _albumView() {
+    const k = this._s.kort;
+    if (!k) return `<p class="muted">Hämtar…</p>`;
+    return `<p class="small muted">Du får ett kort när du tjänar ${k.granser.join(", ")} ⭐ samma dag, och bossens kort när du besegrar den. Fullt album ger +${k.p_album} ⭐!</p>
+      <div class="karta-topp">🃏 ${k.antal} av ${k.totalt} kort</div>
+      ${k.album.map((a) => { const har = a.kort.filter((x) => x.antal).length;
+        return `<h3>${a.ikon} ${esc(a.namn)} <span class="small muted">${har}/10${har === 10 ? " 📖 Komplett!" : ""}</span></h3>
+          <div class="album-rutnat">${a.kort.map((x) => x.antal ? this._kortRuta(x) : `<div class="samlarkort saknas"><div class="sk-ikon">❓</div><div class="sk-namn">${x.sallsynt === "legendarisk" ? "Boss" : "?"}</div></div>`).join("")}</div>`; }).join("")}`;
+  }
+
   // Veckans syskonuppdrag: ett gemensamt mål, alla får belöningen.
   _syskonKort() {
     const u = this._s.syskon;
@@ -3909,6 +3941,7 @@ class SkolanPanel extends HTMLElement {
     const amnen = this._s.data.amnen || [];
     return `
       ${this._s.kan_valja ? `<button class="row foralder-knapp" id="open-foralder"><span>⚙️ <b>Föräldrar</b><br><span class="muted small">Läxschema, bonus och belöningsbutik för ${esc(this._s.namn)}</span></span><span>›</span></button>` : ""}
+      ${this._nyaKort()}
       ${this._hejaropKort()}
       ${this._dagensKort()}
       ${this._syskonKort()}
@@ -5293,6 +5326,11 @@ class SkolanPanel extends HTMLElement {
     on("#sk-kopiera", () => navigator.clipboard?.writeText(this._s.skola?.lank || "").then(() => { this._msg = { type: "ok", text: "Klasslänken är kopierad 📋" }; this._render(); }));
     r.querySelectorAll("[data-rep]").forEach((b) => b.addEventListener("click", () => { const [am, gl] = b.dataset.rep.split("|"); this._go({ name: "glosor", amne: am, glosor: gl }); }));
     on("#open-fokus", () => this._go({ name: "fokus" }));
+    on("#open-album", () => this._go({ name: "album" }));
+    on("#kort-vand", () => { this._kortVanda = true; this._render(); });
+    const kortSett = async (album) => { this._kortVanda = false; await this._act("kort_sett", {}); await this._load(this._s.barn); if (album) this._go({ name: "album" }); else this._render(); };
+    on("#kort-ok", () => kortSett(false));
+    on("#kort-album", () => kortSett(true));
     on("#lar-start", () => this._go({ name: "lar", amne: v.amne, glosor: v.glosor }));
     on("#lar-skicka", () => this._larSkicka());
     on("#lar-igen", () => this._go({ name: "lar", amne: this._view.amne, glosor: this._view.glosor }));
@@ -6296,6 +6334,20 @@ const CSS = `
   .fokus-val { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:10px 0; }
   .fokus-val button { min-width:70px; }
   .fokus-tid { font-size:56px; font-weight:800; font-variant-numeric:tabular-nums; margin:8px 0; }
+  .samlarkort { position:relative; width:84px; min-height:112px; border-radius:10px; padding:6px 4px; text-align:center; color:#fff;
+    background:linear-gradient(160deg, var(--farg), color-mix(in srgb, var(--farg) 45%, #000)); box-shadow:0 2px 6px rgba(0,0,0,.25); border:3px solid #cfd8dc; }
+  .samlarkort.ovanlig { border-color:#4fc3f7; box-shadow:0 0 10px #4fc3f7; }
+  .samlarkort.legendarisk { border-color:#ffd54f; box-shadow:0 0 14px #ffb300; }
+  .samlarkort.dold, .samlarkort.saknas { background:repeating-linear-gradient(45deg,#546e7a,#546e7a 6px,#607d8b 6px,#607d8b 12px); border-color:#90a4ae; box-shadow:none; }
+  .samlarkort.saknas { opacity:.45; }
+  .sk-ikon { font-size:38px; margin:6px 0 2px; }
+  .sk-namn { font-size:11px; font-weight:700; line-height:1.15; }
+  .sk-sallsynt { font-size:9px; opacity:.9; margin-top:2px; }
+  .sk-antal { position:absolute; top:2px; right:4px; font-size:10px; font-weight:800; background:rgba(0,0,0,.4); border-radius:6px; padding:0 4px; }
+  .kort-rad, .album-rutnat { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:8px 0; }
+  .kort-vand.vand { animation:vand .6s ease both; }
+  @keyframes vand { 0% { transform:rotateY(90deg) scale(.8); } 100% { transform:rotateY(0) scale(1); } }
+  .kort-nya { background:linear-gradient(135deg,#ede7f6,#fff8e1); color:#311b92; }
   .syskon-kort { background:linear-gradient(135deg,#e8eaf6,#e0f7fa); color:#1a237e; }
   .syskon-kort.klar { background:linear-gradient(135deg,#e8f5e9,#c8e6c9); color:#1b5e20; }
   .sy-rubrik { font-weight:700; font-size:13px; opacity:.8; }
