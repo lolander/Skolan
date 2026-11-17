@@ -3659,8 +3659,12 @@ async def _kal_uppdatera(hass: HomeAssistant, kid: str | None = None, tvinga: bo
             om = KAL_OM.get(k["typ"])
             if not om:
                 continue
-            if not tvinga and k.get("hamtad") and (nu - datetime.fromisoformat(k["hamtad"])).total_seconds() < om:
-                continue
+            if not tvinga and k.get("hamtad"):
+                senast = datetime.fromisoformat(k["hamtad"])
+                if senast.tzinfo is None:
+                    senast = senast.replace(tzinfo=nu.tzinfo)
+                if (nu - senast).total_seconds() < om:
+                    continue
             try:
                 k["handelser"], k["fel"] = (await _kal_hamta_kalla(hass, k))[:300], ""
             except (ValueError, RuntimeError, json.JSONDecodeError) as err:
