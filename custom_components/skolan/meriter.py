@@ -1524,7 +1524,11 @@ def karta_status(data: dict) -> dict:
     lista = []
     for at in ATTACKER:
         skada, svag = _attack_varde(data, at, info)
-        lista.append({**at, "har": at["id"] in agda, "nu": skada, "svag": svag})
+        niva = attack_niva(data, at["id"]) if at["id"] in agda else 1
+        lista.append({**at, "har": at["id"] in agda, "nu": skada, "svag": svag, "lvl": niva, "lvl_max": ATTACK_NIVA_MAX,
+                      "lvl_pris": attack_uppgradera_pris(at, niva) if at["id"] in agda else None,
+                      "skada_lvl": attack_skada(at, niva),
+                      "skada_nasta": attack_skada(at, niva + 1) if niva < ATTACK_NIVA_MAX else None})
     vecka = "{}-W{:02d}".format(*dt_util.now().date().isocalendar()[:2])
     fran = max(1, n - 12)
     karta = [{**{x: niva_info(i)[x] for x in ("niva", "ikon", "namn", "boss", "varld")}, "stjarnor": k["stjarnor"].get(str(i), 0)}
@@ -1591,6 +1595,28 @@ ATTACKER = [
     {"id": "a_super", "ikon": "💥", "namn": "Superattack", "typ": "kraft", "pris": 400, "steg": 2, "energi": 3, "skada": 30,
      "info": "Jättestark, men bara en gång per vecka."},
 ]
+# Uppgradera en köpt attack: ungefär +20 % av grundskadan per nivå (minst +1), och varje nivå kostar mer än den förra.
+ATTACK_NIVA_MAX = 5
+ATTACK_NIVA_SKADA = 0.20
+ATTACK_NIVA_PRIS, ATTACK_NIVA_OKNING = 0.6, 1.8  # nivå 2 kostar 60 % av attackens pris, sedan × 1,8 per nivå
+
+
+def attack_niva(data: dict, at_id: str) -> int:
+    return max(1, min(ATTACK_NIVA_MAX, int(_m(data).get("attack_niva", {}).get(at_id, 1))))
+
+
+def attack_skada(at: dict, niva: int) -> int:
+    """Attackens grundskada på en viss nivå."""
+    return at["skada"] + max(1, round(at["skada"] * ATTACK_NIVA_SKADA)) * (max(1, min(ATTACK_NIVA_MAX, niva)) - 1)
+
+
+def attack_uppgradera_pris(at: dict, niva: int) -> int | None:
+    """Vad det kostar att gå från niva till niva + 1 (None när attacken är på högsta nivån)."""
+    if niva >= ATTACK_NIVA_MAX:
+        return None
+    return int(round(at["pris"] * ATTACK_NIVA_PRIS * ATTACK_NIVA_OKNING ** (niva - 1) / 5) * 5)
+
+
 P_ENERGI = 25  # 1 energi per 25 intjänade meriter
 SVAG_GANGER = 2  # monstret tar dubbel skada av sin svaghet
 
@@ -1669,7 +1695,7 @@ def djur_kraft(data: dict) -> float:
 def djur_cp(data: dict) -> int:
     """Stridskraft att jämföra med: liv + bästa attack + försvar, gånger kraften."""
     agda = _m(data).get("attacker", [])
-    basta = max([x["skada"] for x in ATTACKER if x["id"] in agda] or [KNUFF["skada"]])
+    basta = max([attack_skada(x, attack_niva(data, x["id"])) for x in ATTACKER if x["id"] in agda] or [KNUFF["skada"]])
     return round((djur_liv(data)[1] + basta * 6 + djur_def(data) * 3) * djur_kraft(data))
 
 
@@ -1879,7 +1905,7 @@ def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
     """Hur mycket skada attacken gör just nu, och om monstret är svagt mot den."""
     m = _m(data)
     idag = dt_util.now().date().isoformat()
-    skada = at["skada"]
+    skada = attack_skada(at, attack_niva(data, at["id"])) if at["id"] in m.get("attacker", []) else at["skada"]
     if at["id"] == "a_blad" and f"utmaning:{idag}" in m["nycklar"]:
         skada += 3
     elif at["id"] == "a_blixt" and idag in m["ovningsdagar"]:
@@ -1905,6 +1931,24 @@ def attack_kop(data: dict, at_id: str) -> None:
         raise ValueError(f"Du behöver {at['pris']} ⭐ (du har {m.get('saldo', 0)}).")
     ge(data, -at["pris"], f"⚔️ {d['namn']} lärde sig {at['namn']} {at['ikon']}", None, "🛍️")
     agda.append(at_id)
+
+
+def attack_uppgradera(data: dict, at_id: str) -> int:
+    """Gör en köpt attack starkare. Returnerar den nya nivån."""
+    m = _m(data)
+    d = m.get("djur")
+    at = next((x for x in ATTACKER if x["id"] == at_id), None)
+    if not d or not at or at_id not in m.get("attacker", []):
+        raise ValueError("Du behöver kunna attacken först.")
+    niva = attack_niva(data, at_id)
+    pris = attack_uppgradera_pris(at, niva)
+    if pris is None:
+        raise ValueError(f"{at['namn']} är redan på högsta nivån.")
+    if m.get("saldo", 0) < pris:
+        raise ValueError(f"Du behöver {pris} ⭐ (du har {m.get('saldo', 0)}).")
+    ge(data, -pris, f"⬆️ {d['namn']} tränade upp {at['namn']} {at['ikon']} till nivå {niva + 1}", None, "🛍️")
+    m.setdefault("attack_niva", {})[at_id] = niva + 1
+    return niva + 1
 
 
 def attack(data: dict, at_id: str) -> dict:
@@ -1969,7 +2013,7 @@ ARENA_VINST, ARENA_FORLUST = 10, 2  # arenapoäng 🏆
 ARENA_XP_VINST, ARENA_XP_FORLUST = 15, 5
 # Arenaversion för strider mellan vänner i olika hem. Höj den när regler, drag eller skada ändras
 # så att en strid mot en annan version skulle bli fel. Båda hemmen måste ha samma version för att strida.
-ARENA_VER = 3  # 2: sköldar och försvar, 3: försvarsträning
+ARENA_VER = 4  # 2: sköldar och försvar, 3: försvarsträning, 4: kompisboost och uppgraderade attacker
 
 # Försvarsträning: när någon annan utmanar ditt husdjur styr datorn det. Tränar du det slåss det
 # smartare och tar i mer (bara när det försvarar sig, inte när du själv anfaller).
@@ -2054,7 +2098,8 @@ def rensa_kampe(k: dict, agare: str) -> tuple[dict, int]:
     får vara större än vad som går att få i Skolan. Returnerar (kämpe, antal borttagna drag)."""
     if not isinstance(k, dict) or not isinstance(k.get("drag"), dict):
         raise ValueError("Vännens husdjur gick inte att läsa.")
-    kraft_max = (1 + (DJUR_NIVA_MAX - 1) * 0.02) * (1 + LAG_BONUS_PER * LAG_MAX)
+    kompis_max = max([b.get("kraft", 0) for b in KOMPIS_BOOST.values()] or [0]) * 2  # bästis ger dubbelt
+    kraft_max = (1 + (DJUR_NIVA_MAX - 1) * 0.02) * (1 + LAG_BONUS_PER * LAG_MAX) * (1 + kompis_max)
     kanda = {"knuff": KNUFF, **{x["id"]: x for x in ATTACKER}}
     drag, okanda = {}, 0
     for at_id, varde in list(k["drag"].items())[:30]:
@@ -2062,10 +2107,10 @@ def rensa_kampe(k: dict, agare: str) -> tuple[dict, int]:
         if not at:
             okanda += 1
             continue
-        tak = math.ceil((at["skada"] * 2 + 3) * kraft_max * ARENA_GANGER * 1.2)
+        tak = math.ceil((attack_skada(at, ATTACK_NIVA_MAX) * 2 + 3) * kraft_max * ARENA_GANGER * 1.2)
         drag[at_id] = _int(varde, 1, tak)
     drag.setdefault("knuff", KNUFF["skada"] * ARENA_GANGER)
-    liv_tak = LIV_MAX[-1] + (DJUR_NIVA_MAX - 1) * 4
+    liv_tak = LIV_MAX[-1] + (DJUR_NIVA_MAX - 1) * 4 + max([b.get("liv", 0) for b in KOMPIS_BOOST.values()] or [0]) * 2
     mx = _int(k.get("max"), 1, liv_tak)
     sk = SKOLD.get(k.get("skold") if isinstance(k.get("skold"), str) else "")  # DEF räknas här, vännens siffra används inte
     return {"agare": str(agare)[:16], "namn": str(k.get("namn") or "?")[:20], "art": str(k.get("art") or "")[:8],

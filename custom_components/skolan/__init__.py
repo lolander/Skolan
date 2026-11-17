@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.47.1"
+VERSION = "1.48.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -1033,7 +1033,7 @@ def _apply(data: dict, body: dict) -> list[str]:
         if body.get("_barn"):  # föräldrar som provar övningen betalar inget
             meriter.kop_tips(data, "forsok" if op == "ova_forsok" else "tips")
         return []
-    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "traning_kop", "lagstrid_start", "lagstrid_drag", "lagstrid_ge_upp", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
+    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack_upp", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "traning_kop", "lagstrid_start", "lagstrid_drag", "lagstrid_ge_upp", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
         if op == "djur":
@@ -1048,6 +1048,8 @@ def _apply(data: dict, body: dict) -> list[str]:
             meriter.rum_stall(data, str(body.get("plats") or ""), body.get("sak") or None)
         elif op == "attack_kop":
             meriter.attack_kop(data, str(body.get("attack") or ""))
+        elif op == "attack_upp":
+            meriter.attack_uppgradera(data, str(body.get("attack") or ""))
         elif op == "attack":
             meriter.attack(data, str(body.get("attack") or ""))
         elif op == "dryck_kop":

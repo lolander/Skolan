@@ -1601,12 +1601,17 @@ class SkolanPanel extends HTMLElement {
     const am = s.karta, mon = am?.monster;
     const attackKort = (x) => {
       const last = d.steg < x.steg;
-      const knapp = x.har ? `<span class="small">✅ Kan den</span>`
+      const upp = x.lvl_pris == null ? `<span class="small">🏆 Max nivå!</span>`
+        : titta ? `<span class="small muted">⬆️ ${x.lvl_pris} ⭐</span>`
+        : `<button class="mini ${saldo >= x.lvl_pris ? "primary" : ""}" data-attack-upp="${x.id}" ${saldo >= x.lvl_pris ? "" : "disabled"}>⬆️ ${x.lvl_pris} ⭐</button>`;
+      const knapp = x.har ? upp
         : titta ? `<span class="small muted">${last ? "🔒 " + esc(s.djur_steg[x.steg]) + " · " : ""}${x.pris} ⭐</span>`
         : last ? `<span class="small muted">🔒 ${esc(s.djur_steg[x.steg])}</span>`
         : `<button class="mini ${saldo >= x.pris ? "primary" : ""}" data-attack-kop="${x.id}" ${saldo >= x.pris ? "" : "disabled"}>${x.pris} ⭐</button>`;
       return `<div class="sak-kort attack-sak ${x.svag ? "svag" : ""} ${last ? "last" : ""}"><div class="sak-ikon">${x.ikon}</div>
-        <div class="small"><b>${esc(x.namn)}</b></div><div class="small muted">${x.skada} skada · ${x.energi} ⚡</div>
+        <div class="small"><b>${esc(x.namn)}</b>${x.har ? ` <span class="attack-lvl">Nv ${x.lvl}</span>` : ""}</div>
+        ${x.har ? `<div class="attack-stjarnor">${"★".repeat(x.lvl)}${"☆".repeat(x.lvl_max - x.lvl)}</div>` : ""}
+        <div class="small muted">${x.har ? x.skada_lvl : x.skada} skada${x.har && x.skada_nasta ? ` → <b>${x.skada_nasta}</b>` : ""} · ${x.energi} ⚡</div>
         <div class="small muted">${esc(x.info)}</div>${x.svag ? `<div class="small">🎯 Bra mot nivå ${am.niva}!</div>` : ""}${knapp}</div>`;
     };
     const attackHtml = am ? `<h3>⚔️ Attacker för kartan</h3>
@@ -5132,6 +5137,14 @@ class SkolanPanel extends HTMLElement {
         this._render();
       })
     );
+    r.querySelectorAll("[data-attack-upp]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const x = (this._s.karta?.attacker || []).find((y) => y.id === b.dataset.attackUpp);
+        if (!x || !confirm(`Träna upp ${x.namn} ${x.ikon} till nivå ${x.lvl + 1} för ${x.lvl_pris} ⭐? Skadan blir ${x.skada_nasta} i stället för ${x.skada_lvl}.`)) return;
+        if (await this._act("attack_upp", { attack: x.id })) { this._msg = { type: "ok", text: `⬆️ ${x.ikon} ${x.namn} är nu nivå ${x.lvl + 1}! 💪` }; await this._load(); }
+        this._render();
+      })
+    );
     r.querySelectorAll("[data-attack-kop]").forEach((b) =>
       b.addEventListener("click", async () => {
         const x = (this._s.karta?.attacker || []).find((y) => y.id === b.dataset.attackKop);
@@ -5940,6 +5953,8 @@ const CSS = `
   .glod-eld .kropp { filter:drop-shadow(0 0 8px #ff5722) drop-shadow(0 0 18px #ffab00); }
   .glod-skugga .kropp { filter:drop-shadow(6px 6px 0 rgba(0,0,0,.55)); }
   .glod-snurr .kropp { animation:snurra 4s linear infinite; } @keyframes snurra { to { transform:rotate(360deg); } }
+  .attack-lvl { font-size:10px; font-weight:700; padding:1px 6px; border-radius:8px; background:#ffb300; color:#3e2723; vertical-align:middle; }
+  .attack-stjarnor { color:#ffb300; font-size:13px; letter-spacing:1px; }
   .kompis-gata { font-size:11px; font-style:italic; opacity:.75; margin:2px 0 4px; line-height:1.25; }
   .kompis-retas { font-size:13px; font-style:italic; padding:8px 12px; margin:-4px 0 10px; border-radius:10px; background:rgba(156,39,176,.10); }
   .sak-ikon { position:relative; }
