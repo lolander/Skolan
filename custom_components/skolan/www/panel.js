@@ -4057,10 +4057,20 @@ class SkolanPanel extends HTMLElement {
     const PX = 1.15, H = (till - fran) * PX;
     const nu = new Date(), idag = (nu.getDay() + 6) % 7, klocka = nu.getHours() * 60 + nu.getMinutes();
     const sokText = (x) => [x.namn, x.sal, x.larare, x.info, DAGAR[x.dag]].filter(Boolean).join(" ").toLowerCase();
+    // Lektioner som krockar (delad tid) delar på bredden och ligger bredvid varandra.
+    const plats = {};
+    for (let d = 0; d < 5; d++) {
+      const dl = lekt.map((x, i) => [x, i]).filter(([x]) => x.dag === d && min(x.start) != null).sort((a, b) => min(a[0].start) - min(b[0].start));
+      let grupp = [], slut = -1;
+      const stang = () => { const cols = []; grupp.forEach(([x, i]) => { const st = min(x.start); let k = cols.findIndex((c) => c <= st); if (k < 0) { cols.push(0); k = cols.length - 1; } cols[k] = min(x.slut) ?? st + 40; plats[i] = [k, 0]; }); grupp.forEach(([, i]) => { plats[i][1] = cols.length; }); };
+      dl.forEach((p) => { const st = min(p[0].start), sl = min(p[0].slut) ?? st + 40; if (grupp.length && st >= slut) { stang(); grupp = []; slut = -1; } grupp.push(p); slut = Math.max(slut, sl); });
+      if (grupp.length) stang();
+    }
     const block = (x, i) => {
       const st = min(x.start), sl = min(x.slut) ?? (st != null ? st + 40 : null);
+      const [k, n] = plats[i] || [0, 1];
       const pagar = x.dag === idag && st != null && st <= klocka && klocka < sl;
-      return `<button class="ls-lektion ${pagar ? "pagar" : ""}" data-ls-i="${i}" data-sok="${esc(sokText(x))}" style="--c:${farg(x)};top:${(st - fran) * PX}px;height:${Math.max(18, (sl - st) * PX - 2)}px">
+      return `<button class="ls-lektion ${pagar ? "pagar" : ""} ${n > 1 ? "delad" : ""}" data-ls-i="${i}" data-sok="${esc(sokText(x))}" style="--c:${farg(x)};top:${(st - fran) * PX}px;height:${Math.max(18, (sl - st) * PX - 2)}px;left:calc(${(k * 100) / n}% + 1px);width:calc(${100 / n}% - 2px)">
         <b>${esc(x.namn)}</b>${(sl - st) * PX > 30 ? `<span>${esc(x.start)}</span>` : ""}${x.sal && (sl - st) * PX > 44 ? `<span>📍 ${esc(x.sal)}</span>` : ""}${x.info && (sl - st) * PX > 58 ? `<span>ℹ️ ${esc(x.info)}</span>` : ""}</button>`;
     };
     const utanTid = lekt.map((x, i) => [x, i]).filter(([x]) => min(x.start) == null);
@@ -4090,6 +4100,7 @@ class SkolanPanel extends HTMLElement {
         <div class="two"><label>Börjar <input id="lr-start" type="time" value="${esc(r.start || "")}"></label><label>Slutar <input id="lr-slut" type="time" value="${esc(r.slut || "")}"></label></div>
         <label>Lärare <input id="lr-larare" value="${esc(r.larare || "")}" maxlength="40"></label>
         <label>Info <input id="lr-info" value="${esc(r.info || "")}" maxlength="80" placeholder="t.ex. ta med ombyte"></label>
+        <div class="small muted">Delad tid? Lägg till en lektion till med samma tid, så hamnar de bredvid varandra.</div>
         <div class="actions"><button class="primary" id="lr-ok">${v.f ? "OK" : "Spara"}</button>${red !== "ny" ? `<button class="danger" id="lr-bort">🗑️ Ta bort</button>` : ""}<button class="ghost" id="lr-avbryt">Avbryt</button></div></div>`
         : s.kan_valja ? `<button class="ghost" id="ls-ny">＋ Lägg till lektion</button>` : ""}`;
   }
@@ -7047,12 +7058,14 @@ const CSS = `
   .ls-linje { position:absolute; left:0; right:0; border-top:1px dashed rgba(127,127,127,.25); }
   .ls-nu { position:absolute; left:-2px; right:-2px; border-top:2px solid #e53935; z-index:2; }
   .ls-nu::before { content:""; position:absolute; left:-3px; top:-5px; width:8px; height:8px; border-radius:50%; background:#e53935; }
-  .ls-lektion { position:absolute; left:1px; right:1px; box-sizing:border-box; border:0; border-left:4px solid var(--c); background:color-mix(in srgb, var(--c) 22%, var(--card-background-color,#fff));
+  .ls-lektion { position:absolute; box-sizing:border-box; border:0; border-left:4px solid var(--c); background:color-mix(in srgb, var(--c) 22%, var(--card-background-color,#fff));
     color:inherit; border-radius:5px; padding:2px 3px; text-align:left; font-size:11px; line-height:1.2; overflow:hidden; cursor:pointer; display:flex; flex-direction:column; transition:opacity .2s; }
   .ls-lektion b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ls-lektion span { font-size:10px; opacity:.8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ls-lektion.pagar { box-shadow:0 0 0 2px #e53935; }
   .ls-lektion.dim, .row.dim { opacity:.18; }
+  .ls-lektion.delad { padding:2px 2px 2px 3px; border-left-width:3px; }
+  .ls-lektion.delad b, .ls-lektion.delad span { white-space:normal; overflow-wrap:anywhere; text-overflow:clip; }
   .ls-red { margin-top:10px; }
   .schema-rutnat { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; margin:8px 0; }
   .schema-rubrik { font-weight:700; text-align:center; font-size:13px; margin-bottom:4px; }

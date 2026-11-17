@@ -38,16 +38,47 @@ def sida(titel: str, lektioner: list, farger: dict | None = None, hem: str = "/"
     px = 1.4  # pixlar per minut på skärmen; utskriften skalar om
     hojd = (till - fran) * px
 
+    def kolumner_for(dag_lekt: list) -> dict:
+        """Lektioner som krockar (delad tid) får dela bredden: id(lektion) -> (kolumn, antal)."""
+        ut, grupp, slut = {}, [], -1
+        def stang():
+            cols = []
+            for x in grupp:
+                st = _min(x.get("start"))
+                k = next((i for i, c in enumerate(cols) if c <= st), None)
+                if k is None:
+                    cols.append(0)
+                    k = len(cols) - 1
+                cols[k] = _min(x.get("slut")) or st + 40
+                ut[id(x)] = [k, 0]
+            for x in grupp:
+                ut[id(x)][1] = len(cols)
+        for x in sorted(dag_lekt, key=lambda y: _min(y.get("start"))):
+            st, sl = _min(x.get("start")), _min(x.get("slut")) or _min(x.get("start")) + 40
+            if grupp and st >= slut:
+                stang()
+                grupp, slut = [], -1
+            grupp.append(x)
+            slut = max(slut, sl)
+        if grupp:
+            stang()
+        return ut
+
+    plats = {}
+    for d in range(5):
+        plats.update(kolumner_for([x for x in lekt if int(x["dag"]) == d and _min(x.get("start")) is not None]))
+
     def block(x) -> str:
         st = _min(x.get("start"))
         sl = _min(x.get("slut")) or st + 40
+        k, n = plats.get(id(x), (0, 1))
         h = (sl - st) * px
         sok = " ".join(str(x.get(k) or "") for k in ("namn", "sal", "larare", "info")) + " " + DAGAR[int(x["dag"])]
         detalj = " · ".join(e(v) for v in (f"{x.get('start')}–{x.get('slut') or ''}", x.get("sal"), x.get("larare")) if v)
         rader = [f"<b>{e(x['namn'])}</b>", f"<span>{detalj}</span>"]
         if x.get("info"):
             rader.append(f"<span><i>{e(x['info'])}</i></span>")
-        return (f'<div class="l" data-sok="{e(sok.lower())}" style="--c:{_farg(x["namn"], farger)};top:{(st - fran) * px:.0f}px;height:{max(16, h - 2):.0f}px">'
+        return (f'<div class="l{" delad" if n > 1 else ""}" data-sok="{e(sok.lower())}" style="--c:{_farg(x["namn"], farger)};top:{(st - fran) * px:.0f}px;height:{max(16, h - 2):.0f}px;left:calc({k * 100 / n:.3f}% + 2px);width:calc({100 / n:.3f}% - 4px)">'
                 + "".join(rader) + "</div>")
 
     kolumner = "".join(
@@ -76,11 +107,12 @@ h1{{font-size:22px;margin:0 0 10px}}
 @media (max-width:600px){{.lang{{display:none}}.kort{{display:inline}}body{{margin:10px}}.schema{{grid-template-columns:34px repeat(5,minmax(0,1fr))}}}}
 .kol{{position:relative;background:#f7f8fa;border-radius:6px}}
 .lin{{position:absolute;left:0;right:0;border-top:1px dashed #d5d9e0}}
-.l{{position:absolute;left:2px;right:2px;box-sizing:border-box;border-left:5px solid var(--c);background:color-mix(in srgb,var(--c) 18%,#fff);
+.l{{position:absolute;box-sizing:border-box;border-left:5px solid var(--c);background:color-mix(in srgb,var(--c) 18%,#fff);
   border-radius:6px;padding:2px 5px;font-size:12px;line-height:1.2;overflow:hidden;display:flex;flex-direction:column}}
 .l span{{font-size:11px;color:#3a4150;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 .l b{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 .l.dim{{opacity:.15}}
+.l.delad span,.l.delad b{{white-space:normal;overflow-wrap:anywhere}}
 #traffar{{margin:0 0 10px;padding:0;list-style:none}}
 #traffar li{{padding:6px 10px;border-bottom:1px solid #eee}}
 .fot{{margin-top:10px;font-size:11px;color:#889}}

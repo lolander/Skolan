@@ -3344,7 +3344,9 @@ LEKTION_PROMPT = (
     "Skriv ämnena med vanliga svenska namn och stor första bokstav, och skriv ut förkortningar "
     "(t.ex. Ma = Matte, Sv = Svenska, En = Engelska, Idh = Idrott, Tk = Teknik, Hkk = Hemkunskap, Mu = Musik, Sl = Slöjd, "
     "Bi = Biologi, Fy = Fysik, Ke = Kemi, Ge = Geografi, Hi = Historia, Re = Religion, Sh = Samhällskunskap, Mod = Moderna språk). "
-    "Står ett språk (Spanska, Tyska, Franska) så använd det. Ta INTE med rast, lunch, mentorstid, klassråd, fritids eller studietid. "
+    "Står ett språk (Spanska, Tyska, Franska) så använd det. "
+    "Har en ruta två eller fler ämnen samtidigt (delad tid, t.ex. Spanska/Tyska eller Slöjd/Hemkunskap i olika grupper), "
+    "lägg in VARJE ämne som en egen lektion med samma dag och tid, och skriv gruppen i info om den står. Ta INTE med rast, lunch, mentorstid, klassråd, fritids eller studietid. "
     'Saknas en tid, skriv "". Hittar du inget schema: {"lektioner": [], "amnen": []}.'
 )
 
