@@ -1637,7 +1637,7 @@ class SkolanPanel extends HTMLElement {
       ${this._djurFigur(d)}
       <div class="djur-info">
         ${this._s.prat && !agg ? `<div class="prat-bubbla">💬 ${esc(this._s.prat)}</div>` : ""}
-        <div class="djur-rubrik">${esc(d.namn)} <span class="muted small">· ${d.form ? `${d.form.ikon} ${esc(d.form.namn)}` : esc(d.steg_namn)}</span></div>
+        <div class="djur-rubrik">${esc(d.namn)} <span class="muted small">· ${d.form ? `${d.form.ikon} ${esc(d.form.namn)}` : esc(d.steg_namn)}</span>${d.element && !agg ? ` <span class="element-bricka" title="Attacker av samma typ gör +25 %">${d.element.namn}</span>` : ""}</div>
         ${this._s.titel ? `<div class="small"><b>${esc(this._s.titel)}</b></div>` : ""}
         ${d.bastis && !agg ? (() => { const k = (this._s.djurbutik || []).find((x) => x.id === d.pa?.kompis);
           return k ? `<div class="bastis-bricka">💞 ${esc(d.namn)} och ${k.ikon} ${esc(k.namn)} är bästisar!</div>` : ""; })() : ""}
@@ -1759,10 +1759,12 @@ class SkolanPanel extends HTMLElement {
         <div class="small"><b>${esc(x.namn)}</b>${x.har ? ` <span class="attack-lvl">Nv ${x.lvl}</span>` : ""}</div>
         ${x.har ? `<div class="attack-stjarnor">${"★".repeat(x.lvl)}${"☆".repeat(x.lvl_max - x.lvl)}</div>` : ""}
         <div class="small muted">${x.har ? x.skada_lvl : x.skada} skada${x.har && x.skada_nasta ? ` → <b>${x.skada_nasta}</b>` : ""} · ${x.energi} ⚡</div>
-        <div class="small muted">${esc(x.info)}</div>${x.svag ? `<div class="small">🎯 Bra mot nivå ${am.niva}!</div>` : ""}${knapp}</div>`;
+        <div class="small muted">${esc(x.info)}</div>${x.svag ? `<div class="small">🎯 Bra mot nivå ${am.niva}!</div>` : ""}
+        ${x.pass > 1 ? `<div class="passform bra">💪 Passar ${esc(d.namn)}: +25 %</div>` : x.pass < 1 ? `<div class="passform dalig">😕 Passar inte ${esc(d.namn)}: −25 %</div>` : ""}${knapp}</div>`;
     };
     const attackHtml = am ? `<h3>⚔️ Attacker för kartan</h3>
       <div class="small muted">Attackerna laddas med ⚡ energi när du pluggar. Varje monster är svagt mot en typ och tar då dubbel skada.</div>
+      ${d.element ? `<div class="element-rad">${esc(d.namn)} är ett <b>${d.element.namn}-djur</b>: ${esc(am.typer[d.element.bra])}-attacker gör <b>+25 %</b>, ${esc(am.typer[d.element.dalig])}-attacker <b>−25 %</b>.</div>` : ""}
       <div class="sak-rutnat">${am.attacker.map(attackKort).join("")}</div>
       <h3>⚡ Energi</h3>
       <div class="small muted">Du har ⚡ ${am.energi} av ${am.energi_max}. Pluggar du får du 1 ⚡ per ${am.p_energi} ⭐ och behåller stjärnorna. Du kan också köpa energi, högst ${am.energi_kop_kvar ?? 0} till idag.</div>
@@ -1799,15 +1801,17 @@ class SkolanPanel extends HTMLElement {
         const mina = d.mina || [], har = new Set(mina.map((h) => h.art));
         const paket = (d.agda_djur || []).filter((a) => !har.has(a)), nya = (s.djurlista || []).filter((a) => !har.has(a));
         const pris = s.nytt_djur_pris;
+        const elIkon = (a) => { const e = (s.djur_element || {})[a]; return e ? `${(s.typer || {})[e]?.split(" ")[0] || ""}💪 ${(s.typer || {})[(s.element_dalig || {})[e]]?.split(" ")[0] || ""}😕` : ""; };
         return `<h3>🐾 Mina husdjur</h3>
         <div class="small muted">Varje husdjur växer och utvecklas av det du gör medan just det är med dig. Byt gratis mellan dina djur.</div>
         <div class="mina-djur">${mina.map((h) => `<div class="mitt-djur ${h.aktiv ? "aktiv" : ""}"><div class="rit-val">${ritaDjur(h.art, "glad", h.steg, { form: h.form })}</div>
-          <div class="small"><b>${esc(h.namn)}</b><br>${h.form ? `${h.form.ikon} ${esc(h.form.namn)}` : esc(h.steg_namn)}</div>
+          <div class="small"><b>${esc(h.namn)}</b><br>${h.form ? `${h.form.ikon} ${esc(h.form.namn)}` : esc(h.steg_namn)}<br>${h.element ? h.element.namn : ""}</div>
           ${h.aktiv ? `<div class="small"><b>✅ Med dig nu</b></div>` : `<button class="mini primary" data-djur-till="${h.id}">🔄 Byt</button>`}</div>`).join("")}</div>
-        ${paket.length ? `<h3>📦 Dina paketdjur</h3><div class="small muted">Redan betalda. De börjar som ägg.</div><div class="djur-val">${paket.map((a) => `<button data-djur-nytt="${a}" data-gratis="1" class="rit-val">${ritaDjur(a, "glad", 2)}</button>`).join("")}</div>` : ""}
+        ${paket.length ? `<h3>📦 Dina paketdjur</h3><div class="small muted">Redan betalda. De börjar som ägg.</div><div class="djur-val">${paket.map((a) => `<button data-djur-nytt="${a}" data-gratis="1" class="rit-val med-element">${ritaDjur(a, "glad", 2)}<span class="el">${elIkon(a)}</span></button>`).join("")}</div>` : ""}
         <h3>🥚 Skaffa ett nytt husdjur · ${pris} ⭐</h3>
         <div class="small muted">Det nya djuret börjar om från början: ett ägg utan attacker och kompisar. Dina andra djur finns kvar med allt de har.</div>
-        <div class="djur-val">${nya.map((a) => `<button data-djur-nytt="${a}" class="rit-val" ${saldo >= pris ? "" : "disabled"}>${ritaDjur(a, "glad", 2)}</button>`).join("")}</div>`;
+        <div class="small muted">Varje djur har ett element. Attacker av samma typ gör +25 %, en typ passar dåligt (−25 %).</div>
+        <div class="djur-val">${nya.map((a) => `<button data-djur-nytt="${a}" class="rit-val med-element" ${saldo >= pris ? "" : "disabled"}>${ritaDjur(a, "glad", 2)}<span class="el">${elIkon(a)}</span></button>`).join("")}</div>`;
       })()}
       ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
   }
@@ -1875,7 +1879,7 @@ class SkolanPanel extends HTMLElement {
             const slut = x.slut;
             const kan = !slut && !ko && k.energi >= x.energi && !this._busy;
             return `<button class="attack-knapp ${x.svag ? "svag" : ""}" data-attack="${x.id}" ${kan ? "" : "disabled"} title="${esc(x.namn)}: ${esc(x.info)}">
-              <span class="ai">${x.ikon}</span><b>${x.nu}</b><small>${slut ? "använd" : x.energi + "⚡"}</small></button>`;
+              <span class="ai">${x.ikon}</span><b>${x.nu}${x.pass > 1 ? "💪" : x.pass < 1 ? "😕" : ""}</b><small>${slut ? "använd" : x.energi + "⚡"}</small></button>`;
           }).join("")}</div>
           <div class="small muted">1 ⚡ per ${k.p_energi} ⭐ du tjänar (max ${k.energi_max})</div>`
         : `<div class="small">⚔️ ⚡ ${k.energi} energi · lär ${esc(d.namn)} attacker i <button class="mini butik-knapp" id="open-djurbutik">🛍️ Butiken</button></div>`;
@@ -2436,7 +2440,7 @@ class SkolanPanel extends HTMLElement {
     const vecka = k.super_anvand;
     const at = (k.attacker || []).filter((x) => x.har).map((x) => {
       const kan = !o.titta && !ko && k.energi >= x.energi && !x.slut;
-      return `<button data-s-attack="${x.id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${x.nu}</small></button>`;
+      return `<button data-s-attack="${x.id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${x.nu}${x.pass > 1 ? " 💪" : x.pass < 1 ? " 😕" : ""}</small></button>`;
     }).join("");
     const dr = (k.drycker || []).filter((x) => x.antal).map((x) => {
       const kan = !o.titta && (x.id === "d_fenix" ? ko : k.liv < k.liv_max);
@@ -2914,6 +2918,7 @@ class SkolanPanel extends HTMLElement {
         `🛍️ I <b>Husdjursbutiken</b> kan du köpa hattar, bakgrunder och effekter för dina stjärnor. Djuret växer ändå, för storleken räknas på alla meriter du har tjänat.`,
         `🎉 Inför högtider (jul, påsk, Halloween, sommarlov med flera) finns specialsaker i 2 veckor. Det du köper får du behålla för alltid.`,
         `🐾 Du kan ha <b>flera husdjur</b>. Ett nytt kostar 100 ⭐ och börjar som ett ägg. Byt gratis mellan dina djur i butiken. Bara djuret som är med dig växer, får XP och utvecklas av det du gör. Attacker, försvarsträning och kompisar hör till djuret du köper dem till, så ett nytt djur börjar om från början. Allt finns kvar när du byter tillbaka.`,
+        `🔥 Varje djur har ett <b>element</b>. Attacker av samma typ gör <b>+25 %</b> 💪, och en typ passar dåligt och gör <b>−25 %</b> 😕. Välj attacker som passar ditt djur och som monstren är svaga mot!`,
       ])}
 
       ${kort("🎯", "Dagens utmaning", [
@@ -6599,6 +6604,11 @@ const CSS = `
   .lar-rad.barn .lar-bubbla { background:#e3f2fd; color:#0d47a1; border-bottom-right-radius:4px; }
   .lar-bubbla.tanker { animation:andas 1s ease-in-out infinite; }
   .lar-input { display:flex; flex-direction:column; gap:6px; }
+  .passform { font-size:12px; font-weight:600; border-radius:8px; padding:2px 6px; margin:3px 0; }
+  .passform.bra { background:#e8f5e9; color:#1b5e20; } .passform.dalig { background:#fbe9e7; color:#bf360c; }
+  .element-rad { background:rgba(33,150,243,.08); border-radius:10px; padding:6px 10px; margin:6px 0; font-size:13px; }
+  .element-bricka { font-size:12px; background:rgba(0,0,0,.06); border-radius:10px; padding:1px 7px; white-space:nowrap; }
+  .rit-val.med-element { position:relative; } .rit-val.med-element .el { position:absolute; left:0; right:0; bottom:2px; font-size:11px; text-align:center; }
   .mina-djur { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; margin:8px 0; }
   .mitt-djur { text-align:center; border:2px solid var(--divider-color); border-radius:12px; padding:6px; }
   .mitt-djur.aktiv { border-color:#43a047; background:rgba(67,160,71,.08); }

@@ -11,7 +11,7 @@ SPELGUIDE = """
 MERITER ⭐: tjänas på läxor. Lägga in läxan samma dag/dagen efter +20 (senare samma vecka +5). Öva hela glosläxan +5 (max 3 ggr per läxa och dag), alla rätt +5 extra, öva minst 2 dagar före förhöret +10. Förhör: +2 per rätt ord, alla rätt +20, samma dag +5. Högläsning +6/dag, alla dagar +20. Läxboken i tid +25. Läsläxa i tid +30. Prov: registrera 3 dagar innan +10, plugga en dag före +10/dag (max 5), allt klart före provdagen +40, bra provresultat +15/30/50. Tips i övning kostar 1 ⭐, fel efter 2 gratisförsök kostar 1 ⭐.
 SVIT 🔥: gör något varje dag. Dag 2 +2, dag 3 +3 … max +10 per dag. Var 7:e dag i rad ger ett svitskydd 🛡️ (max 2) som räddar sviten om man missar 1–2 dagar.
 DAGENS UTMANING 🎯: 2–3 mål per dag, alla klara +15. GLOSREKORD ⚡: så många rätt som möjligt på 60 s, nytt rekord +5. DAGENS GÅTA: rätt svar +5, svaret visas dagen efter. FOKUSLÄGE ⏱️: 10/15/20/25 min ger +5/8/10/12, 2 pass per dag. LÄR HUSDJURET 🎓: förklara ett ord med egna ord, bra förklaring +5, jättebra +8. REPETERA 🔁: öva en lista man inte övat på 10 dagar, +10 extra. SYSKONUPPDRAG: gemensamt mål med syskonet, +30 till båda. SAMLARKORT 🃏: kort delas ut när man tjänar 20/60/120 ⭐ samma dag, och av bossar; dubbletter +3, fullt album +100. MEDALJER 🏅 +25 var. Var 100:e merit = ny nivå.
-HUSDJURET 🐾: växer av alla meriter: Ägg → Bebis (30) → Liten (150) → Stor (400) → Jätte (800) → Legend (1500). Blir hungrigt/ledset om man inte pluggar på ett par dagar. Man kan ha flera husdjur: ett nytt kostar 100 ⭐ och börjar som ägg, byte mellan egna djur är gratis. Bara det aktiva djuret växer, får XP och utvecklas, så varje djur blir unikt. Varje djur har egna attacker (med uppgraderingar), egen försvarsträning och egna kompisar, så ett nytt djur börjar om från början. Allt finns kvar när man byter tillbaka. Sköldar, drycker, energi, hattar och andra saker delas mellan djuren. Från Liten utvecklas det efter vad man gör mest (glosrekord, läsläxor, alla rätt på förhör, många övningar, besegrade bossar) och får ett nytt utseende. Husdjuret har också XP-nivå (1–50): högre nivå ger mer ❤️ liv och +2 % skada per nivå. CP visar hur starkt det är.
+HUSDJURET 🐾: växer av alla meriter: Ägg → Bebis (30) → Liten (150) → Stor (400) → Jätte (800) → Legend (1500). Blir hungrigt/ledset om man inte pluggar på ett par dagar. Man kan ha flera husdjur: ett nytt kostar 100 ⭐ och börjar som ägg, byte mellan egna djur är gratis. Bara det aktiva djuret växer, får XP och utvecklas, så varje djur blir unikt. Varje djur har egna attacker (med uppgraderingar), egen försvarsträning och egna kompisar, så ett nytt djur börjar om från början. Allt finns kvar när man byter tillbaka. Varje djur har ett element (🔥 eld, 🍃 natur, ⚡ blixt, 🌊 vatten, ❄️ is eller 💥 kraft): attacker av samma typ gör +25 % (💪), en typ passar dåligt och gör −25 % (😕). Eld-djur är dåliga på is, is- och vattendjur på eld, naturdjur på blixt, blixtdjur på vatten, kraftdjur på natur. Bra strategi: välj attacker som passar djuret OCH som monstren är svaga mot. Sköldar, drycker, energi, hattar och andra saker delas mellan djuren. Från Liten utvecklas det efter vad man gör mest (glosrekord, läsläxor, alla rätt på förhör, många övningar, besegrade bossar) och får ett nytt utseende. Husdjuret har också XP-nivå (1–50): högre nivå ger mer ❤️ liv och +2 % skada per nivå. CP visar hur starkt det är.
 HUSDJURSBUTIKEN 🛍️: hattar, bakgrunder, effekter, kompisar, attacker, sköldar, livdrycker och energi. Storleken påverkas inte av att man handlar. Kompisar kan ha en HEMLIG effekt (se reglerna).
 ÄVENTYRSKARTAN 🗺️: världar med 10 nivåer var: Glosskogen, Bläckhavet, Trollberget, Sömnträsket, Robotfabriken, Drakvulkanen, Spökslottet, Tidshavet. Varje merit man tjänar gör skada på nivåns monster. Snabbt klarad nivå ger fler stjärnor. Var 10:e nivå är en världsboss: +50 ⭐ och en unik sak. Monstren är lika svåra som man brukar plugga, så alla har chans.
 ATTACKER ⚔️: köps i butiken, kostar ⚡ energi. Man får 1 ⚡ per 25 ⭐ man tjänar (max 15 sparade), eller köper ⚡ för 20 ⭐ (max 5 per dag). Varje monster är svagt mot en typ (🔥 eld, 🍃 natur, ⚡ blixt, 🌊 vatten, ❄️ is) och tar då DUBBEL skada. 💥 kraft är aldrig svaghet. Köpta attacker kan uppgraderas till nivå 5 (dyrare för varje nivå). Superattack bara 1 gång per vecka, Regnbågsstråle 1 gång per dag men alla är svaga mot den. Meteorregn: 3–6 meteorer. Blomsterstorm läker husdjuret. Lavaregn +50 % mot bossar. Flera attacker blir starkare av plugg samma dag/vecka (Blixt, Bladvirvel, Istapp, Vattenstråle, Bokstorm, Åskknall, Våg).
@@ -41,6 +41,8 @@ def lage(data: dict) -> str:
     dn = meriter.djur_niva(data)
     liv, mx = meriter.djur_liv(data)
     form = (d.get("form") or {}).get("namn")
+    el = d.get("element") or {}
+    rader.append(f"Element: {el.get('namn')}-djur, {meriter.TYPER.get(el.get('bra'), '')}-attacker +25 %, {meriter.TYPER.get(el.get('dalig'), '')}-attacker −25 %.")
     rader.append(f"Husdjur: {d.get('namn')} {d.get('art')}, {d.get('steg_namn')}{f' ({form})' if form else ''}, nivå {dn['niva']}, "
                  f"liv {liv}/{mx}, CP {meriter.djur_cp(data)}" + (f", {d['nasta'] - d['intjanat']} ⭐ kvar till nästa steg" if d.get("nasta") else "") + ".")
     if d.get("steg", 0) < 1:
@@ -58,14 +60,14 @@ def lage(data: dict) -> str:
     agda = [a for a in k["attacker"] if a["har"]]
     if agda:
         rader.append("Egna attacker (skada mot nuvarande monster): " + "; ".join(
-            f"{a['ikon']} {a['namn']} nivå {a['lvl']}: {a['nu']} skada, kostar {a['energi']} ⚡{', SVAGHET' if a['svag'] else ''}"
+            f"{a['ikon']} {a['namn']} nivå {a['lvl']}: {a['nu']} skada, kostar {a['energi']} ⚡{', SVAGHET' if a['svag'] else ''}{', passar djuret +25 %' if a['pass'] > 1 else ', passar inte djuret −25 %' if a['pass'] < 1 else ''}"
             f"{' – redan använd, går inte nu' if a['slut'] else ' – FÖR LITE ⚡ just nu' if a['energi'] > k['energi'] else ''}"
             for a in agda) + ".")
     else:
         rader.append("Egna attacker: inga ännu.")
     kan = [a for a in k["attacker"] if not a["har"] and a["steg"] <= d.get("steg", 0)]
     if kan:
-        rader.append("Kan köpas: " + "; ".join(f"{a['ikon']} {a['namn']} ({typ(a['typ'])}) {a['pris']} ⭐" for a in sorted(kan, key=lambda a: a["pris"])[:6]) + ".")
+        rader.append("Kan köpas: " + "; ".join(f"{a['ikon']} {a['namn']} ({typ(a['typ'])}{', passar +25 %' if a['pass'] > 1 else ', passar inte −25 %' if a['pass'] < 1 else ''}) {a['pris']} ⭐" for a in sorted(kan, key=lambda a: a["pris"])[:6]) + ".")
     dr = [f"{x['antal']} {x['ikon']}" for x in k["drycker"] if x["antal"]]
     rader.append("Drycker i ryggsäcken: " + (", ".join(dr) if dr else "inga") + f". DEF: {k['forsvar']['def']}.")
     h = meriter.vecko_handelse()

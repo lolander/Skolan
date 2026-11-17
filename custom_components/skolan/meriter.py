@@ -658,7 +658,8 @@ def djur(data: dict) -> dict | None:
     sedan = (idag - date.fromisoformat(dagar[-1])).days if dagar else 99
     humor = "glad" if sedan == 0 else "nojd" if sedan == 1 else "hungrig" if sedan == 2 else "ledsen"
     return {**d, "steg": steg, "steg_namn": DJUR_STEG[steg][1], "nasta": nasta, "intjanat": intj,
-            "humor": humor, "sedan": sedan, "form": djur_form(data, steg), "bastis": _kompis_bastis(d), "mina": husdjur_lista(data)}
+            "humor": humor, "sedan": sedan, "form": djur_form(data, steg), "bastis": _kompis_bastis(d), "mina": husdjur_lista(data),
+            "element": djur_element(d.get("art"))}
 
 
 def kolla_medaljer(data: dict) -> None:
@@ -1297,7 +1298,7 @@ def husdjur_lista(data: dict) -> list[dict]:
         t = h.get("tillvaxt", 0)
         steg = max(i for i, (grans, _n) in enumerate(DJUR_STEG) if t >= grans)
         ut.append({"id": h["id"], "art": h["art"], "namn": h["namn"], "steg": steg, "steg_namn": DJUR_STEG[steg][1],
-                   "form": _form_av(h.get("raknare", {}), steg), "aktiv": h["id"] == d.get("aktiv")})
+                   "form": _form_av(h.get("raknare", {}), steg), "aktiv": h["id"] == d.get("aktiv"), "element": djur_element(h["art"])})
     return ut
 
 
@@ -1674,6 +1675,7 @@ def karta_status(data: dict) -> dict:
         niva = attack_niva(data, at["id"]) if at["id"] in agda else 1
         slut = (at["id"] == "a_super" and k.get("super") == vecka_nu) or (at.get("per_dag") and k.get("per_dag", {}).get(at["id"]) == idag_nu)
         lista.append({**at, "har": at["id"] in agda, "nu": skada, "svag": svag, "slut": bool(slut), "lvl": niva, "lvl_max": ATTACK_NIVA_MAX,
+                      "pass": passform((m.get("djur") or {}).get("art"), at["typ"]),
                       "lvl_pris": attack_uppgradera_pris(at, niva) if at["id"] in agda else None,
                       "skada_lvl": attack_skada(at, niva),
                       "skada_nasta": attack_skada(at, niva + 1) if niva < ATTACK_NIVA_MAX else None})
@@ -2122,6 +2124,30 @@ def _motattack(n: int, mon: dict) -> int:
     return max(1, round(bas * random.uniform(0.7, 1.3)))
 
 
+# Varje husdjur har ett element. Attacker av samma typ passar bra, en typ passar dåligt. Det ger strategi i valet av djur och attacker.
+DJUR_ELEMENT = {
+    "🐶": "kraft", "🐱": "blixt", "🦊": "eld", "🐼": "natur", "🐉": "eld", "🐢": "vatten", "🦄": "kraft", "🐧": "is", "🐰": "natur", "🦖": "eld",
+    "🐻": "natur", "🐨": "vatten", "🐷": "kraft", "🐸": "vatten", "🐯": "eld", "🦁": "eld", "🐭": "blixt", "🐮": "kraft", "🐵": "blixt",
+    "🐹": "blixt", "🦉": "blixt", "🦝": "natur", "🌭": "eld", "🍉": "vatten", "🍞": "eld", "🌵": "natur", "🍕": "eld", "🍦": "is",
+    "🧦": "kraft", "🪨": "kraft", "🍌": "natur", "🐙": "vatten", "🍩": "kraft", "🥑": "natur", "🍄": "natur", "☁️": "blixt", "🦷": "is",
+    "🥔": "kraft", "👻": "is", "🤖": "blixt", "🍫": "eld",
+    "⛄": "is", "🎃": "natur", "🐣": "natur", "🍓": "vatten", "🍭": "kraft", "🕯️": "eld", "🚀": "kraft", "❤️": "kraft", "👽": "blixt", "🐲": "eld",
+}
+ELEMENT_DALIG = {"eld": "is", "is": "eld", "vatten": "eld", "natur": "blixt", "blixt": "vatten", "kraft": "natur"}
+PASSFORM_BRA, PASSFORM_DALIG = 1.25, 0.75
+
+
+def djur_element(art: str | None) -> dict:
+    el = DJUR_ELEMENT.get(art or "", "kraft")
+    return {"typ": el, "namn": TYPER[el], "bra": el, "dalig": ELEMENT_DALIG[el]}
+
+
+def passform(art: str | None, at_typ: str) -> float:
+    """1,25 om attacken är av djurets egen typ, 0,75 om den passar dåligt, annars 1."""
+    el = djur_element(art)
+    return PASSFORM_BRA if at_typ == el["bra"] else PASSFORM_DALIG if at_typ == el["dalig"] else 1.0
+
+
 def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
     """Hur mycket skada attacken gör just nu, och om monstret är svagt mot den."""
     m = _m(data)
@@ -2151,6 +2177,7 @@ def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
     h = vecko_handelse()
     if h.get("typ") == at["typ"] or (h["id"] == "boss" and mon.get("boss")):
         skada *= 1.5
+    skada *= passform((m.get("djur") or {}).get("art"), at["typ"])
     svag = mon.get("svag") == at["typ"] or bool(at.get("per_dag") and mon.get("svag"))  # regnbågen: alla monster är svaga
     return round(skada * djur_kraft(data)) * (SVAG_GANGER if svag else 1), svag
 
@@ -2453,7 +2480,7 @@ ARENA_VINST, ARENA_FORLUST = 10, 2  # arenapoäng 🏆
 ARENA_XP_VINST, ARENA_XP_FORLUST = 15, 5
 # Arenaversion för strider mellan vänner i olika hem. Höj den när regler, drag eller skada ändras
 # så att en strid mot en annan version skulle bli fel. Båda hemmen måste ha samma version för att strida.
-ARENA_VER = 4  # 2: sköldar och försvar, 3: försvarsträning, 4: kompisboost och uppgraderade attacker
+ARENA_VER = 5  # 2: sköldar och försvar, 3: försvarsträning, 4: kompisboost och uppgraderade attacker, 5: husdjurets element
 
 # Försvarsträning: när någon annan utmanar ditt husdjur styr datorn det. Tränar du det slåss det
 # smartare och tar i mer (bara när det försvarar sig, inte när du själv anfaller).
@@ -2539,7 +2566,7 @@ def rensa_kampe(k: dict, agare: str) -> tuple[dict, int]:
     if not isinstance(k, dict) or not isinstance(k.get("drag"), dict):
         raise ValueError("Vännens husdjur gick inte att läsa.")
     kompis_max = max([b.get("kraft", 0) for b in KOMPIS_BOOST.values()] or [0]) * 4  # bästis och kompisveckan ger dubbelt var
-    kraft_max = (1 + (DJUR_NIVA_MAX - 1) * 0.02) * (1 + LAG_BONUS_PER * LAG_MAX) * (1 + kompis_max) * 1.5  # 1,5: veckans händelse
+    kraft_max = (1 + (DJUR_NIVA_MAX - 1) * 0.02) * (1 + LAG_BONUS_PER * LAG_MAX) * (1 + kompis_max) * 1.5 * PASSFORM_BRA  # 1,5: veckans händelse
     kanda = {"knuff": KNUFF, **{x["id"]: x for x in ATTACKER}}
     drag, okanda = {}, 0
     for at_id, varde in list(k["drag"].items())[:30]:

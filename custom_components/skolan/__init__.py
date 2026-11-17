@@ -892,6 +892,7 @@ class StateView(HomeAssistantView):
                 "nasta_hogtid": meriter.nasta_hogtid(),
                 "djur_steg": [n for _g, n in meriter.DJUR_STEG],
                 "nytt_djur_pris": meriter.P_NYTT_DJUR,
+                "djur_element": meriter.DJUR_ELEMENT, "element_dalig": meriter.ELEMENT_DALIG, "typer": meriter.TYPER,
                 "medaljlista": [
                     {"id": m[0], "ikon": m[1], "namn": m[2], "beskrivning": m[3]} for m in meriter.MEDALJER
                 ],
