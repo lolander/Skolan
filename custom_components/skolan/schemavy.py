@@ -42,17 +42,24 @@ def sida(titel: str, lektioner: list, farger: dict | None = None, hem: str = "/"
         """Lektioner som krockar (delad tid) får dela bredden: id(lektion) -> (kolumn, antal)."""
         ut, grupp, slut = {}, [], -1
         def stang():
-            cols = []
+            cols, ej_kol = [], []
             for x in grupp:
                 st = _min(x.get("start"))
                 k = next((i for i, c in enumerate(cols) if c <= st), None)
                 if k is None:
                     cols.append(0)
+                    ej_kol.append(True)
                     k = len(cols) - 1
                 cols[k] = _min(x.get("slut")) or st + 40
+                if not x.get("ej"):
+                    ej_kol[k] = False
                 ut[id(x)] = [k, 0]
+            # andra gruppens lektioner (ej) blir smala så att barnets egen lektion får plats
+            vikt = [0.3 if e and not all(ej_kol) else 1 for e in ej_kol]
+            summa = sum(vikt)
             for x in grupp:
-                ut[id(x)][1] = len(cols)
+                k = ut[id(x)][0]
+                ut[id(x)] = [k, len(cols), sum(vikt[:k]) / summa * 100, vikt[k] / summa * 100]
         for x in sorted(dag_lekt, key=lambda y: _min(y.get("start"))):
             st, sl = _min(x.get("start")), _min(x.get("slut")) or _min(x.get("start")) + 40
             if grupp and st >= slut:
@@ -71,14 +78,14 @@ def sida(titel: str, lektioner: list, farger: dict | None = None, hem: str = "/"
     def block(x) -> str:
         st = _min(x.get("start"))
         sl = _min(x.get("slut")) or st + 40
-        k, n = plats.get(id(x), (0, 1))
+        _k, n, vp, bp = plats.get(id(x), (0, 1, 0, 100))
         h = (sl - st) * px
         sok = " ".join(str(x.get(k) or "") for k in ("namn", "sal", "larare", "info")) + " " + DAGAR[int(x["dag"])]
         detalj = " · ".join(e(v) for v in (f"{x.get('start')}–{x.get('slut') or ''}", x.get("sal"), x.get("larare")) if v)
         rader = [f"<b>{e(x['namn'])}</b>", f"<span>{detalj}</span>"]
         if x.get("info"):
             rader.append(f"<span><i>{e(x['info'])}</i></span>")
-        return (f'<div class="l{" delad" if n > 1 else ""}" data-sok="{e(sok.lower())}" style="--c:{_farg(x["namn"], farger)};top:{(st - fran) * px:.0f}px;height:{max(16, h - 2):.0f}px;left:calc({k * 100 / n:.3f}% + 2px);width:calc({100 / n:.3f}% - 4px)">'
+        return (f'<div class="l{" delad" if n > 1 else ""}{" ej" if x.get("ej") else ""}" data-sok="{e(sok.lower())}" style="--c:{_farg(x["namn"], farger)};top:{(st - fran) * px:.0f}px;height:{max(16, h - 2):.0f}px;left:calc({vp:.3f}% + 2px);width:calc({bp:.3f}% - 4px)">'
                 + "".join(rader) + "</div>")
 
     kolumner = "".join(
@@ -112,6 +119,8 @@ h1{{font-size:22px;margin:0 0 10px}}
 .l span{{font-size:11px;color:#3a4150;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 .l b{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 .l.dim{{opacity:.15}}
+.l.ej{{opacity:.35;background:repeating-linear-gradient(135deg,#fff 0 6px,#eef0f4 6px 12px);border-left-style:dashed}}
+.l.ej.delad>*{{display:none}}
 .l.delad span,.l.delad b{{white-space:normal;overflow-wrap:anywhere}}
 #traffar{{margin:0 0 10px;padding:0;list-style:none}}
 #traffar li{{padding:6px 10px;border-bottom:1px solid #eee}}
@@ -127,7 +136,7 @@ h1{{font-size:22px;margin:0 0 10px}}
 <ul id="traffar"></ul>
 <div class="schema"><div class="axel" style="height:{hojd:.0f}px">{axel}</div>{kolumner}</div>
 {utan_html}
-<div class="fot">Läxspelet · digital kopia av schemat</div>
+<div class="fot">Läxspelet · digital kopia av schemat{" · randiga lektioner = andra gruppens vid delad tid" if any(x.get("ej") for x in lekt) else ""}</div>
 <script>
 // Tillbaka: stäng fliken om den öppnades av appen, annars backa, och sist gå till startsidan.
 function tillbaka(){{

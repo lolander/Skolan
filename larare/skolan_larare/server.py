@@ -281,7 +281,7 @@ class Klass:
                         "rader": [str(x)[:200] for x in (r.get("rader") or [])][:20]} if isinstance(r, dict) else None
         e["statistik"] = svar["statistik"] if isinstance(svar.get("statistik"), dict) else None
         sc = svar.get("schema")
-        e["schema"] = [{k: str(x.get(k) or "")[:80] for k in ("start", "slut", "namn", "sal", "larare", "info")} | {"dag": int(x.get("dag") or 0)}
+        e["schema"] = [{k: str(x.get(k) or "")[:80] for k in ("start", "slut", "namn", "sal", "larare", "info")} | {"dag": int(x.get("dag") or 0), "ej": bool(x.get("ej"))}
                        for x in sc[:80] if isinstance(x, dict)] if isinstance(sc, list) else None
         if isinstance(svar.get("mottagna"), list):
             e["mottagna"] = [str(x)[:60] for x in svar["mottagna"]][-300:]

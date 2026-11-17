@@ -4062,19 +4062,26 @@ class SkolanPanel extends HTMLElement {
     for (let d = 0; d < 5; d++) {
       const dl = lekt.map((x, i) => [x, i]).filter(([x]) => x.dag === d && min(x.start) != null).sort((a, b) => min(a[0].start) - min(b[0].start));
       let grupp = [], slut = -1;
-      const stang = () => { const cols = []; grupp.forEach(([x, i]) => { const st = min(x.start); let k = cols.findIndex((c) => c <= st); if (k < 0) { cols.push(0); k = cols.length - 1; } cols[k] = min(x.slut) ?? st + 40; plats[i] = [k, 0]; }); grupp.forEach(([, i]) => { plats[i][1] = cols.length; }); };
+      const stang = () => {
+        const cols = [], ejKol = [];
+        grupp.forEach(([x, i]) => { const st = min(x.start); let k = cols.findIndex((c) => c <= st); if (k < 0) { cols.push(0); ejKol.push(true); k = cols.length - 1; } cols[k] = min(x.slut) ?? st + 40; if (!x.ej) ejKol[k] = false; plats[i] = [k, 0]; });
+        // andra gruppens lektioner (ej) blir smala så att barnets egen lektion får plats
+        const vikt = ejKol.map((e) => (e && ejKol.some((y) => !y) ? 0.3 : 1)), sum = vikt.reduce((a, b) => a + b, 0);
+        const vanster = vikt.map((_, k) => vikt.slice(0, k).reduce((a, b) => a + b, 0) / sum * 100);
+        grupp.forEach(([, i]) => { const k = plats[i][0]; plats[i] = [k, cols.length, vanster[k], vikt[k] / sum * 100]; });
+      };
       dl.forEach((p) => { const st = min(p[0].start), sl = min(p[0].slut) ?? st + 40; if (grupp.length && st >= slut) { stang(); grupp = []; slut = -1; } grupp.push(p); slut = Math.max(slut, sl); });
       if (grupp.length) stang();
     }
     const block = (x, i) => {
       const st = min(x.start), sl = min(x.slut) ?? (st != null ? st + 40 : null);
-      const [k, n] = plats[i] || [0, 1];
-      const pagar = x.dag === idag && st != null && st <= klocka && klocka < sl;
-      return `<button class="ls-lektion ${pagar ? "pagar" : ""} ${n > 1 ? "delad" : ""}" data-ls-i="${i}" data-sok="${esc(sokText(x))}" style="--c:${farg(x)};top:${(st - fran) * PX}px;height:${Math.max(18, (sl - st) * PX - 2)}px;left:calc(${(k * 100) / n}% + 1px);width:calc(${100 / n}% - 2px)">
+      const [, n, vp = 0, bp = 100] = plats[i] || [0, 1];
+      const pagar = !x.ej && x.dag === idag && st != null && st <= klocka && klocka < sl;
+      return `<button class="ls-lektion ${pagar ? "pagar" : ""} ${n > 1 ? "delad" : ""} ${x.ej ? "ej" : ""}" data-ls-i="${i}" data-sok="${esc(sokText(x))}" style="--c:${farg(x)};top:${(st - fran) * PX}px;height:${Math.max(18, (sl - st) * PX - 2)}px;left:calc(${vp}% + 1px);width:calc(${bp}% - 2px)">
         <b>${esc(x.namn)}</b>${(sl - st) * PX > 30 ? `<span>${esc(x.start)}</span>` : ""}${x.sal && (sl - st) * PX > 44 ? `<span>📍 ${esc(x.sal)}</span>` : ""}${x.info && (sl - st) * PX > 58 ? `<span>ℹ️ ${esc(x.info)}</span>` : ""}</button>`;
     };
     const utanTid = lekt.map((x, i) => [x, i]).filter(([x]) => min(x.start) == null);
-    const idagLista = lekt.map((x, i) => [x, i]).filter(([x]) => x.dag === idag && min(x.start) != null).sort((a, b) => min(a[0].start) - min(b[0].start));
+    const idagLista = lekt.map((x, i) => [x, i]).filter(([x]) => x.dag === idag && !x.ej && min(x.start) != null).sort((a, b) => min(a[0].start) - min(b[0].start));
     const red = s.kan_valja ? v.red : null; // bara föräldrar ändrar schemat
     const r = red === "ny" ? { dag: idag < 5 ? idag : 0, start: "", slut: "", namn: "", sal: "", larare: "", info: "" } : red != null ? lekt[red] : null;
     const timmar = [];
@@ -4084,6 +4091,8 @@ class SkolanPanel extends HTMLElement {
       ${idag < 5 && idagLista.length && !v.f ? `<div class="card ls-idag"><b>📅 Idag, ${VECKODAG[idag]}</b>
         ${idagLista.map(([x, i]) => { const st = min(x.start), sl = min(x.slut) ?? st + 40; const tag = klocka >= sl ? "klar" : klocka >= st ? "nu" : "";
           return `<div class="ls-idag-rad ${tag}" data-ls-i="${i}"><span class="ls-prick" style="background:${farg(x)}"></span><span>${esc(x.start)}${x.slut ? "–" + esc(x.slut) : ""}</span><b>${esc(x.namn)}</b><span class="small muted">${[x.sal && "📍 " + x.sal, x.larare && "👤 " + x.larare].filter(Boolean).map(esc).join(" · ")}</span>${tag === "nu" ? `<span class="badge">Nu</span>` : ""}</div>`; }).join("")}</div>` : ""}
+      ${s.kan_valja && lekt.some((x, i) => !x.ej && min(x.start) != null && lekt.some((y, j) => j !== i && !y.ej && y.dag === x.dag && min(y.start) != null && min(y.start) < (min(x.slut) ?? min(x.start) + 40) && (min(y.slut) ?? min(y.start) + 40) > min(x.start)))
+        ? `<div class="vantar">🔀 Vissa lektioner har delad tid. Tryck på den som gäller ${esc(s.namn)} och välj <b>✔️ Den här gäller ${esc(s.namn)}</b>.</div>` : ""}
       ${tider.length ? `<div class="ls-schema">
         <div class="ls-tider" style="height:${H}px">${timmar.map((t) => `<span style="top:${(t - fran) * PX}px">${String(t / 60).padStart(2, "0")}</span>`).join("")}</div>
         ${DAGAR.map((dn, d) => `<div class="ls-dag ${d === idag ? "idag" : ""}"><div class="ls-dag-rubrik">${dn}</div>
@@ -4099,6 +4108,13 @@ class SkolanPanel extends HTMLElement {
           <label>Sal <input id="lr-sal" value="${esc(r.sal || "")}" maxlength="20"></label></div>
         <div class="two"><label>Börjar <input id="lr-start" type="time" value="${esc(r.start || "")}"></label><label>Slutar <input id="lr-slut" type="time" value="${esc(r.slut || "")}"></label></div>
         <label>Lärare <input id="lr-larare" value="${esc(r.larare || "")}" maxlength="40"></label>
+        ${(() => { if (red === "ny" || !r) return "";
+          const st = min(r.start), sl = min(r.slut) ?? st + 40;
+          const krock = lekt.filter((y, i) => i !== red && y.dag === r.dag && min(y.start) != null && min(y.start) < sl && (min(y.slut) ?? min(y.start) + 40) > st);
+          if (!krock.length || st == null) return "";
+          const vald = !r.ej && krock.every((y) => y.ej);
+          return `<div class="ls-delad-val">${vald ? `✔️ Det här är ${esc(s.namn)}s lektion.` : r.ej ? "⚪ Den andra gruppens lektion." : `Delad tid med ${krock.map((y) => esc(y.namn)).join(", ")}. Vilken gäller ${esc(s.namn)}?`}
+            ${vald ? "" : `<button class="mini primary" id="lr-min">✔️ Den här gäller ${esc(s.namn)}</button>`}</div>`; })()}
         <label>Info <input id="lr-info" value="${esc(r.info || "")}" maxlength="80" placeholder="t.ex. ta med ombyte"></label>
         <div class="small muted">Delad tid? Lägg till en lektion till med samma tid, så hamnar de bredvid varandra.</div>
         <div class="actions"><button class="primary" id="lr-ok">${v.f ? "OK" : "Spara"}</button>${red !== "ny" ? `<button class="danger" id="lr-bort">🗑️ Ta bort</button>` : ""}<button class="ghost" id="lr-avbryt">Avbryt</button></div></div>`
@@ -5911,6 +5927,14 @@ class SkolanPanel extends HTMLElement {
       });
       on("#ls-tomt", () => { v.f = { lektioner: [], amnen: [] }; v.red = "ny"; this._render(); });
       on("#lr-avbryt", () => { v.red = null; this._render(); });
+      on("#lr-min", () => { // delad tid: den här gäller barnet, de som krockar med den gäller den andra gruppen
+        const min = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
+        const l = this._schemaLista().map((x) => ({ ...x }));
+        const x = l[v.red], st = min(x.start), sl = min(x.slut) ?? st + 40;
+        l.forEach((y, i) => { const a = min(y.start), b = min(y.slut) ?? a + 40;
+          if (i === v.red) y.ej = false; else if (y.dag === x.dag && a != null && a < sl && b > st) y.ej = true; });
+        this._schemaSpara(l);
+      });
       on("#lr-bort", () => { const l = [...this._schemaLista()]; l.splice(v.red, 1); this._schemaSpara(l); });
       on("#lr-ok", () => {
         const g = (id) => r.querySelector(id).value.trim();
@@ -7064,6 +7088,9 @@ const CSS = `
   .ls-lektion span { font-size:10px; opacity:.8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ls-lektion.pagar { box-shadow:0 0 0 2px #e53935; }
   .ls-lektion.dim, .row.dim { opacity:.18; }
+  .ls-lektion.ej { opacity:.4; border-left-style:dashed; background:repeating-linear-gradient(135deg, transparent 0 6px, rgba(127,127,127,.15) 6px 12px); }
+  .ls-lektion.ej.delad > * { display:none; }
+  .ls-delad-val { background:var(--secondary-background-color,#f5f5f5); border-radius:10px; padding:8px 10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .ls-lektion.delad { padding:2px 2px 2px 3px; border-left-width:3px; }
   .ls-lektion.delad b, .ls-lektion.delad span { white-space:normal; overflow-wrap:anywhere; text-overflow:clip; }
   .ls-red { margin-top:10px; }

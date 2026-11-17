@@ -3421,7 +3421,7 @@ def laxfraga(data: dict) -> dict | None:
     m = _m(data)
     if nu.weekday() >= 5 or nu.hour < LAXFRAGA_FRAN or m.get("laxfraga") == idag or m.get("registrerat_dag") == idag:
         return None
-    lektioner = sorted([x for x in data.get("lektioner", []) if x.get("dag") == nu.weekday()], key=lambda x: x.get("start") or "")
+    lektioner = sorted([x for x in data.get("lektioner", []) if x.get("dag") == nu.weekday() and not x.get("ej")], key=lambda x: x.get("start") or "")
     amnen = list(dict.fromkeys(x["namn"] for x in lektioner))
     schema = [s["namn"] for s in data.get("schema", []) if int(s["kommer"]) == nu.weekday()]
     return {"amnen": amnen, "schema": schema, "p": P_LAXFRAGA}
@@ -3480,7 +3480,7 @@ def material_fraga(data: dict) -> dict | None:
     nu = dt_util.now()
     idag = nu.date().isoformat()
     vanta = _m(data).get("material_vanta", {})
-    lekt = data.get("lektioner", [])
+    lekt = [x for x in data.get("lektioner", []) if not x.get("ej")]
     idag_amnen = {x.get("amne") for x in lekt if x.get("dag") == nu.weekday()}
     vecka_amnen = {x.get("amne") for x in lekt}
     saknar = [a for a in data.get("amnen", []) if not har_material(a) and vanta.get(a["id"], "") <= idag]
@@ -3520,7 +3520,7 @@ def _hhmm(n: int) -> str:
 
 
 def lektion_nu(data: dict) -> dict | None:
-    lekt = data.get("lektioner") or []
+    lekt = [x for x in data.get("lektioner") or [] if not x.get("ej")]  # bara barnets egna lektioner (inte andra gruppens vid delad tid)
     if not lekt:
         return None
     nu = dt_util.now()

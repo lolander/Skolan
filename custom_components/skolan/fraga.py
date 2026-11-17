@@ -81,7 +81,7 @@ def lage(data: dict) -> str:
         if not b["vunnen"] and b["dagar_kvar"] >= 0:
             rader.append(f"Provboss {b['ikon']} {b['namn']} ({b['prov']}): provet om {b['dagar_kvar']} dagar, {b['pluggdagar']} pluggdagar, "
                          f"{b['skada']} % skadad, svag mot {typ(b['svag'])}" + (", slutstriden är öppen" if b["oppen"] else "") + ".")
-    lekt = data.get("lektioner") or []
+    lekt = [x for x in data.get("lektioner") or [] if not x.get("ej")]
     if lekt:
         dagar = ["Mån", "Tis", "Ons", "Tor", "Fre"]
         rader.append("Lektionsschema: " + " | ".join(

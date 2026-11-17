@@ -387,7 +387,7 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict) -> dict:
             "klass": {"vecka": vecka, "poang": meriter._vecko_poang(data).get(vecka, 0)} if aktiv(s, "klasslag") else None,
             "grupp_klara": [g["id"] for g in s["grupper"] if g.get("klar")] if aktiv(s, "grupper") else [],
             "statistik": statistik(data) if aktiv(s, "statistik") else None,
-            "schema": [{k: x.get(k) for k in ("dag", "start", "slut", "namn", "sal", "larare", "info")} for x in data.get("lektioner", [])][:80] if aktiv(s, "schema") else None,
+            "schema": [{k: x.get(k) for k in ("dag", "start", "slut", "namn", "sal", "larare", "info", "ej")} for x in data.get("lektioner", [])][:80] if aktiv(s, "schema") else None,
             "mottagna": s["mottagna"][-100:], "_filer": filer}
 
 

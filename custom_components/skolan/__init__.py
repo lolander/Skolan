@@ -3409,7 +3409,7 @@ def _lektioner_spara(data: dict, body: dict) -> None:
         tid = lambda v: str(v or "").strip().replace(".", ":").zfill(5)[:5] if re.fullmatch(r"\d{1,2}[:.]\d{2}", str(v or "").strip()) else ""
         ut.append({"dag": dag, "start": tid(x.get("start")), "slut": tid(x.get("slut")), "namn": a["namn"] if a else namn,
                    "amne": a["id"] if a else None, "sal": str(x.get("sal") or "").strip()[:20], "larare": str(x.get("larare") or "").strip()[:40],
-                   "info": str(x.get("info") or "").strip()[:80]})
+                   "info": str(x.get("info") or "").strip()[:80], "ej": bool(x.get("ej"))})
     data["lektioner"] = sorted(ut, key=lambda x: (x["dag"], x["start"]))
 
 
