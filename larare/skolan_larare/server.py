@@ -37,7 +37,7 @@ FUNKTIONER = {
     "mejl": "📧 Ta emot rapporter via e-post från föräldrarna",
     "grupper": "👥 Grupper och gruppuppgifter",
     "statistik": "📈 Se statistik om hur eleverna pluggar",
-    "material": "📎 Skicka provresultat och studiematerial (PDF/foto)",
+    "material": "📎 Skicka provresultat, studiematerial och schema (PDF/foto)",
 }
 FIL_TYPER = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_FIL = 8 * 1024 * 1024  # samma gräns som i elevens Läxspelet
@@ -177,8 +177,8 @@ class Klass:
     def material_for(self, e: dict) -> list[dict]:
         ut = []
         for m in self.d["material"]:
-            if m["typ"] == "material" and (not m.get("till") or e["id"] in m["till"]):
-                ut.append({"id": m["id"], "typ": "material", "titel": m["titel"], "amne": m.get("amne", ""), "text": m.get("text", ""), "_fil": m.get("fil")})
+            if m["typ"] in ("material", "schema") and (not m.get("till") or e["id"] in m["till"]):
+                ut.append({"id": m["id"], "typ": m["typ"], "titel": m["titel"], "amne": m.get("amne", ""), "text": m.get("text", ""), "_fil": m.get("fil")})
             elif m["typ"] == "prov" and e["id"] in (m.get("resultat") or {}):
                 r = {k: v for k, v in m["resultat"][e["id"]].items() if k != "ver"}
                 ut.append({"id": self.prov_id(m, e["id"]), "prov_id": m["id"], "typ": "prov", "titel": m["titel"], "amne": m.get("amne", ""), "text": m.get("text", ""),
@@ -396,12 +396,12 @@ def bygg_app(klass: Klass) -> web.Application:
                     ta_bort_fil(b.get("fil"))
                 d["veckobrev"] = [b for b in d["veckobrev"] if b["id"] != body.get("id")]
             elif op == "material_ny":
-                typ = "prov" if body.get("typ") == "prov" else "material"
+                typ = body.get("typ") if body.get("typ") in ("prov", "schema") else "material"
                 fil = fil_info(body.get("fil"))
                 titel = str(body.get("titel") or "").strip()[:80]
                 if not titel:
                     raise ValueError("Skriv en rubrik.")
-                if typ == "material" and not fil:
+                if typ in ("material", "schema") and not fil:
                     raise ValueError("Välj en PDF eller ett foto.")
                 mx = body.get("max")
                 m = {"id": secrets.token_urlsafe(8), "typ": typ, "titel": titel, "amne": str(body.get("amne") or "").strip()[:40],
@@ -411,7 +411,7 @@ def bygg_app(klass: Klass) -> web.Application:
                      "skapad": time.strftime("%Y-%m-%d %H:%M")}
                 d["material"].append(m)
                 d["material"] = d["material"][-200:]
-                klass.logga("prov" if typ == "prov" else "material", f"{'Prov' if typ == 'prov' else 'Studiematerial'}: {titel}" + (f" ({m['amne']})" if m["amne"] else ""))
+                klass.logga("prov" if typ == "prov" else "material", f"{({'prov': 'Prov', 'schema': 'Schema'}).get(typ, 'Studiematerial')}: {titel}" + (f" ({m['amne']})" if m["amne"] else ""))
             elif op == "material_bort":
                 m = next(x for x in d["material"] if x["id"] == body.get("id"))
                 ta_bort_fil(m.get("fil"))

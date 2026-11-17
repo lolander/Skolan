@@ -1185,7 +1185,7 @@ class SkolanPanel extends HTMLElement {
       back = v.fran || { name: "hem" };
       body = this._infoView();
     } else if (v.name === "lektioner") {
-      title = "🗓️ Mitt schema";
+      title = s.kan_valja ? `🗓️ ${esc(s.namn)}s schema` : "🗓️ Mitt schema";
       back = { name: "hem" };
       body = this._lektionView();
     } else if (v.name === "veckobrev") {
@@ -1978,6 +1978,9 @@ class SkolanPanel extends HTMLElement {
     if (typ === "veckobrev")
       return `<li>📬 <b>${esc(x.titel)}</b>${x.vecka ? ` · v.${esc(x.vecka)}` : ""}${x.fil ? `<div class="small muted">Brevet är bifogat. Läxspelet läser det när du granskar.</div>` : ""}
         <button class="mini primary" data-ink-granska="${x.id}">👀 Granska och lägg in</button>${fil}${bort}</li>`;
+    if (typ === "schema")
+      return `<li>🗓️ <b>${esc(x.titel)}</b> · schema från läraren${x.text ? `<div class="small muted">${esc(x.text)}</div>` : ""}
+        <button class="mini primary" data-ink-schema="${x.id}">👀 Granska och lägg in</button>${fil}${bort}</li>`;
     const amnen = this._s.data?.amnen || [];
     const traff = amnen.find((a) => x.amne && a.namn.toLowerCase() === x.amne.toLowerCase()) || amnen.find((a) => x.amne && a.namn.toLowerCase().includes(x.amne.toLowerCase()));
     const val = `<select class="ink-amne" data-ink-amne="${x.id}">${x.amne && !traff ? `<option value="ny:${esc(x.amne)}">➕ Nytt ämne: ${esc(x.amne)}</option>` : ""}
@@ -3160,6 +3163,7 @@ class SkolanPanel extends HTMLElement {
         <div class="row static"><span>🎂 Födelsedag för ${esc(s.namn)}<br><span class="muted small">Då väntar en present i appen</span></span>
           <span><input type="date" id="fd-datum" value="${esc(s.data.fodelsedag || "")}"> <button class="mini" id="fd-spara">Spara</button></span></div>
         ${this._hejaropForalder()}
+        <button class="row foralder-knapp" id="open-lektioner" style="margin-top:4px"><span>🗓️ <b>Schema</b><br><span class="muted small">Fota ${esc(s.namn)}s lektionsschema så läser AI:n av lektioner och ämnen</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
         <h3 style="margin-top:4px">📅 Läxschema för ${esc(s.namn)}</h3>
         <p class="muted small">När läxan brukar komma. Lägger ${esc(s.namn)} in den samma dag eller dagen efter blir det +${p.i_tid} ⭐. Glosor får förhörsdagen ifylld automatiskt. ${esc(s.namn)} får en påminnelse kl. 17.15 den dagen läxan brukar komma.</p>
@@ -4035,7 +4039,7 @@ class SkolanPanel extends HTMLElement {
         <div class="actions"><button class="primary" id="ls-spara" ${this._busy ? "disabled" : ""}>Spara schemat</button>${ladda}</div>`;
     }
     if (!s.lektioner?.length)
-      return `${ladda}<p class="muted small">Fota ditt lektionsschema så läser AI:n av vilka lektioner du har och vilka ämnen du läser. Ämnen som saknas kan skapas direkt. Efter skolan frågar ditt husdjur om du fick någon läxa på lektionerna.</p>`;
+      return `${ladda}<p class="muted small">${s.kan_valja ? `Fota ${esc(s.namn)}s lektionsschema så läser AI:n av lektionerna och ämnena. Ämnen som saknas kan skapas direkt. Läraren kan också skicka schemat via inkorgen.` : "Fota ditt lektionsschema så läser AI:n av vilka lektioner du har och vilka ämnen du läser. Ämnen som saknas kan skapas direkt. Efter skolan frågar ditt husdjur om du fick någon läxa på lektionerna."}</p>`;
     return `${rutnat(s.lektioner)}<div class="actions">${ladda}</div>`;
   }
 
@@ -4376,7 +4380,7 @@ class SkolanPanel extends HTMLElement {
       <button class="info-lank" id="open-info">ℹ️ Så funkar meriter och tävlingen ›</button>
       ${this._uppdragLista()}
       <h3>📚 Ämnen</h3>
-      <button class="row" id="open-lektioner"><span>🗓️ <b>Mitt schema</b><br><span class="muted small">${this._s.lektioner?.length ? "Dina lektioner i veckan" : "Fota ditt schema så läser AI:n av dina ämnen"}</span></span><span>›</span></button>
+      <button class="row" id="open-lektioner"><span>🗓️ <b>${this._s.kan_valja ? `${esc(this._s.namn)}s schema` : "Mitt schema"}</b><br><span class="muted small">${this._s.kan_valja ? (this._s.lektioner?.length ? "Lektionerna i veckan" : "Fota schemat så läser AI:n av lektioner och ämnen") : this._s.lektioner?.length ? "Dina lektioner i veckan" : "Fota ditt schema så läser AI:n av dina ämnen"}</span></span><span>›</span></button>
       <div class="grid">
         ${amnen
           .map(
@@ -5809,6 +5813,7 @@ class SkolanPanel extends HTMLElement {
     on("#ls-spara", async () => {
       const f = v.f;
       if (!f || !(await this._act("lektioner_spara", { lektioner: f.lektioner, skapa: f.amnen.filter((a) => !a.amne && a.skapa !== false).map((a) => a.namn) }))) return;
+      if (v.inkorg) await this._skolaAct({ op: "inkorg_klar", id: v.inkorg });
       await this._load(this._s.barn);
       this._msg = { type: "ok", text: "Schemat är sparat! 🗓️" };
       this._go({ name: "lektioner" });
@@ -5874,6 +5879,15 @@ class SkolanPanel extends HTMLElement {
       const svar = await this._skolaAct({ op: b.dataset.inkTyp === "prov" ? "inkorg_prov" : "inkorg_material", id: b.dataset.inkSpara,
         ...(v.startsWith("ny:") ? { nytt_amne: v.slice(3) } : { amne: v }) }, b.dataset.inkTyp === "prov" ? "Provresultatet är sparat 📝" : "Materialet ligger nu i ämnet 📎");
       if (svar) await this._load(this._s.barn);
+    }));
+    r.querySelectorAll("[data-ink-schema]").forEach((b) => b.addEventListener("click", async () => {
+      this._msg = { type: "info", text: "AI:n läser schemat… (tar några sekunder)" };
+      this._render();
+      const svar = await this._skolaAct({ op: "inkorg_schema", id: b.dataset.inkSchema });
+      if (!svar?.forslag) return;
+      this._go({ name: "lektioner", f: svar.forslag, inkorg: b.dataset.inkSchema });
+      this._msg = { type: "ok", text: "Lärarens schema. Kolla och tryck Spara." };
+      this._render();
     }));
     r.querySelectorAll("[data-ink-granska]").forEach((b) => b.addEventListener("click", async () => {
       const svar = await this._skolaAct({ op: "inkorg_forslag", id: b.dataset.inkGranska });

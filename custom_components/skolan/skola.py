@@ -33,7 +33,7 @@ FUNKTIONER = {
     "mejl": ("📧", "Rapport via e-post", "Läxspelet mejlar en kort rapport till läraren de dagar du väljer."),
     "grupper": ("👥", "Grupper och gruppuppgifter", "Läraren kan sätta ditt barn i tillfälliga grupper med en uppgift. Barnet ser gruppen och kan bocka av uppgiften."),
     "statistik": ("📈", "Statistik till läraren", "Läraren ser hur ditt barn pluggar: dagar per vecka, förhör, prov och ämnen. Inga stjärnor, husdjur eller jämförelser."),
-    "material": ("📎", "Prov och studiematerial från läraren", "Läraren kan skicka provresultat och studiematerial (PDF eller foto). Det hamnar i din inkorg och du godkänner innan något läggs in."),
+    "material": ("📎", "Prov och studiematerial från läraren", "Läraren kan skicka provresultat, studiematerial och klassens schema (PDF eller foto). Det hamnar i din inkorg och du godkänner innan något läggs in."),
 }
 KLASSBOSS_BELONING = 30
 MAX_INKORG = 30
@@ -359,6 +359,8 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict) -> dict:
                     for x in s["inkorg"][:-1]:  # ett ändrat resultat ersätter det som inte är godkänt än
                         if x.get("prov_id") == pid and x["status"] == "ny":
                             x["status"] = "ersatt"
+            elif m.get("typ") == "schema" and m.get("fil") is not None:
+                in_korg({**post, "typ": "schema"}, m["fil"])
             elif m.get("fil") is not None:
                 in_korg({**post, "typ": "material"}, m["fil"])
     if aktiv(s, "klasslag") and isinstance(body.get("klass_status"), dict):

@@ -4008,6 +4008,21 @@ class SkolaView(HomeAssistantView):
                             await hass.async_add_executor_job(skola.spara, mapp, s)
                 data = await hass.async_add_executor_job(_load, mapp)
                 return self.json({"forslag": await hass.async_add_executor_job(_forslag_veckobrev, mapp, data, ai)})
+            elif op == "inkorg_schema":  # läraren skickade klassens schema: AI:n läser det, föräldern granskar
+                s = await hass.async_add_executor_job(skola.las, mapp)
+                b = next((x for x in s["inkorg"] if x["id"] == body.get("id") and x.get("typ") == "schema" and x.get("fil")), None)
+                if not b:
+                    raise ValueError("Schemat finns inte.")
+                try:
+                    ai = _parse_json(await _ai_las(hass, mapp / "filer" / Path(b["fil"]["namn"]).name, LEKTION_PROMPT, "Läs schema från läraren"))
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.warning("Lärarens schema kunde inte läsas: %s", err)
+                    raise ValueError("AI:n kunde inte läsa schemat. Försök igen om en stund.") from err
+                data = await hass.async_add_executor_job(_load, mapp)
+                forslag = _lektion_forslag(data, ai if isinstance(ai, dict) else {})
+                if not forslag["lektioner"] and not forslag["amnen"]:
+                    raise ValueError("AI:n hittade inget schema i filen.")
+                return self.json({"forslag": forslag})
             elif op in ("inkorg_material", "inkorg_prov"):
                 await _inkorg_spara(hass, barn, mapp, op, body)
             else:
@@ -4021,7 +4036,7 @@ class SkolaView(HomeAssistantView):
                         b = next((x for x in s["inkorg"] if x["id"] == body.get("id")), None)
                         if b:
                             b["status"] = "sparad" if op == "inkorg_klar" else "avvisad"
-                            if b.get("fil") and (op == "inkorg_avvisa" or b.get("typ", "veckobrev") == "veckobrev"):
+                            if b.get("fil") and (op == "inkorg_avvisa" or b.get("typ", "veckobrev") in ("veckobrev", "schema")):
                                 await hass.async_add_executor_job((mapp / "filer" / Path(b["fil"]["namn"]).name).unlink, True)
                     else:
                         raise ValueError("Okänd åtgärd.")
