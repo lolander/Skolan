@@ -1121,6 +1121,10 @@ class SkolanPanel extends HTMLElement {
       title = "🃏 Samlaralbum";
       back = { name: "hem" };
       body = this._albumView();
+    } else if (v.name === "fraga") {
+      title = `💬 Fråga ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
+      back = { name: "hem" };
+      body = this._fragaView();
     } else if (v.name === "lar") {
       title = `🎓 Lär ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "glosor", amne: v.amne, glosor: v.glosor };
@@ -1622,7 +1626,7 @@ class SkolanPanel extends HTMLElement {
         <div class="small">${agg ? `Ägget kläcks om ${kvar} ⭐. Gör läxor för att värma det!` : DJUR_HUMOR[d.humor](esc(d.namn))}</div>
         ${d.nasta ? `<div class="progress"><div style="width:${Math.min(100, Math.round((d.intjanat / d.nasta) * 100))}%"></div></div>
         <div class="small muted">${kvar} ⭐ kvar tills ${esc(d.namn)} växer</div>` : `<div class="small">👑 ${esc(d.namn)} är en legend!</div>`}
-        <div class="djur-knappar">${this._s.kan_valja ? "" : `<button class="mini butik-knapp" id="open-fokus">⏱️ Fokus</button>`}<button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-album">🃏 Album${this._s.kort ? ` ${this._s.kort.antal}/${this._s.kort.totalt}` : ""}</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button></div>
+        <div class="djur-knappar"><button class="mini butik-knapp" id="open-fraga">💬 Fråga ${esc(d.namn)}</button>${this._s.kan_valja ? "" : `<button class="mini butik-knapp" id="open-fokus">⏱️ Fokus</button>`}<button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-album">🃏 Album${this._s.kort ? ` ${this._s.kort.antal}/${this._s.kort.totalt}` : ""}</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button></div>
         <button class="mini butik-knapp" id="open-widget">📱 ${this._s.kan_valja ? `${esc(this._s.namn)}s husdjur` : "Husdjuret"} på hemskärmen</button>
       </div></div>`;
   }
@@ -2957,6 +2961,11 @@ class SkolanPanel extends HTMLElement {
         `Vinst ger 10 🏆 och XP till husdjuret. Förlust ger 2 🏆. Ger du upp får du inget.`,
       ])}
 
+      ${kort("💬", "Fråga husdjuret", [
+        `Undrar du något om spelet? Tryck <b>💬 Fråga</b> på husdjurskortet. Husdjuret vet hur det går för dig och ger tips om attacker, monster och ⭐.`,
+        `Läxsvar får du inte, men en ledtråd kan du få. 😉`,
+      ])}
+
       ${kort("🏠", "Husdjurets rum", [
         `Inred ditt husdjurs rum med tapet, säng, lampa, fönster och mycket mer.`,
       ])}
@@ -3861,6 +3870,50 @@ class SkolanPanel extends HTMLElement {
     return `<div class="card repetera-kort"><b>🔁 Dags att repetera!</b> <span class="small">+${REPETERA.p} ⭐ extra per lista</span>
       <div class="small muted">Det du inte har övat på länge börjar glömmas. Ett varv räcker!</div>
       ${lista.map(({ a, g, sen }) => `<button class="row" data-rep="${a.id}|${g.id}"><span><b>${esc(g.namn)}</b><br><span class="muted small">${esc(a.namn)} · övade för ${sen} dagar sedan</span></span><span>▶</span></button>`).join("")}</div>`;
+  }
+
+  // Fråga husdjuret: barnet frågar om spelet och strategier, husdjuret (AI) svarar.
+  _fragaView() {
+    const d = this._s.meriter?.djur;
+    if (!d) return `<p class="muted">Välj ett husdjur först.</p>`;
+    const k = `${this._s.barn}`;
+    this._fraga = this._fraga && this._fraga.barn === k ? this._fraga : { barn: k, historik: [] };
+    const f = this._fraga;
+    const ikon = `<div class="lar-ikon">${d.art}</div>`;
+    const bubbla = (x) => x.vem === "barn" ? `<div class="lar-rad barn"><div class="lar-bubbla">${esc(x.text)}</div></div>`
+      : `<div class="lar-rad djur">${ikon}<div class="lar-bubbla">${esc(x.text)}</div></div>`;
+    const forslag = ["Vilken attack ska jag använda nu?", "Hur får jag flest ⭐?", "Hur besegrar jag bossen?", "Vad ska jag köpa?", "Hur funkar sviten?"];
+    return `<div class="lar-chatt">${bubbla({ vem: "djur", text: `Hej! Undrar du något om spelet? Fråga mig om attacker, monster, ⭐ eller vad som helst! ${d.art}` })}
+      ${f.historik.map(bubbla).join("")}
+      ${f.tanker ? `<div class="lar-rad djur">${ikon}<div class="lar-bubbla tanker">🤔 …</div></div>` : ""}</div>
+      ${f.historik.length ? "" : `<div class="fraga-forslag">${forslag.map((q) => `<button class="mini" data-fraga="${esc(q)}">${esc(q)}</button>`).join("")}</div>`}
+      <div class="lar-input"><textarea id="fraga-text" rows="2" maxlength="300" placeholder="Skriv din fråga…" ${f.tanker ? "disabled" : ""}></textarea>
+        <button class="primary" id="fraga-skicka" ${f.tanker ? "disabled" : ""}>💬 Fråga</button></div>`;
+  }
+
+  async _fragaSkicka(fraga) {
+    const f = this._fraga, el = this.shadowRoot.querySelector("#fraga-text"), text = (fraga || el?.value || "").trim();
+    if (!f || !text || f.tanker) return;
+    f.historik.push({ vem: "barn", text });
+    f.tanker = true;
+    this._render();
+    try {
+      const res = await this._hass.fetchWithAuth("/api/skolan/fraga", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barn: this._s.barn, text, historik: f.historik.slice(0, -1) }) });
+      const x = await res.json();
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      f.historik.push({ vem: "djur", text: x.svar });
+      f.historik = f.historik.slice(-20);
+    } catch (e) {
+      f.historik.pop();
+      this._msg = { type: "error", text: e.message || String(e) };
+    } finally {
+      f.tanker = false;
+      this._render();
+      const c = this.shadowRoot.querySelector(".lar-chatt");
+      c?.lastElementChild?.scrollIntoView({ block: "nearest" });
+      if (!f.tanker) this.shadowRoot.querySelector("#fraga-text")?.focus();
+    }
   }
 
   // Lär husdjuret: barnet förklarar, husdjuret (AI) frågar vidare eller tackar.
@@ -5504,6 +5557,10 @@ class SkolanPanel extends HTMLElement {
     on("#kort-album", () => kortSett(true));
     on("#lar-start", () => this._go({ name: "lar", amne: v.amne, glosor: v.glosor }));
     on("#lar-skicka", () => this._larSkicka());
+    on("#open-fraga", () => this._go({ name: "fraga" }));
+    on("#fraga-skicka", () => this._fragaSkicka());
+    r.querySelectorAll("[data-fraga]").forEach((b) => b.addEventListener("click", () => this._fragaSkicka(b.dataset.fraga)));
+    r.querySelector("#fraga-text")?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this._fragaSkicka(); } });
     on("#lar-igen", () => this._go({ name: "lar", amne: this._view.amne, glosor: this._view.glosor }));
     on("#lar-klar", () => this._go({ name: "glosor", amne: this._view.amne, glosor: this._view.glosor }));
     r.querySelectorAll("[data-fokus]").forEach((b) => b.addEventListener("click", async () => { if (await this._act("fokus_start", { min: Number(b.dataset.fokus) })) await this._load(this._s.barn); this._render(); }));
@@ -6506,6 +6563,8 @@ const CSS = `
   .lar-rad.barn .lar-bubbla { background:#e3f2fd; color:#0d47a1; border-bottom-right-radius:4px; }
   .lar-bubbla.tanker { animation:andas 1s ease-in-out infinite; }
   .lar-input { display:flex; flex-direction:column; gap:6px; }
+  .fraga-forslag { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .fraga-forslag .mini { border-radius:14px; }
   .lar-beloning { font-size:28px; font-weight:800; color:#2e7d32; animation:gs-pop .6s; }
   .fokus-djur { position:relative; display:inline-block; }
   .fokus-djur svg { width:140px; height:140px; }
