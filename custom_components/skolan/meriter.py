@@ -276,6 +276,17 @@ DJURBUTIK = [
 ]
 SKOLAVSLUTNING: dict[int, str] = {}  # t.ex. {2027: "2027-06-11"} om skolan slutar en annan dag än fredag v.24
 # Saker som BARA finns i paket (säljs inte styckvis)
+# Gåvor som bara går att få: födelsedagen och julkalendern
+GAVO_SAKER = [
+    {"id": "g_partyhatt", "typ": "hatt", "ikon": "🥳", "namn": "Födelsedagshatten"},
+    {"id": "g_tomteluva", "typ": "hatt", "ikon": "🎅", "namn": "Tomteluvan"},
+    {"id": "g_luciakrona", "typ": "hatt", "ikon": "🕯️", "namn": "Luciakronan"},
+    {"id": "g_snogubbe", "typ": "kompis", "ikon": "⛄", "namn": "Snögubben"},
+    {"id": "g_pepparkaka", "typ": "kompis", "ikon": "🍪", "namn": "Pepparkaksgubben"},
+    {"id": "g_julgran", "typ": "bakgrund", "ikon": "🎄", "namn": "Julgranen", "bg": "radial-gradient(circle at 50% 20%,#fff59d,#2e7d32 45%,#1b5e20)", "fg": "#fff", "deko": "🎁"},
+    {"id": "g_snofall", "typ": "effekt", "ikon": "❄️", "namn": "Snöfall", "partikel": "❄️"},
+]
+
 PAKET_SAKER = [
     {"id": "x_julstjarna", "typ": "hatt", "ikon": "🌟", "namn": "Julstjärna"},
     {"id": "x_juleff", "typ": "effekt", "ikon": "🎁", "namn": "Klappregn", "partikel": "🎁"},
@@ -374,11 +385,21 @@ def butik_lista() -> list[dict]:
         {**x, "pris": 0, "steg": 0, "bara_paket": True, "kan_kopas": False} for x in PAKET_SAKER] + [
         {**x, "kan_kopas": True} for x in RUM_SAKER] + [
         {**x, "pris": 0, "steg": 0, "bara_paket": True, "kalla": "pass", "kan_kopas": False} for x in PASS_SAKER] + [
-        {**b["sak"], "pris": 0, "steg": 0, "bara_paket": True, "kalla": "boss", "kan_kopas": False} for b in BOSSAR]
+        {**b["sak"], "pris": 0, "steg": 0, "bara_paket": True, "kalla": "boss", "kan_kopas": False} for b in BOSSAR] + [
+        {**x, "pris": 0, "steg": 0, "bara_paket": True, "kalla": "gava", "kan_kopas": False} for x in GAVO_SAKER]
+
+
+def ge_sak(data: dict, sak_id: str) -> bool:
+    """Lägg en gåva bland husdjurets saker (om barnet har ett husdjur och inte redan har saken)."""
+    d = _m(data).get("djur")
+    if not d or sak_id in d.setdefault("agt", []):
+        return False
+    d["agt"].append(sak_id)
+    return True
 
 
 def _sak(sak_id: str) -> dict | None:
-    alla = DJURBUTIK + PAKET_SAKER + RUM_SAKER + PASS_SAKER + [b["sak"] for b in BOSSAR]
+    alla = DJURBUTIK + PAKET_SAKER + RUM_SAKER + PASS_SAKER + GAVO_SAKER + [b["sak"] for b in BOSSAR]
     return next((x for x in alla if x["id"] == sak_id), None)
 
 
@@ -1719,6 +1740,7 @@ KOMPIS_BOOST = {
     "k_alien": {"kraft": 0.07, "liv": 6}, "k_drake": {"kraft": 0.10, "liv": 12}, "k_enhorning": {"kraft": 0.12, "liv": 20},
     "ps_nalle": {"liv": 10}, "ps_valp": {"kraft": 0.04}, "ps_katt": {"kraft": 0.03, "liv": 4},
     "b_zombie": {"liv": 15}, "b_spoke": {"kraft": 0.06},
+    "g_snogubbe": {"liv": 10}, "g_pepparkaka": {"kraft": 0.04},
 }
 
 
@@ -1729,6 +1751,7 @@ KOMPIS_BASTISAR = {
     "k_spoke": "👻🦉🦝", "k_robot": "🤖🦖🪨", "k_alien": "☁️🤖🦄", "k_drake": "🐉🦖🐯🦁",
     "k_enhorning": "🦄🍦🍩☁️", "ps_nalle": "🐻🐼🐨", "ps_valp": "🐶🦊🧦", "ps_katt": "🐱🐭🐯🦁",
     "b_zombie": "🦷🥔👻", "b_spoke": "👻🦝🐱",
+    "g_snogubbe": "🐧☁️🦉", "g_pepparkaka": "🍩🍦🍞🍪",
 }
 
 

@@ -358,3 +358,120 @@ def fokus_klar(data: dict) -> int:
 
 def fokus_avbryt(data: dict) -> None:
     meriter._m(data).pop("fokus", None)
+
+
+# ---------- husdjurets veckobrev till föräldrarna ----------
+def husdjurets_brev(data: dict, namn: str) -> dict | None:
+    """Ett kort brev från husdjuret om veckan som gått (de senaste 7 dagarna)."""
+    m = meriter._m(data)
+    d = m.get("djur")
+    idag = dt_util.now().date()
+    fran = (idag - timedelta(days=6)).isoformat()
+    djur = f"{d.get('art', '')} {d.get('namn', 'Husdjuret')}" if d else "🐾 Husdjuret"
+    dagar = sorted(x for x in m.get("ovningsdagar", []) if x >= fran)
+    stj = sum(x["p"] for x in m["logg"] if x["p"] > 0 and x.get("ikon") not in meriter.EJ_SKADA and x["tid"][:10] >= fran)
+    rader = []
+    if dagar:
+        rader.append(f"{namn} har pluggat {len(dagar)} av de senaste 7 dagarna och tjänat {stj} ⭐.")
+    else:
+        rader.append(f"Jag har saknat {namn} den här veckan. Det har inte blivit något plugg. 🥺")
+    fh = [f for f in data.get("forhor", []) if f.get("status") == "klart" and (f.get("klart") or "")[:10] >= fran]
+    for f in fh[-3:]:
+        n = len(f.get("fragor", []))
+        r = sum(1 for x in f.get("svar", []) if x.get("ratt"))
+        rader.append(f"📋 Förhöret {f.get('namn', '')}: {r} av {n} rätt." + (" Så bra! 🎉" if n and r / n >= 0.9 else ""))
+    ovat = sorted({g["namn"] for a in data.get("amnen", []) for g in a.get("glosor", []) if any(x >= fran for x in g.get("ovat_dagar", []))})
+    if ovat:
+        rader.append("📝 Vi har övat på " + ", ".join(ovat[:5]) + ("…" if len(ovat) > 5 else "") + ".")
+    nya = [x for x in rekord(data) if x["ny"]]
+    if nya:
+        rader.append("🏅 Nytt rekord: " + ", ".join(f"{x['namn'].lower()} ({x['varde']})" for x in nya[:3]) + "!")
+    streak = meriter._streak(m.get("ovningsdagar", []))
+    if streak >= 3:
+        rader.append(f"🔥 Just nu {streak} dagar i rad!")
+    k = m.get("karta")
+    if k:
+        rader.append(f"🗺️ Tillsammans har vi kommit till nivå {k.get('niva', 1)} på kartan.")
+    rader.append("Säg gärna till " + namn + " att jag är stolt! 💛" if dagar else "Kanske kan ni plugga lite tillsammans i helgen? 💛")
+    return {"fran": djur, "titel": f"Veckobrev från {djur}", "rader": rader, "period": f"{fran} – {idag.isoformat()}"}
+
+
+# ---------- födelsedag ----------
+P_FODELSEDAG = 50
+
+
+def fodelsedag_idag(data: dict) -> dict | None:
+    f = data.get("fodelsedag") or ""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", f):
+        return None
+    idag = dt_util.now().date()
+    if f[5:] != idag.isoformat()[5:]:
+        return None
+    nyckel = f"fodelsedag:{idag.year}"
+    return {"alder": idag.year - int(f[:4]), "hamtad": nyckel in meriter._m(data)["nycklar"], "p": P_FODELSEDAG}
+
+
+def fodelsedag_hamta(data: dict) -> None:
+    f = fodelsedag_idag(data)
+    if not f:
+        raise ValueError("Det är inte din födelsedag idag.")
+    if meriter.ge(data, P_FODELSEDAG, f"🎂 Grattis på {f['alder']}-årsdagen!", f"fodelsedag:{dt_util.now().year}", "🎂"):
+        meriter.ge_sak(data, "g_partyhatt")
+
+
+# ---------- julkalendern: en lucka om dagen 1–24 december ----------
+# Vad som finns bakom luckorna. ("p", ⭐) / ("kort",) / ("sak", id) / ("energi", antal)
+LUCKOR = {
+    1: [("p", 10)], 2: [("kort",)], 3: [("energi", 3)], 4: [("p", 15)], 5: [("kort",)], 6: [("sak", "g_pepparkaka")],
+    7: [("p", 10)], 8: [("energi", 3)], 9: [("kort",)], 10: [("p", 15)], 11: [("kort",)], 12: [("p", 20)],
+    13: [("sak", "g_luciakrona"), ("p", 10)], 14: [("kort",)], 15: [("energi", 5)], 16: [("p", 15)], 17: [("kort",)],
+    18: [("sak", "g_snogubbe")], 19: [("p", 20)], 20: [("kort",), ("kort",)], 21: [("sak", "g_snofall")], 22: [("p", 25)],
+    23: [("sak", "g_julgran")], 24: [("sak", "g_tomteluva"), ("p", 100), ("kort", "legendarisk")],
+}
+
+
+def _jul_aktiv() -> bool:
+    d = dt_util.now().date()
+    return d.month == 12 and d.day <= 31
+
+
+def julkalender(data: dict) -> dict | None:
+    if not _jul_aktiv():
+        return None
+    idag = dt_util.now().date()
+    oppna = meriter._m(data).get("jul", {}).get(str(idag.year), {})
+    return {"dag": idag.day, "ar": idag.year, "luckor": [{"dag": n, "oppnad": str(n) in oppna, "kan": n <= idag.day,
+                                                          "innehall": oppna.get(str(n))} for n in range(1, 25)]}
+
+
+def oppna_lucka(data: dict, dag: int) -> list[str]:
+    """Öppna en lucka (även en missad). Returnerar vad som fanns bakom den."""
+    import random
+
+    idag = dt_util.now().date()
+    if not _jul_aktiv() or not 1 <= dag <= 24 or dag > idag.day:
+        raise ValueError("Den luckan går inte att öppna än. 🎄")
+    m = meriter._m(data)
+    oppna = m.setdefault("jul", {}).setdefault(str(idag.year), {})
+    if str(dag) in oppna:
+        raise ValueError("Den luckan är redan öppnad.")
+    ut = []
+    for x in LUCKOR[dag]:
+        if x[0] == "p":
+            meriter.ge(data, x[1], f"🎄 Lucka {dag}", f"jul:{idag.year}:{dag}", "🎁")
+            ut.append(f"+{x[1]} ⭐")
+        elif x[0] == "energi":
+            k = meriter._karta(data)
+            k["energi"] = min(meriter.ENERGI_MAX, k.get("energi", 0) + x[1])
+            ut.append(f"+{x[1]} ⚡")
+        elif x[0] == "sak":
+            meriter.ge_sak(data, x[1])
+            s = meriter._sak(x[1]) or {}
+            ut.append(f"{s.get('ikon', '🎁')} {s.get('namn', 'En överraskning')}")
+        elif x[0] == "kort":
+            vid = meriter.VARLDAR[random.randint(0, min(len(meriter.VARLDAR) - 1, (meriter._karta(data).get("niva", 1) - 1) // meriter.NIVA_PER_VARLD + 1))]["id"]
+            kid = f"{vid}:9" if len(x) > 1 else f"{vid}:{random.randint(0, 8)}"
+            meriter._kort_ge(data, kid)
+            ut.append(f"🃏 {meriter._kort_info(kid)['namn']}")
+    oppna[str(dag)] = ut
+    return ut

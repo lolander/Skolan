@@ -1614,6 +1614,7 @@ class SkolanPanel extends HTMLElement {
     k_enhorning: "Älskar sötsaker och allt som är magiskt.", ps_nalle: "Kramas helst med andra björnar.",
     ps_valp: "Vem har snott min strumpa?!", ps_katt: "Gillar kattdjur… och kanske något litet att jaga.",
     b_zombie: "Gillar sånt som är lite läskigt eller ruttet.", b_spoke: "Letar efter andra som är vakna på natten.",
+    g_snogubbe: "Vill helst vara där det är kallt… eller högt uppe i himlen.", g_pepparkaka: "Trivs bäst bland andra bakverk och sötsaker.",
   };
 
   // En retsam rad om att kompisar kan göra mer än att bara hänga med. Byts varje dag.
@@ -2972,6 +2973,10 @@ class SkolanPanel extends HTMLElement {
       const butik = s.butik?.beloningar || [];
       foralder = `
         ${s.skola ? `<button class="row foralder-knapp" id="open-skola" style="margin-top:4px"><span>🏫 <b>Skolan och läraren</b>${s.skola.inkorg?.length ? ` <span class="badge">📬 ${s.skola.inkorg.length}</span>` : ""}<br><span class="muted small">Välj vad läraren får, veckobrev från läraren, rapport via e-post och klasslag</span></span><span>›</span></button>` : ""}
+        ${s.djurbrev ? `<div class="card djurbrev"><b>📬 ${esc(s.djurbrev.titel)}</b><div class="small muted">${esc(s.djurbrev.period)}</div>
+          ${s.djurbrev.rader.map((x) => `<p>${esc(x)}</p>`).join("")}</div>` : ""}
+        <div class="row static"><span>🎂 Födelsedag för ${esc(s.namn)}<br><span class="muted small">Då väntar en present i appen</span></span>
+          <span><input type="date" id="fd-datum" value="${esc(s.data.fodelsedag || "")}"> <button class="mini" id="fd-spara">Spara</button></span></div>
         ${this._hejaropForalder()}
         <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
         <h3 style="margin-top:4px">📅 Läxschema för ${esc(s.namn)}</h3>
@@ -3720,6 +3725,27 @@ class SkolanPanel extends HTMLElement {
     }
   }
 
+  // Födelsedagen: en present att öppna (⭐ och Födelsedagshatten).
+  _fodelsedagKort() {
+    const f = this._s.fodelsedag;
+    if (!f || this._s.kan_valja) return "";
+    return `<div class="card fodelsedag-kort"><div class="fd-tarta">🎂</div>
+      <div class="fd-text">Grattis på födelsedagen, ${esc(this._s.namn)}!<br><small>Du fyller ${f.alder} år idag! 🎉</small></div>
+      ${f.hamtad ? `<div class="small">🥳 Du har fått Födelsedagshatten och +${f.p} ⭐. Ha en fantastisk dag!</div>` : `<button class="primary fd-knapp" id="fd-oppna">🎁 Öppna din present</button>`}</div>`;
+  }
+
+  // Julkalendern 1–24 december.
+  _julKort() {
+    const j = this._s.jul;
+    if (!j || this._s.kan_valja) return "";
+    const barn = !this._s.kan_valja;
+    return `<div class="card jul-kort"><div class="jul-rubrik">🎄 Julkalendern <span class="small">${j.dag <= 24 ? `${24 - j.dag} dagar kvar till julafton` : "God jul! 🎅"}</span></div>
+      <div class="jul-luckor">${j.luckor.map((l) => l.oppnad
+        ? `<div class="lucka oppnad" title="${esc((l.innehall || []).join(", "))}"><span>${l.dag}</span>${(l.innehall || [])[0]?.split(" ")[0] || "🎁"}</div>`
+        : l.kan && barn ? `<button class="lucka kan ${l.dag === 24 ? "julafton" : ""}" data-lucka="${l.dag}">${l.dag}</button>`
+        : `<div class="lucka last ${l.dag === 24 ? "julafton" : ""}">${l.dag}</div>`).join("")}</div></div>`;
+  }
+
   // Nya samlarkort: vänds upp när barnet trycker.
   _kortRuta(k, dold = false) {
     return `<div class="samlarkort ${k.sallsynt} ${dold ? "dold" : ""}" style="--farg:${(this._s.kort?.album || []).find((a) => a.id === k.varld)?.farg || "#5c6bc0"}">
@@ -3991,6 +4017,8 @@ class SkolanPanel extends HTMLElement {
     const amnen = this._s.data.amnen || [];
     return `
       ${this._s.kan_valja ? `<button class="row foralder-knapp" id="open-foralder"><span>⚙️ <b>Föräldrar</b><br><span class="muted small">Läxschema, bonus och belöningsbutik för ${esc(this._s.namn)}</span></span><span>›</span></button>` : ""}
+      ${this._fodelsedagKort()}
+      ${this._julKort()}
       ${this._nyaKort()}
       ${this._hejaropKort()}
       ${this._dagensKort()}
@@ -5376,6 +5404,25 @@ class SkolanPanel extends HTMLElement {
     on("#sk-kopiera", () => navigator.clipboard?.writeText(this._s.skola?.lank || "").then(() => { this._msg = { type: "ok", text: "Klasslänken är kopierad 📋" }; this._render(); }));
     r.querySelectorAll("[data-rep]").forEach((b) => b.addEventListener("click", () => { const [am, gl] = b.dataset.rep.split("|"); this._go({ name: "glosor", amne: am, glosor: gl }); }));
     on("#open-fokus", () => this._go({ name: "fokus" }));
+    on("#fd-spara", async () => { if (await this._act("fodelsedag_satt", { datum: $("#fd-datum")?.value || "" })) this._msg = { type: "ok", text: "🎂 Födelsedagen är sparad." }; this._render(); });
+    on("#fd-oppna", async () => {
+      if (await this._act("fodelsedag_hamta", {})) {
+        this._fx({ text: "🎂 GRATTIS!", sub: `${esc(this._s.namn)} fyller ${this._s.fodelsedag?.alder} år!`, emojis: ["🎂", "🎉", "🎁", "🥳", "🎈"], antal: 44, konfetti: true, farg: "#ec407a", ljud: true });
+        await this._load(this._s.barn);
+      }
+      this._render();
+    });
+    r.querySelectorAll("[data-lucka]").forEach((b) => b.addEventListener("click", async () => {
+      const dag = Number(b.dataset.lucka);
+      b.classList.add("oppnas");
+      if (await this._act("lucka", { dag })) {
+        await this._load(this._s.barn);
+        const l = this._s.jul?.luckor?.find((x) => x.dag === dag);
+        const inn = l?.innehall || [];
+        this._fx({ text: dag === 24 ? "🎅 GOD JUL!" : `🎄 Lucka ${dag}`, sub: inn.join(" · "), emojis: ["🎁", "❄️", "⭐", "🎄", "✨"], antal: dag === 24 ? 50 : 28, konfetti: dag === 24, farg: "#c62828", ljud: dag === 24 });
+      }
+      this._render();
+    }));
     on("#open-album", () => this._go({ name: "album" }));
     on("#kort-vand", () => {
       const nya = this._s.kort?.nya || [];
@@ -6425,6 +6472,24 @@ const CSS = `
   .kort-vand.vand .samlarkort.ovanlig { animation:kort-ovanlig 1.6s ease-in-out .8s infinite; }
   @keyframes kort-ovanlig { 50% { box-shadow:0 0 20px #4fc3f7; } }
   .kort-nya { background:linear-gradient(135deg,#ede7f6,#fff8e1); color:#311b92; }
+  .fodelsedag-kort { text-align:center; background:linear-gradient(135deg,#fce4ec,#fff9c4,#e1f5fe); color:#880e4f; }
+  .fd-tarta { font-size:64px; animation:hopp 1.2s ease-in-out infinite; }
+  .fd-text { font-size:22px; font-weight:800; margin:4px 0 10px; }
+  .fd-text small { font-size:15px; font-weight:600; }
+  .fd-knapp { animation:bastis 1.4s ease-in-out infinite; }
+  .jul-kort { background:linear-gradient(160deg,#b71c1c,#1b5e20); color:#fff; }
+  .jul-rubrik { font-weight:800; font-size:17px; margin-bottom:8px; }
+  .jul-luckor { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; }
+  .lucka { aspect-ratio:1; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; font-weight:800; font-size:16px;
+    border:2px dashed rgba(255,255,255,.5); background:rgba(255,255,255,.08); color:#fff; padding:0; }
+  .lucka.kan { background:linear-gradient(135deg,#ffd54f,#ff8f00); color:#b71c1c; border:2px solid #fff; cursor:pointer; animation:bastis 1.6s ease-in-out infinite; }
+  .lucka.julafton { grid-column:span 2; aspect-ratio:auto; font-size:20px; }
+  .lucka.oppnad { background:rgba(255,255,255,.9); color:#1b5e20; border-style:solid; font-size:20px; }
+  .lucka.oppnad span { font-size:9px; }
+  .lucka.last { opacity:.55; }
+  .lucka.oppnas { animation:vand .6s; }
+  .djurbrev { background:#fffde7; color:#5d4037; font-family:Georgia,serif; }
+  .djurbrev p { margin:6px 0; }
   .syskon-kort { background:linear-gradient(135deg,#e8eaf6,#e0f7fa); color:#1a237e; }
   .syskon-kort.klar { background:linear-gradient(135deg,#e8f5e9,#c8e6c9); color:#1b5e20; }
   .sy-rubrik { font-weight:700; font-size:13px; opacity:.8; }

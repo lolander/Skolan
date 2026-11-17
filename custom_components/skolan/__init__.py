@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.57.0"
+VERSION = "1.58.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -871,6 +871,8 @@ class StateView(HomeAssistantView):
                 "topplista": topplista,
                 "dagens": dagens.dagens(data, next((b["namn"] for b in conf["barn"] if b["id"] == barn), "")),
                 "handelse": meriter.vecko_handelse(), "rekord": dagens.rekord(data), "prat": dagens.prat(data), "syskon": syskon_st, "kort": meriter.kort_status(data),
+                "fodelsedag": dagens.fodelsedag_idag(data), "jul": dagens.julkalender(data),
+                "djurbrev": dagens.husdjurets_brev(data, next((b["namn"] for b in conf["barn"] if b["id"] == barn), "")) if parent else None,
                 "djurlista": meriter.DJUR,
                 "djurbutik": meriter.butik_lista(),
                 "pass": meriter.pass_status(data),
@@ -1141,7 +1143,7 @@ def _ebok_fil(bok_id: str) -> str:
 FORALDER_OPS = {
     "schema_spara", "bonus", "los_in", "butik_lagg_till", "butik_ta_bort",
     "manuell_uppdrag", "manuell_schema", "manuell_forhor", "manuell_ovning", "manuell_plugg", "angra_ovning",
-    "hejarop_ny", "hejarop_bort",
+    "hejarop_ny", "hejarop_bort", "fodelsedag_satt",
 }
 
 
@@ -1183,6 +1185,20 @@ def _apply(data: dict, body: dict) -> list[str]:
             dagens.fokus_klar(data)
         else:
             dagens.fokus_avbryt(data)
+        return []
+    if op == "fodelsedag_satt":
+        f = str(body.get("datum") or "")
+        if f and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", f):
+            raise ValueError("Välj ett datum.")
+        data["fodelsedag"] = f
+        return []
+    if op in ("fodelsedag_hamta", "lucka"):
+        if not body.get("_barn"):
+            raise ValueError("Det är barnet som öppnar.")
+        if op == "fodelsedag_hamta":
+            dagens.fodelsedag_hamta(data)
+        else:
+            dagens.oppna_lucka(data, int(body.get("dag") or 0))
         return []
     if op == "kort_sett":
         if body.get("_barn"):
