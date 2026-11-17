@@ -38,7 +38,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import dagens, fraga, meriter, skola, tillsammans, vanner
+from . import dagens, fraga, meriter, schemavy, skola, tillsammans, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -160,7 +160,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -1219,7 +1219,7 @@ def _ebok_fil(bok_id: str) -> str:
 FORALDER_OPS = {
     "schema_spara", "bonus", "los_in", "butik_lagg_till", "butik_ta_bort",
     "manuell_uppdrag", "manuell_schema", "manuell_forhor", "manuell_ovning", "manuell_plugg", "angra_ovning",
-    "hejarop_ny", "hejarop_bort", "fodelsedag_satt",
+    "hejarop_ny", "hejarop_bort", "fodelsedag_satt", "lektioner_spara",
 }
 
 
@@ -3339,7 +3339,8 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
 LEKTION_PROMPT = (
     "Det här är ett foto av en elevs lektionsschema (skolschema för en vecka). Läs av alla lektioner måndag till fredag. "
     'Svara ENDAST med giltig JSON: {"lektioner": [{"dag": 0 för måndag, 1 tisdag, 2 onsdag, 3 torsdag, 4 fredag, '
-    '"start": "HH:MM", "slut": "HH:MM", "amne": ämnets namn}], "amnen": [varje skolämne i schemat en gång]}. '
+    '"start": "HH:MM", "slut": "HH:MM", "amne": ämnets namn, "sal": sal/klassrum eller "", "larare": lärarens namn eller förkortning eller "", '
+    '"info": annan kort text i rutan (t.ex. grupp, "jämn vecka", "ta med ombyte") eller ""}], "amnen": [varje skolämne i schemat en gång]}. '
     "Skriv ämnena med vanliga svenska namn och stor första bokstav, och skriv ut förkortningar "
     "(t.ex. Ma = Matte, Sv = Svenska, En = Engelska, Idh = Idrott, Tk = Teknik, Hkk = Hemkunskap, Mu = Musik, Sl = Slöjd, "
     "Bi = Biologi, Fy = Fysik, Ke = Kemi, Ge = Geografi, Hi = Historia, Re = Religion, Sh = Samhällskunskap, Mod = Moderna språk). "
@@ -3374,7 +3375,8 @@ def _lektion_forslag(data: dict, ai: dict) -> dict:
             continue
         tid = lambda v: v if re.fullmatch(r"\d{1,2}[:.]\d{2}", str(v or "").strip()) else ""
         lektioner.append({"dag": dag, "start": tid(x.get("start")).replace(".", ":").zfill(5) if tid(x.get("start")) else "",
-                          "slut": tid(x.get("slut")).replace(".", ":").zfill(5) if tid(x.get("slut")) else "", "namn": namn})
+                          "slut": tid(x.get("slut")).replace(".", ":").zfill(5) if tid(x.get("slut")) else "", "namn": namn,
+                          "sal": str(x.get("sal") or "").strip()[:20], "larare": str(x.get("larare") or "").strip()[:40], "info": str(x.get("info") or "").strip()[:80]})
     lektioner.sort(key=lambda x: (x["dag"], x["start"]))
     namn = list(dict.fromkeys([str(a).strip()[:MAX_NAME] for a in (ai.get("amnen") or []) if str(a).strip()] + [x["namn"] for x in lektioner]))
     amnen = data.get("amnen", [])
@@ -3402,9 +3404,27 @@ def _lektioner_spara(data: dict, body: dict) -> None:
         if not 0 <= dag <= 4 or not namn:
             continue
         a = _amne_match(amnen, namn)
-        ut.append({"dag": dag, "start": str(x.get("start") or "")[:5], "slut": str(x.get("slut") or "")[:5], "namn": a["namn"] if a else namn,
-                   "amne": a["id"] if a else None})
+        tid = lambda v: str(v or "").strip().replace(".", ":").zfill(5)[:5] if re.fullmatch(r"\d{1,2}[:.]\d{2}", str(v or "").strip()) else ""
+        ut.append({"dag": dag, "start": tid(x.get("start")), "slut": tid(x.get("slut")), "namn": a["namn"] if a else namn,
+                   "amne": a["id"] if a else None, "sal": str(x.get("sal") or "").strip()[:20], "larare": str(x.get("larare") or "").strip()[:40],
+                   "info": str(x.get("info") or "").strip()[:80]})
     data["lektioner"] = sorted(ut, key=lambda x: (x["dag"], x["start"]))
+
+
+class SchemaSidaView(HomeAssistantView):
+    """Den digitala kopian av schemat som egen sida: sök och skriv ut. Öppnas via en signerad länk."""
+
+    url = "/api/skolan/schema_sida"
+    name = "api:skolan:schema_sida"
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        barn = _barn_for(hass, request, request.query.get("barn"))
+        data = await hass.async_add_executor_job(_load, _dir(hass, barn))
+        namn = next(b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn)
+        farger = {a["namn"].lower(): a.get("farg") for a in data.get("amnen", [])}
+        sida = schemavy.sida(f"{namn}s schema", data.get("lektioner", []), farger)
+        return web.Response(text=sida, content_type="text/html", headers={"Cache-Control": "no-store"})
 
 
 class LektionView(HomeAssistantView):
@@ -3415,6 +3435,8 @@ class LektionView(HomeAssistantView):
 
     async def post(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
+        if not _ar_foralder(hass, request):  # bara föräldrar (och läraren via inkorgen) ändrar schemat
+            raise web.HTTPForbidden
         form = await request.post()
         barn = _barn_for(hass, request, form.get("barn"))
         field = form.get("file")

@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 
 from aiohttp import ClientSession, ClientTimeout, web
 
-from . import VERSION
+from . import VERSION, schemavy
 
 _LOGGER = logging.getLogger("skolan_larare")
 STD_PORT = 8770
@@ -38,6 +38,7 @@ FUNKTIONER = {
     "grupper": "👥 Grupper och gruppuppgifter",
     "statistik": "📈 Se statistik om hur eleverna pluggar",
     "material": "📎 Skicka provresultat, studiematerial och schema (PDF/foto)",
+    "schema": "🗓️ Se elevernas digitala scheman",
 }
 FIL_TYPER = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_FIL = 8 * 1024 * 1024  # samma gräns som i elevens Läxspelet
@@ -192,7 +193,7 @@ class Klass:
             elever.append({"id": e["id"], "namn": e.get("namn") or "?", "senast": e.get("senast", ""), "fel": e.get("fel", ""),
                            "foralder": e.get("foralder") or {}, "rapport": e.get("rapport") if self.d["inst"].get("rapport") else None,
                            "statistik": e.get("statistik") if self.d["inst"].get("statistik") else None,
-                           "veckobrev_nya": e.get("veckobrev_nya", 0)})
+                           "veckobrev_nya": e.get("veckobrev_nya", 0), "har_schema": bool(e.get("schema")) and bool(self.d["inst"].get("schema"))})
         mott = {e["id"]: set(e.get("mottagna") or []) for e in self.d["elever"]}
         material = []
         for m in self.d["material"][::-1]:
@@ -279,6 +280,9 @@ class Klass:
         e["rapport"] = {"fran": str(r.get("fran", ""))[:10], "till": str(r.get("till", ""))[:10],
                         "rader": [str(x)[:200] for x in (r.get("rader") or [])][:20]} if isinstance(r, dict) else None
         e["statistik"] = svar["statistik"] if isinstance(svar.get("statistik"), dict) else None
+        sc = svar.get("schema")
+        e["schema"] = [{k: str(x.get(k) or "")[:80] for k in ("start", "slut", "namn", "sal", "larare", "info")} | {"dag": int(x.get("dag") or 0)}
+                       for x in sc[:80] if isinstance(x, dict)] if isinstance(sc, list) else None
         if isinstance(svar.get("mottagna"), list):
             e["mottagna"] = [str(x)[:60] for x in svar["mottagna"]][-300:]
         k = svar.get("klass")
@@ -322,6 +326,13 @@ def bygg_app(klass: Klass) -> web.Application:
     async def lage(request):
         _bara_datorn(request)
         return web.json_response(klass.publik())
+
+    async def schema_sida(request):
+        _bara_datorn(request)
+        e = next((x for x in klass.d["elever"] if x["id"] == request.match_info["eid"]), None)
+        if not e or not e.get("schema") or not klass.d["inst"].get("schema"):
+            raise web.HTTPNotFound
+        return web.Response(text=schemavy.sida(f"{e.get('namn') or 'Elevens'}s schema", e["schema"]), content_type="text/html")
 
     async def qr(request):
         _bara_datorn(request)
@@ -524,6 +535,7 @@ def bygg_app(klass: Klass) -> web.Application:
     app.router.add_get("/ikon.png", ikon)
     app.router.add_get("/api/lage", lage)
     app.router.add_get("/api/qr.svg", qr)
+    app.router.add_get("/schema/{eid}", schema_sida)
     app.router.add_post("/api/andra", andra)
     app.router.add_post("/api/fil", fil_upp)
     app.router.add_get("/api/fil/{namn}", fil_ner)

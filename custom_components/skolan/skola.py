@@ -33,6 +33,7 @@ FUNKTIONER = {
     "mejl": ("📧", "Rapport via e-post", "Läxspelet mejlar en kort rapport till läraren de dagar du väljer."),
     "grupper": ("👥", "Grupper och gruppuppgifter", "Läraren kan sätta ditt barn i tillfälliga grupper med en uppgift. Barnet ser gruppen och kan bocka av uppgiften."),
     "statistik": ("📈", "Statistik till läraren", "Läraren ser hur ditt barn pluggar: dagar per vecka, förhör, prov och ämnen. Inga stjärnor, husdjur eller jämförelser."),
+    "schema": ("🗓️", "Schemat till läraren", "Läraren ser den digitala kopian av schemat som Läxspelet har läst av (lektioner, salar och lärare)."),
     "material": ("📎", "Prov och studiematerial från läraren", "Läraren kan skicka provresultat, studiematerial och klassens schema (PDF eller foto). Det hamnar i din inkorg och du godkänner innan något läggs in."),
 }
 KLASSBOSS_BELONING = 30
@@ -386,6 +387,7 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict) -> dict:
             "klass": {"vecka": vecka, "poang": meriter._vecko_poang(data).get(vecka, 0)} if aktiv(s, "klasslag") else None,
             "grupp_klara": [g["id"] for g in s["grupper"] if g.get("klar")] if aktiv(s, "grupper") else [],
             "statistik": statistik(data) if aktiv(s, "statistik") else None,
+            "schema": [{k: x.get(k) for k in ("dag", "start", "slut", "namn", "sal", "larare", "info")} for x in data.get("lektioner", [])][:80] if aktiv(s, "schema") else None,
             "mottagna": s["mottagna"][-100:], "_filer": filer}
 
 

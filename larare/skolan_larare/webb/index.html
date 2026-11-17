@@ -58,7 +58,7 @@ function rita() {
 }
 const av = (k) => L.inst[k] ? "" : `<div class="msg fel">Den här funktionen är avstängd. Slå på den under ⚙️ Inställningar.</div>`;
 function oversikt() {
-  const f = (e) => Object.entries(e.foralder || {}).filter(([, v]) => v).map(([k]) => ({ veckobrev: "📬", rapport: "📊", klasslag: "🏫", mejl: "📧", grupper: "👥", statistik: "📈", material: "📎" })[k]).join(" ");
+  const f = (e) => Object.entries(e.foralder || {}).filter(([, v]) => v).map(([k]) => ({ veckobrev: "📬", rapport: "📊", klasslag: "🏫", mejl: "📧", grupper: "👥", statistik: "📈", material: "📎", schema: "🗓️" })[k]).join(" ");
   return `<div class="kort flex"><img class="qr" src="/api/qr.svg" alt="QR-kod">
     <div><h2>Eleverna ansluter här</h2><div class="adress">${esc(L.adress)}</div>
     <p class="muted">Eleverna ska vara på samma wifi som datorn. I Läxspelet trycker de <b>🤝 Plugga ihop → 🏫 Anslut till läraren</b> och skriver adressen.
@@ -66,7 +66,7 @@ function oversikt() {
   <div class="kort"><h2>Elever (${L.elever.length})</h2>
     ${L.elever.length ? `<table><tr><th>Namn</th><th>Senast synkad</th><th>Föräldern har slagit på</th><th></th></tr>
     ${L.elever.map((e) => `<tr><td><b>${esc(e.namn)}</b>${e.fel ? `<div class="small" style="color:var(--fel)">⚠️ ${esc(e.fel)}</div>` : ""}</td><td>${esc(e.senast || "–")}</td><td>${f(e) || "<span class='muted'>inget</span>"}</td>
-      <td><button class="m" data-synka="${e.id}">🔄</button> <button class="m" data-bort="${e.id}">🗑️</button></td></tr>`).join("")}</table>
+      <td>${e.har_schema ? `<a class="m" href="/schema/${encodeURIComponent(e.id)}" target="_blank" title="Digitalt schema, sök och skriv ut">🗓️</a> ` : ""}<button class="m" data-synka="${e.id}">🔄</button> <button class="m" data-bort="${e.id}">🗑️</button></td></tr>`).join("")}</table>
     <button class="p" id="synka-alla">🔄 Synka alla</button>` : `<p class="muted">Inga elever har anslutit än.</p>`}</div>`;
 }
 function veckobrev() {

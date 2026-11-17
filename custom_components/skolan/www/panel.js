@@ -2991,7 +2991,7 @@ class SkolanPanel extends HTMLElement {
         `🎁 <b>Kistor:</b> varje gång du lägger in en läxa eller ett prov får du en kista med ⭐, ⚡ eller ett kort. Ett prov inlagt minst 3 dagar innan ger en 💎 silverkista, minst 7 dagar innan en 👑 guldkista. Högst 4 kistor per dag.`,
         `📝 <b>Provbossar:</b> varje prov blir en boss. Varje dag du pluggar inför provet tar den 15 % skada (allt klart i tid ger 20 % till). Dagen före provet öppnar slutstriden. Vinst: +20 ⭐ och en 🏆 provtrofé.`,
         `📅 <b>Veckans koll:</b> lägg in alla läxor i läxschemat i tid under veckan så får du +15 ⭐, ett 🛡️ svitskydd och en 👑 guldkista.`,
-        `🗓️ <b>Mitt schema:</b> fota ditt lektionsschema så läser AI:n av dina ämnen. Efter skolan frågar husdjuret om du fick någon läxa. Svarar du ärligt nej får du +2 ⭐. Husdjuret frågar också efter studiematerial till ämnen som inte har något än, och första materialet i ett ämne ger en 💎 silverkista.`,
+        `🗓️ <b>Mitt schema:</b> mamma, pappa eller läraren lägger in ditt schema som en digital kopia som du kan söka i och skriva ut. Efter skolan frågar husdjuret om du fick någon läxa. Svarar du ärligt nej får du +2 ⭐. Husdjuret frågar också efter studiematerial till ämnen som inte har något än, och första materialet i ett ämne ger en 💎 silverkista.`,
         `🎒 <b>Stridsuppsättning:</b> i arenan och mot världsbossar får djuret bara ta med 4 attacker. Välj dem i butiken. Mot bossen låses de när striden har börjat.`,
         `🎯 I arenan är varje djur svagt mot en typ: 🔥 mot 🌊, 🌊 mot ⚡, ⚡ mot 🍃, 🍃 mot 🔥, ❄️ mot 💥 och 💥 mot ❄️. Träffar du den svaga punkten blir det <b>×1,5</b> skada.`,
         `🌟 <b>Laddattacker</b> köps i butiken. De laddas upp av bra träffar (mest av träffar på den svaga punkten) och kan bara användas 1–2 gånger per strid.`,
@@ -4020,27 +4020,104 @@ class SkolanPanel extends HTMLElement {
       <div class="small muted">Varje dag du pluggar inför provet tar bossen ${15} % skada. Dagen före provet kan du slåss mot den. Vinst: +20 ⭐ och en 🏆 provtrofé.</div></div>`;
   }
 
-  // Lektionsschemat: fota schemat, AI:n läser lektionerna och ämnena.
+  // Lektionsschemat som ett digitalt schema: tidsaxel, dagens kolumn, nu-linje, sök och redigering.
   _lektionView() {
     const v = this._view, s = this._s;
-    const dagar = ["Mån", "Tis", "Ons", "Tor", "Fre"];
-    const rutnat = (lekt) => `<div class="schema-rutnat">${dagar.map((dn, i) => `<div class="schema-dag"><div class="schema-rubrik">${dn}</div>
-      ${lekt.filter((x) => x.dag === i).map((x) => { const a = (s.data.amnen || []).find((y) => y.id === x.amne);
-        return `<div class="schema-lektion" style="--c:${a?.farg || "#9e9e9e"}">${x.start ? `<span class="small">${esc(x.start)}</span>` : ""}<b>${esc(x.namn)}</b></div>`; }).join("") || `<div class="small muted">–</div>`}</div>`).join("")}</div>`;
-    const ladda = `<label class="primary upload">📷 ${s.lektioner?.length || v.f ? "Fota schemat igen" : "Fota ditt schema"}<input type="file" id="ls-foto" accept="image/*,application/pdf" hidden></label>`;
+    const ladda = `<label class="primary upload">📷 ${s.lektioner?.length || v.f ? "Fota schemat igen" : "Fota schemat"}<input type="file" id="ls-foto" accept="image/*,application/pdf" hidden></label>`;
     if (v.f) {
       const f = v.f;
-      return `<p class="small">Kolla att det stämmer och tryck Spara. Nya ämnen skapas bara om de är ibockade.</p>
+      return `<p class="small">Så här läste AI:n schemat. Tryck på en lektion för att rätta den, och tryck sedan Spara. Nya ämnen skapas bara om de är ibockade.</p>
+        ${this._schemaVy(f.lektioner)}
         <h3>📚 Ämnen i schemat</h3>
         <div class="list">${f.amnen.map((a, i) => a.amne ? `<div class="row static"><span>✅ <b>${esc(a.namn)}</b></span><span class="small muted">finns redan${a.amne_namn.toLowerCase() !== a.namn.toLowerCase() ? ` som ${esc(a.amne_namn)}` : ""}</span></div>`
           : `<label class="row del-val"><span>＋ <b>${esc(a.namn)}</b><br><span class="small muted">Skapa ämnet</span></span><input type="checkbox" data-ls-skapa="${i}" ${a.skapa !== false ? "checked" : ""}></label>`).join("")}</div>
-        <h3>🗓️ Veckan</h3>
-        ${rutnat(f.lektioner)}
         <div class="actions"><button class="primary" id="ls-spara" ${this._busy ? "disabled" : ""}>Spara schemat</button>${ladda}</div>`;
     }
+    if (!s.kan_valja && !s.lektioner?.length)
+      return `<p class="muted">Du har inget schema här än. Be mamma eller pappa fota ditt schema, eller be läraren skicka det. Sen kan du söka i det, se vad som händer idag och skriva ut det.</p>`;
     if (!s.lektioner?.length)
-      return `${ladda}<p class="muted small">${s.kan_valja ? `Fota ${esc(s.namn)}s lektionsschema så läser AI:n av lektionerna och ämnena. Ämnen som saknas kan skapas direkt. Läraren kan också skicka schemat via inkorgen.` : "Fota ditt lektionsschema så läser AI:n av vilka lektioner du har och vilka ämnen du läser. Ämnen som saknas kan skapas direkt. Efter skolan frågar ditt husdjur om du fick någon läxa på lektionerna."}</p>`;
-    return `${rutnat(s.lektioner)}<div class="actions">${ladda}</div>`;
+      return `${ladda}<p class="muted small">${s.kan_valja ? `Fota ${esc(s.namn)}s lektionsschema så gör AI:n en digital kopia med lektioner, salar och lärare. Ämnen som saknas kan skapas direkt. Läraren kan också skicka schemat via inkorgen.` : "Fota ditt lektionsschema så gör AI:n en digital kopia med lektioner, salar och lärare som du kan söka i. Efter skolan frågar ditt husdjur om du fick någon läxa på lektionerna."}</p>
+        <button class="ghost" id="ls-tomt">✏️ Skriv in schemat själv</button>`;
+    return `${this._schemaVy(s.lektioner)}<div class="actions"><button class="primary" id="ls-utskrift">🖨️ Skriv ut / öppna som sida</button>${s.kan_valja ? ladda : ""}</div>
+      ${s.kan_valja ? "" : `<p class="small muted">Stämmer något inte? Be mamma eller pappa ändra schemat.</p>`}`;
+  }
+
+  _schemaLista() {
+    return this._view.f ? this._view.f.lektioner : (this._view.utkast || this._s.lektioner || []);
+  }
+
+  _schemaVy(lekt) {
+    const v = this._view, s = this._s;
+    const DAGAR = ["Mån", "Tis", "Ons", "Tor", "Fre"];
+    const min = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
+    const farg = (x) => (s.data.amnen || []).find((a) => a.id === x.amne || a.namn.toLowerCase() === (x.namn || "").toLowerCase())?.farg
+      || ["#4f8ef7", "#f7a14f", "#4fc98a", "#e05f8a", "#9b6cf0", "#2bb5c4", "#d4b02a", "#e0603a"][[...(x.namn || "")].reduce((n, c) => n + c.charCodeAt(0), 0) % 8];
+    const tider = lekt.flatMap((x) => [min(x.start), min(x.slut) ?? (min(x.start) != null ? min(x.start) + 40 : null)]).filter((x) => x != null);
+    const fran = tider.length ? Math.floor(Math.min(...tider) / 60) * 60 : 480, till = tider.length ? Math.ceil(Math.max(...tider) / 60) * 60 : 900;
+    const PX = 1.15, H = (till - fran) * PX;
+    const nu = new Date(), idag = (nu.getDay() + 6) % 7, klocka = nu.getHours() * 60 + nu.getMinutes();
+    const sokText = (x) => [x.namn, x.sal, x.larare, x.info, DAGAR[x.dag]].filter(Boolean).join(" ").toLowerCase();
+    const block = (x, i) => {
+      const st = min(x.start), sl = min(x.slut) ?? (st != null ? st + 40 : null);
+      const pagar = x.dag === idag && st != null && st <= klocka && klocka < sl;
+      return `<button class="ls-lektion ${pagar ? "pagar" : ""}" data-ls-i="${i}" data-sok="${esc(sokText(x))}" style="--c:${farg(x)};top:${(st - fran) * PX}px;height:${Math.max(18, (sl - st) * PX - 2)}px">
+        <b>${esc(x.namn)}</b>${(sl - st) * PX > 30 ? `<span>${esc(x.start)}</span>` : ""}${x.sal && (sl - st) * PX > 44 ? `<span>📍 ${esc(x.sal)}</span>` : ""}${x.info && (sl - st) * PX > 58 ? `<span>ℹ️ ${esc(x.info)}</span>` : ""}</button>`;
+    };
+    const utanTid = lekt.map((x, i) => [x, i]).filter(([x]) => min(x.start) == null);
+    const idagLista = lekt.map((x, i) => [x, i]).filter(([x]) => x.dag === idag && min(x.start) != null).sort((a, b) => min(a[0].start) - min(b[0].start));
+    const red = s.kan_valja ? v.red : null; // bara föräldrar ändrar schemat
+    const r = red === "ny" ? { dag: idag < 5 ? idag : 0, start: "", slut: "", namn: "", sal: "", larare: "", info: "" } : red != null ? lekt[red] : null;
+    const timmar = [];
+    for (let t = fran; t <= till; t += 60) timmar.push(t);
+    return `<div class="ls-sok"><input id="ls-sok" type="search" placeholder="🔍 Sök ämne, sal, lärare eller dag" value="${esc(v.sok || "")}" autocomplete="off"></div>
+      <div id="ls-traffar" class="list"></div>
+      ${idag < 5 && idagLista.length && !v.f ? `<div class="card ls-idag"><b>📅 Idag, ${VECKODAG[idag]}</b>
+        ${idagLista.map(([x, i]) => { const st = min(x.start), sl = min(x.slut) ?? st + 40; const tag = klocka >= sl ? "klar" : klocka >= st ? "nu" : "";
+          return `<div class="ls-idag-rad ${tag}" data-ls-i="${i}"><span class="ls-prick" style="background:${farg(x)}"></span><span>${esc(x.start)}${x.slut ? "–" + esc(x.slut) : ""}</span><b>${esc(x.namn)}</b><span class="small muted">${[x.sal && "📍 " + x.sal, x.larare && "👤 " + x.larare].filter(Boolean).map(esc).join(" · ")}</span>${tag === "nu" ? `<span class="badge">Nu</span>` : ""}</div>`; }).join("")}</div>` : ""}
+      ${tider.length ? `<div class="ls-schema">
+        <div class="ls-tider" style="height:${H}px">${timmar.map((t) => `<span style="top:${(t - fran) * PX}px">${String(t / 60).padStart(2, "0")}</span>`).join("")}</div>
+        ${DAGAR.map((dn, d) => `<div class="ls-dag ${d === idag ? "idag" : ""}"><div class="ls-dag-rubrik">${dn}</div>
+          <div class="ls-kolumn" style="height:${H}px">${timmar.map((t) => `<i class="ls-linje" style="top:${(t - fran) * PX}px"></i>`).join("")}
+            ${lekt.map((x, i) => [x, i]).filter(([x]) => x.dag === d && min(x.start) != null).map(([x, i]) => block(x, i)).join("")}
+            ${d === idag && klocka > fran && klocka < till ? `<i class="ls-nu" style="top:${(klocka - fran) * PX}px"></i>` : ""}</div></div>`).join("")}
+      </div>` : ""}
+      ${utanTid.length ? `<h3>Utan tid</h3><div class="list">${utanTid.map(([x, i]) => `<button class="row" data-ls-i="${i}" data-sok="${esc(sokText(x))}"><span><b>${esc(x.namn)}</b> · ${DAGAR[x.dag]}</span><span class="small muted">${esc(x.sal || "")}</span></button>`).join("")}</div>` : ""}
+      ${r ? `<div class="card form ls-red" id="ls-red"><b>${red === "ny" ? "＋ Ny lektion" : "✏️ Ändra lektionen"}</b>
+        <label>Ämne <input id="lr-namn" list="lr-amnen" value="${esc(r.namn)}" maxlength="40"></label>
+        <datalist id="lr-amnen">${(s.data.amnen || []).map((a) => `<option value="${esc(a.namn)}">`).join("")}</datalist>
+        <div class="two"><label>Dag <select id="lr-dag">${DAGAR.map((dn, d) => `<option value="${d}" ${r.dag === d ? "selected" : ""}>${VECKODAG[d]}</option>`).join("")}</select></label>
+          <label>Sal <input id="lr-sal" value="${esc(r.sal || "")}" maxlength="20"></label></div>
+        <div class="two"><label>Börjar <input id="lr-start" type="time" value="${esc(r.start || "")}"></label><label>Slutar <input id="lr-slut" type="time" value="${esc(r.slut || "")}"></label></div>
+        <label>Lärare <input id="lr-larare" value="${esc(r.larare || "")}" maxlength="40"></label>
+        <label>Info <input id="lr-info" value="${esc(r.info || "")}" maxlength="80" placeholder="t.ex. ta med ombyte"></label>
+        <div class="actions"><button class="primary" id="lr-ok">${v.f ? "OK" : "Spara"}</button>${red !== "ny" ? `<button class="danger" id="lr-bort">🗑️ Ta bort</button>` : ""}<button class="ghost" id="lr-avbryt">Avbryt</button></div></div>`
+        : s.kan_valja ? `<button class="ghost" id="ls-ny">＋ Lägg till lektion</button>` : ""}`;
+  }
+
+  // Sök utan att rita om sidan (så att tangentbordet inte stängs).
+  _schemaSok(q) {
+    const r = this.shadowRoot;
+    this._view.sok = q;
+    const t = q.trim().toLowerCase();
+    const lekt = this._schemaLista();
+    r.querySelectorAll(".ls-lektion[data-sok], .row[data-sok]").forEach((el) => el.classList.toggle("dim", !!t && !el.dataset.sok.includes(t)));
+    const ut = r.querySelector("#ls-traffar");
+    if (!ut) return;
+    const DAGAR = ["Mån", "Tis", "Ons", "Tor", "Fre"];
+    const traff = t ? lekt.map((x, i) => [x, i]).filter(([x]) => [x.namn, x.sal, x.larare, x.info, DAGAR[x.dag], VECKODAG[x.dag]].filter(Boolean).join(" ").toLowerCase().includes(t))
+      .sort((a, b) => a[0].dag - b[0].dag || (a[0].start || "").localeCompare(b[0].start || "")) : [];
+    ut.innerHTML = !t ? "" : traff.length ? traff.map(([x, i]) => `<button class="row" data-ls-traff="${i}"><span><b>${esc(x.namn)}</b><br><span class="small muted">${[x.sal && "📍 " + x.sal, x.larare && "👤 " + x.larare, x.info && "ℹ️ " + x.info].filter(Boolean).map(esc).join(" · ")}</span></span>
+        <span class="small">${VECKODAG[x.dag]} ${esc(x.start || "")}${x.slut ? "–" + esc(x.slut) : ""}</span></button>`).join("")
+      : `<div class="row static muted small">Inget hittades.</div>`;
+    if (this._s.kan_valja) ut.querySelectorAll("[data-ls-traff]").forEach((b) => b.addEventListener("click", () => { this._view.red = Number(b.dataset.lsTraff); this._render(); }));
+  }
+
+  async _schemaSpara(lista) {
+    if (this._view.f) { this._view.f.lektioner = lista; this._view.red = null; return this._render(); }
+    if (!(await this._act("lektioner_spara", { lektioner: lista, skapa: [] }))) return;
+    this._view.red = null;
+    await this._load(this._s.barn);
+    this._render();
   }
 
   async _lektionLas(file) {
@@ -4380,7 +4457,7 @@ class SkolanPanel extends HTMLElement {
       <button class="info-lank" id="open-info">ℹ️ Så funkar meriter och tävlingen ›</button>
       ${this._uppdragLista()}
       <h3>📚 Ämnen</h3>
-      <button class="row" id="open-lektioner"><span>🗓️ <b>${this._s.kan_valja ? `${esc(this._s.namn)}s schema` : "Mitt schema"}</b><br><span class="muted small">${this._s.kan_valja ? (this._s.lektioner?.length ? "Lektionerna i veckan" : "Fota schemat så läser AI:n av lektioner och ämnen") : this._s.lektioner?.length ? "Dina lektioner i veckan" : "Fota ditt schema så läser AI:n av dina ämnen"}</span></span><span>›</span></button>
+      <button class="row" id="open-lektioner"><span>🗓️ <b>${this._s.kan_valja ? `${esc(this._s.namn)}s schema` : "Mitt schema"}</b><br><span class="muted small">${this._s.kan_valja ? (this._s.lektioner?.length ? "Lektionerna i veckan" : "Fota schemat så läser AI:n av lektioner och ämnen") : this._s.lektioner?.length ? "Dina lektioner i veckan, sök och skriv ut" : "Be mamma eller pappa fota ditt schema"}</span></span><span>›</span></button>
       <div class="grid">
         ${amnen
           .map(
@@ -5809,6 +5886,33 @@ class SkolanPanel extends HTMLElement {
     on("#material-ja", () => this._go({ name: "amne", amne: r.querySelector("#material-ja").dataset.amne }));
     on("#material-sen", async () => { if (await this._act("laxfraga_svar", { material: r.querySelector("#material-sen").dataset.amne })) { await this._load(this._s.barn); this._render(); } });
     $("#ls-foto")?.addEventListener("change", (e) => { const file = e.target.files?.[0]; if (file) this._lektionLas(file); });
+    if (v.name === "lektioner") {
+      const sok = $("#ls-sok");
+      if (sok) { sok.addEventListener("input", () => this._schemaSok(sok.value)); if (v.sok) this._schemaSok(v.sok); }
+      if (this._s.kan_valja) r.querySelectorAll("[data-ls-i]").forEach((b) => b.addEventListener("click", () => { v.red = Number(b.dataset.lsI); this._render(); setTimeout(() => this.shadowRoot.querySelector("#ls-red")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }));
+      on("#ls-ny", () => { v.red = "ny"; this._render(); setTimeout(() => this.shadowRoot.querySelector("#ls-red")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); });
+      on("#ls-utskrift", async () => {
+        const w = window.open("", "_blank"); // öppnas direkt i klicket så att det inte blockeras
+        try {
+          const res = await this._hass.callWS({ type: "auth/sign_path", path: `/api/skolan/schema_sida?barn=${encodeURIComponent(this._s.barn)}`, expires: 300 });
+          if (w) w.location.href = res.path; else window.location.href = res.path;
+        } catch (e) { w?.close(); this._msg = { type: "error", text: `Kunde inte öppna schemat: ${e.message || e}` }; this._render(); }
+      });
+      on("#ls-tomt", () => { v.f = { lektioner: [], amnen: [] }; v.red = "ny"; this._render(); });
+      on("#lr-avbryt", () => { v.red = null; this._render(); });
+      on("#lr-bort", () => { const l = [...this._schemaLista()]; l.splice(v.red, 1); this._schemaSpara(l); });
+      on("#lr-ok", () => {
+        const g = (id) => r.querySelector(id).value.trim();
+        const x = { dag: Number(g("#lr-dag")), start: g("#lr-start"), slut: g("#lr-slut"), namn: g("#lr-namn"), sal: g("#lr-sal"), larare: g("#lr-larare"), info: g("#lr-info") };
+        if (!x.namn) { this._msg = { type: "error", text: "Skriv vilket ämne det är." }; return this._render(); }
+        const l = [...this._schemaLista()];
+        if (v.red === "ny") l.push(x); else l[v.red] = { ...l[v.red], ...x, amne: l[v.red].namn === x.namn ? l[v.red].amne : null };
+        l.sort((a, b) => a.dag - b.dag || (a.start || "").localeCompare(b.start || ""));
+        if (v.f && !v.f.amnen.some((a) => a.namn.toLowerCase() === x.namn.toLowerCase()) && !(this._s.data.amnen || []).some((a) => a.namn.toLowerCase() === x.namn.toLowerCase()))
+          v.f.amnen.push({ namn: x.namn, amne: null });
+        this._schemaSpara(l);
+      });
+    }
     r.querySelectorAll("[data-ls-skapa]").forEach((el) => el.addEventListener("change", () => { v.f.amnen[Number(el.dataset.lsSkapa)].skapa = el.checked; }));
     on("#ls-spara", async () => {
       const f = v.f;
@@ -6926,6 +7030,30 @@ const CSS = `
   .trofe-rad { display:flex; flex-wrap:wrap; gap:8px; }
   .trofe { display:flex; flex-direction:column; align-items:center; font-size:28px; background:linear-gradient(135deg,#fff8e1,#ffe082); border-radius:12px; padding:6px 10px; color:#4a2c00; }
   .vantar.ok { background:#e8f5e9; color:#1b5e20; }
+  .ls-sok input { width:100%; box-sizing:border-box; padding:10px 12px; border-radius:12px; border:1px solid var(--divider-color,#ccc); font-size:16px; background:var(--card-background-color,#fff); color:inherit; }
+  #ls-traffar { margin:6px 0; }
+  .ls-idag { margin:10px 0; }
+  .ls-idag-rad { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--divider-color,#eee); cursor:pointer; flex-wrap:wrap; }
+  .ls-idag-rad.klar { opacity:.5; }
+  .ls-idag-rad.nu { font-weight:600; }
+  .ls-prick { width:10px; height:10px; border-radius:50%; flex:none; }
+  .ls-schema { display:grid; grid-template-columns:24px repeat(5,minmax(0,1fr)); gap:3px; margin:10px 0; }
+  .ls-tider { position:relative; margin-top:22px; }
+  .ls-tider span { position:absolute; right:2px; font-size:10px; opacity:.6; transform:translateY(-50%); }
+  .ls-dag-rubrik { text-align:center; font-weight:700; font-size:13px; height:22px; line-height:22px; border-radius:6px; }
+  .ls-dag.idag .ls-dag-rubrik { background:var(--primary-color,#4f8ef7); color:#fff; }
+  .ls-kolumn { position:relative; background:var(--secondary-background-color,#f5f5f5); border-radius:6px; }
+  .ls-dag.idag .ls-kolumn { background:color-mix(in srgb, var(--primary-color,#4f8ef7) 10%, var(--secondary-background-color,#f5f5f5)); }
+  .ls-linje { position:absolute; left:0; right:0; border-top:1px dashed rgba(127,127,127,.25); }
+  .ls-nu { position:absolute; left:-2px; right:-2px; border-top:2px solid #e53935; z-index:2; }
+  .ls-nu::before { content:""; position:absolute; left:-3px; top:-5px; width:8px; height:8px; border-radius:50%; background:#e53935; }
+  .ls-lektion { position:absolute; left:1px; right:1px; box-sizing:border-box; border:0; border-left:4px solid var(--c); background:color-mix(in srgb, var(--c) 22%, var(--card-background-color,#fff));
+    color:inherit; border-radius:5px; padding:2px 3px; text-align:left; font-size:11px; line-height:1.2; overflow:hidden; cursor:pointer; display:flex; flex-direction:column; transition:opacity .2s; }
+  .ls-lektion b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ls-lektion span { font-size:10px; opacity:.8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ls-lektion.pagar { box-shadow:0 0 0 2px #e53935; }
+  .ls-lektion.dim, .row.dim { opacity:.18; }
+  .ls-red { margin-top:10px; }
   .schema-rutnat { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; margin:8px 0; }
   .schema-rubrik { font-weight:700; text-align:center; font-size:13px; margin-bottom:4px; }
   .schema-lektion { border-left:4px solid var(--c); background:var(--secondary-background-color,#f5f5f5); border-radius:6px; padding:3px 4px; margin-bottom:3px; font-size:12px; overflow:hidden; overflow-wrap:anywhere; }
