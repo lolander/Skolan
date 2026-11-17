@@ -5166,7 +5166,8 @@ class SkolanPanel extends HTMLElement {
       if (ok && b.dataset.typ === "kompis") { // en liten ledtråd om kompisens hemliga boost, inga siffror
         const d = this._s.meriter?.djur, ikon = b.dataset.ikon || "✨";
         const rad = ["viskar något i örat på", "blinkar hemlighetsfullt mot", "ger en hemlig high five till", "delar ett hemligt mellanmål med"];
-        this._msg = { type: "ok", text: `${ikon} ${rad[Math.floor(Math.random() * rad.length)]} ${d?.namn || "ditt husdjur"}… ✨` };
+        this._msg = { type: "ok", text: d?.bastis ? `💞 ${ikon} och ${d.art} ${d.namn || ""} är bästisar! Tillsammans känns de extra starka… ✨`
+          : `${ikon} ${rad[Math.floor(Math.random() * rad.length)]} ${d?.namn || "ditt husdjur"}… ✨` };
         this._render();
       }
     }));

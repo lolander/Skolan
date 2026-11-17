@@ -554,7 +554,7 @@ def djur(data: dict) -> dict | None:
     sedan = (idag - date.fromisoformat(dagar[-1])).days if dagar else 99
     humor = "glad" if sedan == 0 else "nojd" if sedan == 1 else "hungrig" if sedan == 2 else "ledsen"
     return {**d, "steg": steg, "steg_namn": DJUR_STEG[steg][1], "nasta": nasta, "intjanat": intj,
-            "humor": humor, "sedan": sedan, "form": djur_form(data, steg)}
+            "humor": humor, "sedan": sedan, "form": djur_form(data, steg), "bastis": _kompis_bastis(d)}
 
 
 def kolla_medaljer(data: dict) -> None:
@@ -1640,9 +1640,25 @@ KOMPIS_BOOST = {
 }
 
 
+# Bästisar: husdjur som en kompis passar extra bra med. Då blir den hemliga boosten dubbelt så stor.
+KOMPIS_BASTISAR = {
+    "k_kyckling": "🐷🐮🐰🍞", "k_mus": "🐱🐹🌭🍕", "k_groda": "🐸🐢🍄", "k_nyckelpiga": "🍉🌵🥑",
+    "k_snigel": "🐢🍄🥔🪨", "k_fjaril": "🦄🐰🍉", "k_papegoja": "🐵🍌🦉", "k_blackfisk": "🐙🐢🐧",
+    "k_spoke": "👻🦉🦝", "k_robot": "🤖🦖🪨", "k_alien": "☁️🤖🦄", "k_drake": "🐉🦖🐯🦁",
+    "k_enhorning": "🦄🍦🍩☁️", "ps_nalle": "🐻🐼🐨", "ps_valp": "🐶🦊🧦", "ps_katt": "🐱🐭🐯🦁",
+    "b_zombie": "🦷🥔👻", "b_spoke": "👻🦝🐱",
+}
+
+
+def _kompis_bastis(d: dict) -> bool:
+    k = (d.get("pa") or {}).get("kompis") or ""
+    return bool(k and d.get("art") and d["art"] in KOMPIS_BASTISAR.get(k, ""))
+
+
 def kompis_boost(data: dict) -> dict:
     d = _m(data).get("djur") or {}
-    return KOMPIS_BOOST.get((d.get("pa") or {}).get("kompis") or "", {})
+    b = KOMPIS_BOOST.get((d.get("pa") or {}).get("kompis") or "", {})
+    return {k: v * 2 for k, v in b.items()} if _kompis_bastis(d) else b
 
 
 def djur_kraft(data: dict) -> float:
