@@ -1189,7 +1189,8 @@ class SkolanPanel extends HTMLElement {
       back = { name: "hem" };
       body = this._lektionView();
     } else if (v.name === "kalender") {
-      title = "📅 Skolkalender";
+      title = "📅 Skolkalendrar";
+      if (v.ny) back = { name: "kalender" };
       back = { name: "foralder" };
       body = this._kalenderView();
     } else if (v.name === "veckobrev") {
@@ -3168,7 +3169,7 @@ class SkolanPanel extends HTMLElement {
           <span><input type="date" id="fd-datum" value="${esc(s.data.fodelsedag || "")}"> <button class="mini" id="fd-spara">Spara</button></span></div>
         ${this._hejaropForalder()}
         <button class="row foralder-knapp" id="open-lektioner" style="margin-top:4px"><span>🗓️ <b>Schema</b><br><span class="muted small">Fota ${esc(s.namn)}s lektionsschema så läser AI:n av lektioner och ämnen</span></span><span>›</span></button>
-        <button class="row foralder-knapp" id="open-kalender" style="margin-top:4px"><span>📅 <b>Skolkalender</b>${s.kalender?.fel ? " ⚠️" : ""}<br><span class="muted small">${s.kalender ? `Uppdateras automatiskt · ${s.kalender.antal} händelser` : `Prenumerera på skolans kalender (t.ex. InfoMentor) så kommer lov, utvecklingsdagar och möten in av sig själva`}</span></span><span>›</span></button>
+        <button class="row foralder-knapp" id="open-kalender" style="margin-top:4px"><span>📅 <b>Skolkalendrar</b><br><span class="muted small">${s.kalender ? `${s.kalender.antal} händelser för ${esc(s.namn)} · ` : ""}Koppla in skolans kalender: länk, Home Assistant, webbsida, fil eller foto</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
         <h3 style="margin-top:4px">📅 Läxschema för ${esc(s.namn)}</h3>
         <p class="muted small">När läxan brukar komma. Lägger ${esc(s.namn)} in den samma dag eller dagen efter blir det +${p.i_tid} ⭐. Glosor får förhörsdagen ifylld automatiskt. ${esc(s.namn)} får en påminnelse kl. 17.15 den dagen läxan brukar komma.</p>
@@ -4034,15 +4035,72 @@ class SkolanPanel extends HTMLElement {
         ${this._s.kan_valja ? `<button class="mini" data-skolinfo-bort="${x.id}" title="Ta bort">✕</button>` : ""}</li>`).join("")}</ul></div>`;
   }
 
+  // Skolkalendrar: föräldrar kopplar in kalendrar på olika sätt, och väljer vilka barn de gäller.
   _kalenderView() {
-    const k = this._s.kalender, s = this._s;
+    const k = this._kal, v = this._view, s = this._s;
+    if (!k) return `<p class="muted">Hämtar…</p>`;
     const dag = (iso) => `${veckodag(iso)} ${Number(iso.slice(8))}/${Number(iso.slice(5, 7))}`;
-    return `<p class="small">Klistra in länken till skolans kalenderprenumeration för ${esc(s.namn)} (i InfoMentor: Kalender → Prenumerera). Läxspelet hämtar den var tredje timme.</p>
-      <div class="form"><label>Länk <input id="kal-url" value="${esc(k?.url || "")}" placeholder="webcal://… eller https://…" autocomplete="off"></label></div>
-      <div class="actions"><button class="primary" id="kal-spara" ${this._busy ? "disabled" : ""}>Spara och hämta</button>${k ? `<button class="danger" id="kal-bort">Sluta prenumerera</button>` : ""}</div>
-      ${k ? `<p class="small muted">${k.fel ? `⚠️ ${esc(k.fel)} · ` : ""}Senast hämtad ${esc((k.hamtad || "").replace("T", " "))}</p>
-        <ul class="lista">${(k.kommande || []).map((x) => `<li>${x.ledig ? "🏖️" : "📅"} <b>${dag(x.start)}${x.slut !== x.start ? ` – ${dag(x.slut)}` : ""}${x.tid ? " kl. " + esc(x.tid) : ""}</b>: ${esc(x.text)}</li>`).join("") || "<li class='muted'>Inga kommande händelser.</li>"}</ul>
-        <p class="small muted">🏖️ = ledig dag. Då räknar widgeten och husdjuret inte med några lektioner. Händelser visas på förstasidan 3 veckor innan, och ${esc(s.namn)} och ni föräldrar får en påminnelse kvällen innan.</p>` : ""}`;
+    const TYPER = {
+      ics: { ikon: "🔗", namn: "Prenumerationslänk (iCal/webcal)", besk: "Bäst om skolans plattform kan dela kalendern. Uppdateras av sig själv var tredje timme." },
+      ha: { ikon: "🏠", namn: "Kalender i Home Assistant", besk: "En kalender ni redan har kopplat in i Home Assistant, t.ex. Google, Outlook eller CalDAV. Uppdateras var tredje timme." },
+      webb: { ikon: "🌐", namn: "Skolans webbsida", besk: "En sida på skolans hemsida med kalender eller läsårstider. AI:n läser sidan en gång per dygn." },
+      fil: { ikon: "📄", namn: "Kalenderfil (.ics)", besk: "En fil som skolan har skickat. Läses in en gång." },
+      foto: { ikon: "📷", namn: "Foto eller PDF", besk: "Läsårsplanering, terminsplan eller lovlista på papper. AI:n läser av datumen en gång." },
+    };
+    const barnVal = (valda, attr) => k.barn.map((b) => `<label class="kap-rad"><input type="checkbox" ${attr}="${b.id}" ${valda.includes(b.id) ? "checked" : ""}> ${esc(b.namn)}</label>`).join("");
+    if (v.ny) {
+      const t = v.ny;
+      if (t === "val") return `<p class="small">Hur delar skolan sin kalender? Välj det som passar. Ni kan lägga till flera.</p>
+        <div class="list">${Object.entries(TYPER).map(([id, x]) => `<button class="row" data-kal-typ="${id}"><span>${x.ikon} <b>${x.namn}</b><br><span class="small muted">${x.besk}</span></span><span>›</span></button>`).join("")}</div>`;
+      const x = TYPER[t];
+      const guide = t === "ics" ? `<details class="kal-guide"><summary>Var hittar jag länken?</summary><ul class="small">
+          <li><b>InfoMentor:</b> öppna Kalender och välj Prenumerera. Länken börjar ofta med webcals://.</li>
+          <li><b>Vklass, SchoolSoft, Unikum, IST/Edlevo, Skolplattformen:</b> leta i kalendern efter Prenumerera, Exportera, Dela eller iCal.</li>
+          <li><b>Google Kalender</b> (om skolan delar en Google-kalender): Inställningar för kalendern → Hemlig adress i iCal-format.</li>
+          <li><b>Outlook / Microsoft 365:</b> Inställningar → Kalender → Delade kalendrar → Publicera en kalender → kopiera ICS-länken.</li>
+          <li><b>iCloud:</b> dela kalendern som Offentlig kalender och kopiera länken.</li>
+          <li>Har ni bara en "Lägg till i kalender"-knapp på telefonen? Håll inne den och välj Kopiera länk.</li></ul>
+          <p class="small muted">Länken är hemlig: den visas bara för föräldrar, aldrig för barnen.</p></details>` : "";
+      const falt = t === "ics" ? `<label>Länk <input id="kn-url" placeholder="webcal://… eller https://…" autocomplete="off"></label>`
+        : t === "webb" ? `<label>Adress till sidan <input id="kn-url" placeholder="https://skolan.se/kalender" autocomplete="off"></label>`
+        : t === "ha" ? (k.ha.length ? `<label>Kalender <select id="kn-entity">${k.ha.map((c) => `<option value="${esc(c.id)}">${esc(c.namn)}</option>`).join("")}</select></label>`
+          : `<p class="muted">Det finns inga kalendrar i Home Assistant än. Lägg till t.ex. Google Kalender eller CalDAV under Inställningar → Enheter och tjänster, och kom sedan tillbaka hit.</p>`)
+        : `<label class="primary upload">${t === "fil" ? "📄 Välj .ics-fil" : "📷 Välj foton eller PDF"}<input type="file" id="kn-fil" ${t === "fil" ? 'accept=".ics,text/calendar"' : 'accept="image/*,application/pdf" multiple'} hidden></label>
+          <div class="small" id="kn-filnamn">${(this._kalFiler || []).map((f) => esc(f.name)).join(", ")}</div>`;
+      return `<h3>${x.ikon} ${x.namn}</h3><p class="small muted">${x.besk}</p>${guide}
+        <div class="form">${falt}
+          <label>Namn <input id="kn-namn" value="${esc(t === "ha" ? "" : "Skolkalender")}" maxlength="40" placeholder="t.ex. Filosofiska skolan"></label>
+          <div class="small">Gäller</div><div class="kap-val">${barnVal([s.barn], "data-kn-barn")}</div></div>
+        <div class="actions"><button class="primary" id="kn-spara" ${this._busy ? "disabled" : ""}>Spara och hämta</button><button class="ghost" id="kn-avbryt">Avbryt</button></div>`;
+    }
+    return `<p class="small">Koppla in skolans kalender så kommer lov, utvecklingsdagar, möten och utflykter in av sig själva. De visas på förstasidan, ger påminnelse kvällen innan, och lediga dagar gör att widgeten och husdjuret inte räknar med lektioner. En kalender kan gälla flera barn.</p>
+      ${k.kallor.map((x) => `<div class="card kal-kalla"><div class="djur-rubrik">${TYPER[x.typ]?.ikon || "📅"} ${esc(x.namn)} <span class="small muted">${TYPER[x.typ]?.namn || ""}</span></div>
+        <div class="small">${x.fel ? `⚠️ ${esc(x.fel)} · ` : ""}${x.antal} händelser${x.hamtad ? ` · hämtad ${esc(x.hamtad.replace("T", " "))}` : ""}${["ics", "ha", "webb"].includes(x.typ) ? " · uppdateras automatiskt" : ""}</div>
+        <div class="small" style="margin-top:6px">Gäller:</div><div class="kap-val">${barnVal(x.barn, `data-kal-barn="${x.id}" data-b`)}</div>
+        <details><summary class="small">Kommande (${x.kommande.length})</summary><ul class="lista small">${x.kommande.map((h) => `<li>${h.ledig ? "🏖️" : "📅"} <b>${dag(h.start)}${h.slut !== h.start ? ` – ${dag(h.slut)}` : ""}${h.tid ? " kl. " + esc(h.tid) : ""}</b>: ${esc(h.text)}</li>`).join("") || "<li class='muted'>Inga.</li>"}</ul></details>
+        <div class="actions">${["ics", "ha", "webb"].includes(x.typ) ? `<button class="mini" data-kal-upd="${x.id}">🔄 Hämta nu</button>` : ""}<button class="mini" data-kal-namn="${x.id}">✏️ Byt namn</button><button class="mini danger" data-kal-bort="${x.id}">🗑️ Ta bort</button></div></div>`).join("")}
+      <button class="primary" id="kal-ny">＋ Lägg till kalender</button>
+      <p class="small muted">🏖️ = ledig dag (lov, utvecklingsdag). Enskilda händelser kan döljas med ✕ på förstasidans kort "Från skolan".</p>`;
+  }
+
+  async _kalHamta(op = null) {
+    this._busy = true;
+    this._render();
+    try {
+      const res = op instanceof FormData
+        ? await this._hass.fetchWithAuth("/api/skolan/kalendrar", { method: "POST", body: op })
+        : await this._hass.fetchWithAuth("/api/skolan/kalendrar", op ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(op) } : {});
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || res.statusText);
+      this._kal = body;
+      return true;
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+      return false;
+    } finally {
+      this._busy = false;
+      this._render();
+    }
   }
 
   _veckokollRad() {
@@ -5994,12 +6052,38 @@ class SkolanPanel extends HTMLElement {
       this._arenaVisa();
     }));
     on("#open-lektioner", () => this._go({ name: "lektioner" }));
-    on("#open-kalender", () => this._go({ name: "kalender" }));
-    on("#kal-spara", async () => {
-      this._msg = { type: "info", text: "Hämtar kalendern…" };
-      if (await this._act("kalender_satt", { url: r.querySelector("#kal-url").value })) { await this._load(this._s.barn); this._msg = { type: "ok", text: `Klart! ${this._s.kalender?.antal || 0} händelser hämtade 📅` }; this._render(); }
-    });
-    on("#kal-bort", async () => { if (confirm("Sluta prenumerera på skolkalendern?") && (await this._act("kalender_satt", { url: "" }))) { await this._load(this._s.barn); this._render(); } });
+    on("#open-kalender", () => { this._kal = null; this._go({ name: "kalender" }); this._kalHamta(); });
+    if (v.name === "kalender" && this._kal) {
+      on("#kal-ny", () => { v.ny = "val"; this._render(); });
+      r.querySelectorAll("[data-kal-typ]").forEach((b) => b.addEventListener("click", () => { v.ny = b.dataset.kalTyp; this._kalFiler = []; this._render(); }));
+      on("#kn-avbryt", () => { v.ny = null; this._render(); });
+      $("#kn-fil")?.addEventListener("change", (e) => { this._kalFiler = [...(e.target.files || [])].slice(0, 6); this._render(); });
+      on("#kn-spara", async () => {
+        const barn = [...r.querySelectorAll("[data-kn-barn]")].filter((x) => x.checked).map((x) => x.dataset.knBarn);
+        const namn = r.querySelector("#kn-namn")?.value || "";
+        let ok;
+        this._msg = { type: "info", text: v.ny === "foto" || v.ny === "webb" ? "AI:n läser kalendern… (kan ta en halv minut)" : "Hämtar kalendern…" };
+        if (v.ny === "fil" || v.ny === "foto") {
+          if (!this._kalFiler?.length) { this._msg = { type: "error", text: "Välj en fil först." }; return this._render(); }
+          const fd = new FormData();
+          fd.append("typ", v.ny); fd.append("namn", namn); fd.append("barn", barn.join(","));
+          this._kalFiler.forEach((f) => fd.append("file", f, f.name));
+          ok = await this._kalHamta(fd);
+        } else {
+          ok = await this._kalHamta({ op: "lagg_till", typ: v.ny, namn: namn || (v.ny === "ha" ? r.querySelector("#kn-entity")?.selectedOptions[0]?.textContent : ""), barn,
+            url: r.querySelector("#kn-url")?.value, entity: r.querySelector("#kn-entity")?.value });
+        }
+        if (ok) { v.ny = null; this._kalFiler = []; this._msg = { type: "ok", text: "Kalendern är inkopplad 📅" }; await this._load(this._s.barn); this._render(); }
+      });
+      r.querySelectorAll("[data-kal-barn]").forEach((el) => el.addEventListener("change", () => {
+        const id = el.dataset.kalBarn;
+        const barn = [...r.querySelectorAll(`[data-kal-barn="${id}"]`)].filter((x) => x.checked).map((x) => x.dataset.b);
+        this._kalHamta({ op: "barn", id, barn });
+      }));
+      r.querySelectorAll("[data-kal-upd]").forEach((b) => b.addEventListener("click", () => { this._msg = { type: "info", text: "Hämtar…" }; this._kalHamta({ op: "uppdatera", id: b.dataset.kalUpd }); }));
+      r.querySelectorAll("[data-kal-namn]").forEach((b) => b.addEventListener("click", () => { const n = this._ask("Nytt namn på kalendern:", ""); if (n) this._kalHamta({ op: "namn", id: b.dataset.kalNamn, namn: n }); }));
+      r.querySelectorAll("[data-kal-bort]").forEach((b) => b.addEventListener("click", async () => { if (confirm("Ta bort kalendern? Händelserna försvinner från barnens förstasida.") && (await this._kalHamta({ op: "ta_bort", id: b.dataset.kalBort }))) { await this._load(this._s.barn); this._render(); } }));
+    }
     r.querySelectorAll("[data-skolinfo-bort]").forEach((b) => b.addEventListener("click", async () => { if (await this._act("skolinfo_bort", { id: b.dataset.skolinfoBort })) await this._load(this._s.barn); }));
     on("#material-ja", () => this._go({ name: "amne", amne: r.querySelector("#material-ja").dataset.amne }));
     on("#material-sen", async () => { if (await this._act("laxfraga_svar", { material: r.querySelector("#material-sen").dataset.amne })) { await this._load(this._s.barn); this._render(); } });
@@ -7160,6 +7244,9 @@ const CSS = `
   .skolinfo-kort li.snart { font-weight:600; color:var(--primary-color,#1976d2); }
   .vb-rad.av { opacity:.5; }
   .vb-rad textarea { width:100%; box-sizing:border-box; font:inherit; padding:8px; border-radius:8px; }
+  .kal-kalla .kap-val { display:flex; flex-wrap:wrap; gap:4px 14px; }
+  .kal-guide { margin:8px 0; }
+  .kal-guide li { margin:4px 0; }
   .foto-val { background:var(--secondary-background-color,#f5f5f5); border-radius:12px; padding:10px 12px; margin:8px 0; }
   .foto-val .lista li { display:flex; justify-content:space-between; align-items:center; gap:8px; }
   .ls-sok input { width:100%; box-sizing:border-box; padding:10px 12px; border-radius:12px; border:1px solid var(--divider-color,#ccc); font-size:16px; background:var(--card-background-color,#fff); color:inherit; }

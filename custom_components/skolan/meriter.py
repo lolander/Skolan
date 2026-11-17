@@ -3647,8 +3647,6 @@ def kalender_spara(data: dict, handelser: list[dict]) -> None:
     idag = dt_util.now().date()
     fran, till = (idag - timedelta(days=7)).isoformat(), (idag + timedelta(days=200)).isoformat()
     data["skolkalender"] = [x for x in handelser if x["slut"] >= fran and x["start"] <= till][:150]
-    data.setdefault("kalender", {})["hamtad"] = dt_util.now().isoformat(timespec="minutes")
-    data["kalender"]["fel"] = ""
 
 
 def ledig(data: dict, dag: date) -> str | None:
@@ -3679,4 +3677,33 @@ def _kalender_info(data: dict, idag: date) -> list[dict]:
         d = max(start, idag)
         ut.append({"id": f"kal:{x['uid']}", "text": text, "datum": d.isoformat(), "tid": x.get("tid") if start >= idag else "",
                    "dagar": (d - idag).days, "kalender": True, "ny_start": start >= idag, "ledig": bool(x.get("ledig"))})
+    return ut
+
+
+
+def kal_handelse(start: str, slut: str, text: str, tid: str = "", info: str = "", plats: str = "", uid: str = "", sluttid: str = "") -> dict | None:
+    """En händelse i samma form som ics_las ger, från andra källor (HA-kalender, AI)."""
+    try:
+        a = date.fromisoformat(str(start)[:10])
+        b = date.fromisoformat(str(slut or start)[:10])
+    except ValueError:
+        return None
+    text = str(text or "").strip()
+    if not text:
+        return None
+    tid = str(tid or "")[:5] if _re.fullmatch(r"\d{1,2}:\d{2}", str(tid or "")[:5]) else ""
+    return {"uid": (uid or f"{a.isoformat()}:{text}")[:120], "start": a.isoformat(), "slut": max(a, b).isoformat(), "tid": tid.zfill(5) if tid else "",
+            "sluttid": str(sluttid or "")[:5], "text": text[:160], "info": str(info or "").strip()[:300], "plats": str(plats or "").strip()[:80],
+            "ledig": bool(LEDIG_ORD.search(text))}
+
+
+def kalender_samla(handelser: list[dict]) -> list[dict]:
+    """Slå ihop händelser från flera källor. Samma dag och samma text visas en gång."""
+    sett, ut = set(), []
+    for x in sorted(handelser, key=lambda y: (y["start"], y.get("tid") or "")):
+        k = (x["start"], _re.sub(r"\W+", "", x["text"].lower())[:40])
+        if k in sett:
+            continue
+        sett.add(k)
+        ut.append(x)
     return ut
