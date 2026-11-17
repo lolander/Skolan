@@ -1643,9 +1643,14 @@ ATTACKER = [
      "info": "+2 skada per läxa du har klarat i tid den här veckan (högst +10)."},
     {"id": "a_lava", "ikon": "🌋", "namn": "Lavaregn", "typ": "eld", "pris": 350, "steg": 2, "energi": 2, "skada": 11,
      "info": "+50 % skada mot världsbossar."},
+    {"id": "a_meteor", "ikon": "☄️", "namn": "Meteorregn", "typ": "eld", "pris": 450, "steg": 2, "energi": 3, "skada": 4,
+     "info": "3–6 meteorer slår ner från rymden! Varje meteor gör skada."},
     {"id": "a_regnbage", "ikon": "🌈", "namn": "Regnbågsstråle", "typ": "kraft", "pris": 650, "steg": 3, "energi": 3, "skada": 16, "per_dag": True,
      "info": "Alla monster är svaga mot den (dubbel skada)! En gång per dag."},
 ]
+METEOR_MIN, METEOR_MAX = 3, 6
+METEOR_SNITT = (METEOR_MIN + METEOR_MAX) / 2
+
 # Uppgradera en köpt attack: ungefär +20 % av grundskadan per nivå (minst +1), och varje nivå kostar mer än den förra.
 ATTACK_NIVA_MAX = 5
 ATTACK_NIVA_SKADA = 0.20
@@ -2005,6 +2010,8 @@ def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
         skada += min(10, _dag_poang(data, idag) // 10)
     elif at["id"] == "a_lava" and mon.get("boss"):
         skada *= 1.5
+    elif at["id"] == "a_meteor":
+        skada *= METEOR_SNITT  # visas som ett snitt; i striden avgör antalet meteorer
     h = vecko_handelse()
     if h.get("typ") == at["typ"] or (h["id"] == "boss" and mon.get("boss")):
         skada *= 1.5
@@ -2247,13 +2254,17 @@ def attack(data: dict, at_id: str) -> dict:
     n = k["niva"]
     mon = niva_info(n)
     skada, svag = _attack_varde(data, at, mon)
+    meteorer = 0
+    if at_id == "a_meteor":  # slumpa hur många meteorer som slår ner
+        meteorer = random.randint(METEOR_MIN, METEOR_MAX)
+        skada = max(1, round(skada / METEOR_SNITT * meteorer))
     hp_fore, kvar_fore = k["hp"], max(0, k["hp"] - k["skada"])
     k["energi"] -= at["energi"]
     if at_id == "a_super":
         k["super"] = vecka
     if at.get("per_dag"):
         k.setdefault("per_dag", {})[at_id] = idag
-    k["senaste"] = {"id": at_id, "skada": skada, "svag": svag, "niva": n, "tid": dt_util.now().isoformat(timespec="seconds")}
+    k["senaste"] = {"id": at_id, "skada": skada, "svag": svag, "niva": n, "tid": dt_util.now().isoformat(timespec="seconds"), "meteorer": meteorer}
     _rakna(data, "attacker")
     _karta_skada(data, skada)
     klar = k["niva"] > n

@@ -347,6 +347,18 @@ const DJUR_UTSEENDE = {
 const PA_OGONEN = new Set(["solglas", "sol_hatt2", "dykmask"]);
 
 const STRID_CSS = `
+#skolan-strid .meteor { position:absolute; left:50%; top:50%; font-size:var(--s); opacity:0; z-index:3; filter:drop-shadow(0 0 10px #ff6d00) drop-shadow(0 0 22px #ffab00);
+  animation:mFall calc(.75s*var(--f,1)) cubic-bezier(.55,0,1,.45) calc(var(--d)*var(--f,1)) forwards; }
+#skolan-strid .meteor.liten { filter:drop-shadow(0 0 6px #ff9100); }
+#skolan-strid .nedslag { position:absolute; left:50%; top:50%; font-size:54px; opacity:0; z-index:4; animation:mSlag calc(.6s*var(--f,1)) ease-out calc(var(--d)*var(--f,1)) forwards; }
+#skolan-strid .meteor-himmel { position:absolute; inset:-60vh -60vw; background:radial-gradient(ellipse at 30% 0%, rgba(255,109,0,.45), transparent 60%); opacity:0; animation:mHimmel calc(2.4s*var(--f,1)) ease-in-out forwards; pointer-events:none; }
+#skolan-strid .meteor-antal { position:absolute; left:50%; top:-60px; transform:translateX(-50%); font:900 28px system-ui; color:#ffd180; text-shadow:0 0 12px #ff6d00; opacity:0; animation:mAntal calc(1.6s*var(--f,1)) ease-out calc(.4s*var(--f,1)) forwards; white-space:nowrap; }
+#skolan-strid.strid:has(.meteor) .scen { animation:mSkak calc(1.8s*var(--f,1)) linear calc(.6s*var(--f,1)); }
+@keyframes mFall { 0% { opacity:0; transform:translate(calc(var(--x) - 260px), calc(var(--y) - 340px)) rotate(-35deg) scale(.6); } 15% { opacity:1; } 100% { opacity:1; transform:translate(var(--x), var(--y)) rotate(-35deg) scale(1.1); } }
+@keyframes mSlag { 0% { opacity:0; transform:translate(var(--x), var(--y)) scale(.2); } 25% { opacity:1; transform:translate(var(--x), var(--y)) scale(1.5); } 100% { opacity:0; transform:translate(var(--x), var(--y)) scale(2.2); } }
+@keyframes mHimmel { 0% { opacity:0; } 25%,75% { opacity:1; } 100% { opacity:0; } }
+@keyframes mAntal { 0% { opacity:0; transform:translateX(-50%) scale(.4); } 30% { opacity:1; transform:translateX(-50%) scale(1.25); } 80% { opacity:1; transform:translateX(-50%) scale(1); } 100% { opacity:0; } }
+@keyframes mSkak { 0%,100% { transform:none; } 10% { transform:translate(-8px,5px); } 20% { transform:translate(7px,-6px); } 30% { transform:translate(-6px,-3px); } 40% { transform:translate(6px,4px); } 50% { transform:translate(-5px,3px); } 60% { transform:translate(4px,-4px); } 70% { transform:translate(-3px,2px); } 80% { transform:translate(2px,-2px); } }
 #skolan-strid { --f:1; position:fixed; inset:0; z-index:99999; overflow:hidden; font-family:system-ui,sans-serif; color:#fff; cursor:pointer; user-select:none; animation:sIn calc(.25s*var(--f)) ease-out; }
 #skolan-strid.lugn { --f:.5; }
 #skolan-strid.ut { animation:sUt .35s ease-in forwards; }
@@ -2322,7 +2334,7 @@ class SkolanPanel extends HTMLElement {
     const laddat = this._load();
     this._strid({ at: x, djur, ...fore, skada: sen.skada ?? x.nu, svag: sen.svag ?? x.svag, klar: !!sen.klar,
       mot: sen.mot || 0, miss: !!sen.miss, livFore: sen.liv_fore, livMax: sen.liv_max, live: true, fortsatt, laddat,
-      skydd: sen.skydd, tillbaka: sen.tillbaka, skold: sen.skold });
+      skydd: sen.skydd, tillbaka: sen.tillbaka, skold: sen.skold, meteorer: sen.meteorer });
     await laddat;
     return true;
   }
@@ -2483,6 +2495,12 @@ class SkolanPanel extends HTMLElement {
       is: `<div class="glod" style="--g:#4fc3f7"></div>${partiklar(12, ["❄️", "🧊"], "fall")}<div class="frost"></div>`,
       kraft: `<div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div><div class="jatte">💥</div>${partiklar(10, ["⭐", "✨"], "gnista")}`,
     }[typ] || "";
+    const meteor = !o.idle && o.at.id === "a_meteor"; // meteorregn: egen effekt med nedslag
+    const antalMeteorer = o.meteorer || 5;
+    const meteorFx = meteor ? `<div class="meteor-himmel"></div>${Array.from({ length: antalMeteorer + 4 }, (_, i) => {
+      const stor = i < antalMeteorer;
+      return `<i class="meteor ${stor ? "" : "liten"}" style="--x:${slump(-90, 90).toFixed(0)}px;--y:${slump(-30, 40).toFixed(0)}px;--d:${(i * (stor ? 0.22 : 0.15) + (stor ? 0 : 0.1)).toFixed(2)}s;--s:${stor ? slump(42, 60).toFixed(0) : slump(18, 26).toFixed(0)}px">☄️</i>${stor ? `<b class="nedslag" style="--x:${slump(-70, 70).toFixed(0)}px;--y:${slump(-20, 40).toFixed(0)}px;--d:${(i * 0.22 + 0.55).toFixed(2)}s">💥</b>` : ""}`;
+    }).join("")}<div class="meteor-antal">☄️ ×${antalMeteorer}</div>` : "";
     if (o.idle) this._msg = null;
     const siffror = (o.jagMiss ? "MISS!" : String(o.skada)).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("");
     const el = document.createElement("div");
@@ -2494,7 +2512,7 @@ class SkolanPanel extends HTMLElement {
       <div class="scen">
         <div class="mark"></div>
         <div class="namnruta">${o.at.ikon} ${esc(o.at.namn)}</div>${o.vem ? `<div class="vem">📺 ${esc(o.vem)}</div>` : ""}
-        <div class="fiende ${o.motDjur ? "djur-fiende" : ""}"><div class="bosshp"><div style="width:${(o.kvar / o.hp) * 100}%"></div><span class="hpnum">${o.kvar}/${o.hp}</span></div><div class="figur">${o.motDjur ? ritaDjur(o.motDjur.art, ko ? "glad" : o.klar ? "hungrig" : "glad", o.motDjur.steg, {}) : o.mon?.ikon || "👾"}</div><div class="fx">${effekt}</div>
+        <div class="fiende ${o.motDjur ? "djur-fiende" : ""}"><div class="bosshp"><div style="width:${(o.kvar / o.hp) * 100}%"></div><span class="hpnum">${o.kvar}/${o.hp}</span></div><div class="figur">${o.motDjur ? ritaDjur(o.motDjur.art, ko ? "glad" : o.klar ? "hungrig" : "glad", o.motDjur.steg, {}) : o.mon?.ikon || "👾"}</div><div class="fx">${meteor ? meteorFx : effekt}</div>
           <div class="tal ${o.svag ? "svag" : ""} ${o.jagMiss ? "jagmiss" : ""}">${siffror}${o.svag ? "<small>SVAG PUNKT!</small>" : ""}</div></div>
         ${o.skold ? `<div class="skold-ikon hj">${skoldIk(o.skold)}</div>` : ""}${o.motSkold ? `<div class="skold-ikon fi">${skoldIk(o.motSkold)}</div>` : ""}
         ${!o.idle && skyddText(o.deSkydd, o.deTillbaka) ? `<div class="skyddtext fi">${skyddText(o.deSkydd, o.deTillbaka)}</div>` : ""}
