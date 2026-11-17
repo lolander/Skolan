@@ -3861,8 +3861,25 @@ class SkolanPanel extends HTMLElement {
         <div class="small muted">Övar ${esc(s.namn)} på orden varje dag före diktamen blir det meriter för varje övning plus bonus för att vara i god tid.</div>
       </div>` : ""}`;
     }
-    if (!f.las && !f.skriv && !f.ord) html += `<p class="muted">AI:n hittade inga läxor i brevet.</p>`;
-    else html += `<div class="actions"><button class="primary" id="vb-spara">Spara veckans läxor</button></div>`;
+    const amnOpt = (val, nytt) => opt([...(nytt ? [] : [["", "Välj ämne…"]]), ...amnen.map((y) => [y.id, y.namn])], val);
+    if (f.prov?.length) {
+      html += `<h3>📝 Prov</h3>${f.prov.map((x, i) => `<div class="form vb-rad ${x.med === false ? "av" : ""}">
+        <label class="kap-rad"><input type="checkbox" data-vbp-med="${i}" ${x.med === false ? "" : "checked"}> <b>Lägg in provet</b> <span class="small muted">(blir en provboss 📝)</span></label>
+        <label>Namn <input data-vbp="${i}" data-f="namn" value="${esc(x.namn)}" maxlength="40"></label>
+        <div class="two"><label>Ämne <select data-vbp="${i}" data-f="amne">${!x.amne && x.amne_namn ? `<option value="" selected>➕ Nytt ämne: ${esc(x.amne_namn)}</option>` : ""}${amnOpt(x.amne, !x.amne && x.amne_namn)}</select></label>
+          <label>Datum <input data-vbp="${i}" data-f="datum" type="date" value="${esc(x.datum)}"></label></div>
+        <label>Vad provet handlar om <input data-vbp="${i}" data-f="omfattning" value="${esc(x.omfattning || "")}" maxlength="200"></label></div>`).join("")}`;
+    }
+    if (f.info?.length) {
+      html += `<h3>📌 Händelser och kom ihåg</h3><div class="small muted">Visas på förstasidan. Med datum får ${esc(s.namn)} och ni föräldrar en påminnelse kvällen innan.</div>
+        ${f.info.map((x, i) => `<div class="form vb-rad ${x.med === false ? "av" : ""}"><label class="kap-rad"><input type="checkbox" data-vbi-med="${i}" ${x.med === false ? "" : "checked"}> <b>Spara</b></label>
+          <textarea data-vbi="${i}" data-f="text" rows="2" maxlength="200" placeholder="t.ex. Utflykt – ta med matsäck">${esc(x.text)}</textarea>
+          <div class="two"><label>Datum (valfritt) <input data-vbi="${i}" data-f="datum" type="date" value="${esc(x.datum || "")}"></label><label>Tid <input data-vbi="${i}" data-f="tid" type="time" value="${esc(x.tid || "")}"></label></div></div>`).join("")}`;
+    }
+    html += `<button class="ghost" id="vb-info-ny">＋ Lägg till något att komma ihåg</button>`;
+    const nagot = f.las || f.skriv || f.ord || f.prov?.length || f.info?.length;
+    if (!f.las && !f.skriv && !f.ord) html += `<p class="muted">AI:n hittade inga läxor i brevet.${f.prov?.length || f.info?.length ? " Men prov och annat viktigt sparas ändå." : ""}</p>`;
+    if (nagot) html += `<div class="actions"><button class="primary" id="vb-spara">Spara</button></div>`;
     return html;
   }
 
@@ -3999,6 +4016,17 @@ class SkolanPanel extends HTMLElement {
         Fota en sida ur boken, lägg in glosor eller skriv anteckningar, så kan vi öva tillsammans! Du får en 💎 silverkista.${f.fler ? ` <span class="small muted">(${f.fler} ämne${f.fler === 1 ? "" : "n"} till saknar material)</span>` : ""}</div>
         <div class="actions"><button class="primary" id="material-ja" data-amne="${f.amne}">📷 Lägg in material</button><button class="ghost" id="material-sen" data-amne="${f.amne}">Inte nu</button></div></div>
     </div>`;
+  }
+
+  // Händelser och kom ihåg från veckobrevet.
+  _skolinfoKort() {
+    const lista = this._s.skolinfo || [];
+    if (!lista.length) return "";
+    const dagNamn = (x) => `${veckodag(x.datum)} ${Number(x.datum.slice(8))}/${Number(x.datum.slice(5, 7))}`;
+    const nar = (x) => x.dagar == null ? "" : x.dagar === 0 ? `Idag, ${dagNamn(x)}` : x.dagar === 1 ? `Imorgon, ${dagNamn(x)}` : dagNamn(x).replace(/^./, (c) => c.toUpperCase());
+    return `<div class="card skolinfo-kort"><div class="djur-rubrik">📌 Från skolan</div>
+      <ul class="lista">${lista.slice(0, 8).map((x) => `<li class="${x.dagar != null && x.dagar <= 1 ? "snart" : ""}">${x.dagar != null ? `<b>${nar(x)}${x.tid ? " kl. " + esc(x.tid) : ""}:</b> ` : "Kom ihåg: "}${esc(x.text)}
+        ${this._s.kan_valja ? `<button class="mini" data-skolinfo-bort="${x.id}" title="Ta bort">✕</button>` : ""}</li>`).join("")}</ul></div>`;
   }
 
   _veckokollRad() {
@@ -4476,6 +4504,7 @@ class SkolanPanel extends HTMLElement {
     return `
       ${this._s.kan_valja ? `<button class="row foralder-knapp" id="open-foralder"><span>⚙️ <b>Föräldrar</b><br><span class="muted small">Läxschema, bonus och belöningsbutik för ${esc(this._s.namn)}</span></span><span>›</span></button>` : ""}
       ${this._fodelsedagKort()}
+      ${this._skolinfoKort()}
       ${this._julKort()}
       ${this._kistKort()}
       ${this._nyaKort()}
@@ -5843,18 +5872,32 @@ class SkolanPanel extends HTMLElement {
       })
     );
     $("[data-vb-hogl]")?.addEventListener("change", (e) => { vbSync(); v.f.las.hogl = e.target.checked; });
+    const vbListSync = () => {
+      if (v.name !== "veckobrev" || !v.f) return;
+      r.querySelectorAll("[data-vbp]").forEach((el) => { v.f.prov[Number(el.dataset.vbp)][el.dataset.f] = el.value; });
+      r.querySelectorAll("[data-vbi]").forEach((el) => { v.f.info[Number(el.dataset.vbi)][el.dataset.f] = el.value; });
+    };
+    r.querySelectorAll("[data-vbp-med]").forEach((el) => el.addEventListener("change", () => { vbListSync(); v.f.prov[Number(el.dataset.vbpMed)].med = el.checked; this._render(); }));
+    r.querySelectorAll("[data-vbi-med]").forEach((el) => el.addEventListener("change", () => { vbListSync(); v.f.info[Number(el.dataset.vbiMed)].med = el.checked; this._render(); }));
+    on("#vb-info-ny", () => { vbListSync(); v.f.info = [...(v.f.info || []), { text: "", datum: "", tid: "" }]; this._render(); });
     on("#vb-spara", async () => {
       vbSync();
+      vbListSync();
       const f = v.f;
-      const args = {};
+      const args = { mandag: f.mandag };
       if (f.las && v.med.las) args.las = f.las;
       if (f.skriv && v.med.skriv) args.skriv = f.skriv;
       if (f.ord && v.med.ord) args.ord = f.ord;
-      if (!Object.keys(args).length) return;
+      const prov = (f.prov || []).filter((x) => x.med !== false);
+      if (prov.some((x) => !x.datum)) { this._msg = { type: "error", text: "Välj datum för provet." }; return this._render(); }
+      if (prov.length) args.prov = prov;
+      const info = (f.info || []).filter((x) => x.med !== false && x.text.trim());
+      if (info.length) args.info = info;
+      if (Object.keys(args).length === 1) return;
       if (await this._uppdragAct("veckoplan", args)) {
         if (v.inkorg) await this._skolaAct({ op: "inkorg_klar", id: v.inkorg });
         this._go({ name: "hem" });
-        this._msg = { type: "ok", text: "Veckans läxor är inlagda! 📅" };
+        this._msg = { type: "ok", text: "Veckobrevet är inlagt! 📅" };
         this._render();
       }
     });
@@ -5935,6 +5978,7 @@ class SkolanPanel extends HTMLElement {
       this._arenaVisa();
     }));
     on("#open-lektioner", () => this._go({ name: "lektioner" }));
+    r.querySelectorAll("[data-skolinfo-bort]").forEach((b) => b.addEventListener("click", async () => { if (await this._act("skolinfo_bort", { id: b.dataset.skolinfoBort })) await this._load(this._s.barn); }));
     on("#material-ja", () => this._go({ name: "amne", amne: r.querySelector("#material-ja").dataset.amne }));
     on("#material-sen", async () => { if (await this._act("laxfraga_svar", { material: r.querySelector("#material-sen").dataset.amne })) { await this._load(this._s.barn); this._render(); } });
     if (v.name === "lektioner") {
@@ -7089,6 +7133,11 @@ const CSS = `
   .trofe-rad { display:flex; flex-wrap:wrap; gap:8px; }
   .trofe { display:flex; flex-direction:column; align-items:center; font-size:28px; background:linear-gradient(135deg,#fff8e1,#ffe082); border-radius:12px; padding:6px 10px; color:#4a2c00; }
   .vantar.ok { background:#e8f5e9; color:#1b5e20; }
+  .skolinfo-kort { border:2px solid #90caf9; }
+  .skolinfo-kort li { display:flex; gap:6px; align-items:baseline; justify-content:space-between; }
+  .skolinfo-kort li.snart { font-weight:600; color:var(--primary-color,#1976d2); }
+  .vb-rad.av { opacity:.5; }
+  .vb-rad textarea { width:100%; box-sizing:border-box; font:inherit; padding:8px; border-radius:8px; }
   .foto-val { background:var(--secondary-background-color,#f5f5f5); border-radius:12px; padding:10px 12px; margin:8px 0; }
   .foto-val .lista li { display:flex; justify-content:space-between; align-items:center; gap:8px; }
   .ls-sok input { width:100%; box-sizing:border-box; padding:10px 12px; border-radius:12px; border:1px solid var(--divider-color,#ccc); font-size:16px; background:var(--card-background-color,#fff); color:inherit; }

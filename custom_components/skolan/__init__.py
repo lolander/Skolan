@@ -346,6 +346,23 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
 
     async_track_time_change(hass, _hogtid_notis, hour=15, minute=30, second=0)
 
+    async def _skolinfo_notis(_now=None) -> None:
+        """Kl. 18.30: påminn barnet och föräldrarna om det som händer i skolan imorgon (t.ex. utflykt, ta med matsäck)."""
+        conf = hass.data[DOMAIN]["conf"]
+        for b in conf["barn"]:
+            data = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
+            imorgon = [x for x in meriter.skolinfo(data) if x["dagar"] == 1]
+            if not imorgon:
+                continue
+            dag = imorgon[0]["datum"]
+            nar = f"Imorgon, {VECKODAGAR_SV[date.fromisoformat(dag).weekday()]} {int(dag[8:])}/{int(dag[5:7])}"
+            rader = nar + ":\n" + "\n".join(f"📌 {'Kl. ' + x['tid'] + ': ' if x.get('tid') else ''}{x['text']}" for x in imorgon)
+            await _notis(hass, b.get("notify"), "🎒 Imorgon i skolan", rader, "/skolan")
+            for tjanst in conf.get("foralder_notify", {}).values():
+                await _notis(hass, tjanst, f"🎒 {b['namn']} imorgon", rader, f"/skolan?barn={b['id']}")
+
+    async_track_time_change(hass, _skolinfo_notis, hour=18, minute=30, second=0)
+
     async def _hungrig_notis(_now=None) -> None:
         """Kl. 16: säg till om husdjuret är hungrigt eller ledset (en gång per dag)."""
         for b in hass.data[DOMAIN]["conf"]["barn"]:
@@ -883,7 +900,7 @@ class StateView(HomeAssistantView):
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
                 "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "material": meriter.material_fraga(data) if not parent else None,
-                "lektioner": data.get("lektioner", []),
+                "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
                 "skola": await _skola_status(hass, barn, parent) if skola.PA else None,
                 "lag_lista": (await hass.async_add_executor_job(_load_fil, _lag_fil(hass))).get("lag", []) if parent else None,
@@ -1219,7 +1236,7 @@ def _ebok_fil(bok_id: str) -> str:
 FORALDER_OPS = {
     "schema_spara", "bonus", "los_in", "butik_lagg_till", "butik_ta_bort",
     "manuell_uppdrag", "manuell_schema", "manuell_forhor", "manuell_ovning", "manuell_plugg", "angra_ovning",
-    "hejarop_ny", "hejarop_bort", "fodelsedag_satt", "lektioner_spara",
+    "hejarop_ny", "hejarop_bort", "fodelsedag_satt", "lektioner_spara", "skolinfo_bort",
 }
 
 
@@ -1410,6 +1427,9 @@ def _apply(data: dict, body: dict) -> list[str]:
         if dag >= u["datum"]:
             raise ValueError("Pluggdagen måste vara före provet.")
         meriter.prov_studiedag(data, u, dag)
+        return []
+    if op == "skolinfo_bort":
+        data["skolinfo"] = [x for x in data.get("skolinfo", []) if x.get("id") != body.get("id")]
         return []
     if op == "manuell_schema":
         meriter.manuell_schema(data, str(body.get("schema")), str(body.get("ankomst"))[:10], bool(body.get("i_tid")))
@@ -3215,9 +3235,22 @@ VECKOBREV_PROMPT = (
     '"skriv_dag": veckodag 0–6 då uppgifterna i läxboken/skrivläxan ska lämnas in, eller null, '
     '"ord": [veckans ord/glosor exakt som de står], '
     '"diktamen_dag": veckodag 0–6 för diktamen/förhör på orden, eller null, '
-    '"regler": [korta regler/instruktioner ur brevet, med egna ord], "note": kort kommentar eller ""}. '
-    '"Varje vardag" betyder [0,1,2,3,4]. Hitta inte på något som inte står i brevet.'
+    '"prov": [{"amne": ämne, "namn": kort namn t.ex. "Matteprov kapitel 3", "datum": "YYYY-MM-DD", "omfattning": vad provet handlar om/vad man ska plugga eller ""}], '
+    '"handelser": [{"datum": "YYYY-MM-DD" eller "", "tid": "HH:MM" eller "", "text": kort beskrivning t.ex. "Utflykt till Skansen", "ta_med": vad man ska ta med eller ""}], '
+    '"kom_ihag": [korta saker att komma ihåg som inte hör till en viss dag, t.ex. "Ta med matlåda och bestick vid skolmat"], '
+    '"regler": [korta regler/instruktioner om läxorna, med egna ord], "note": kort kommentar eller ""}. '
+    '"Varje vardag" betyder [0,1,2,3,4]. Räkna ut datum utifrån dagens datum (brev skrivna på helgen gäller veckan som kommer). '
+    "Ta med ALLA prov, förhör, utflykter, idrottsdagar, lediga dagar, föräldramöten och annat viktigt, även om det inte finns några läxor. "
+    'Hitta inte på något som inte står i brevet.'
 )
+
+
+def _vb_prompt() -> str:
+    idag = dt_util.now().date()
+    return f"Idag är det {VECKODAGAR_SV[idag.weekday()]} {idag.isoformat()}. " + VECKOBREV_PROMPT
+
+
+VECKODAGAR_SV = ["måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag"]
 
 VECKODAG = ["måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag"]
 
@@ -3311,8 +3344,28 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
     diktamen = dag(ai["diktamen_dag"]) if ai.get("diktamen_dag") is not None else None
     g_finns = next((g for g in (a_ord or {}).get("glosor", []) if diktamen and g.get("forhor") == diktamen), None)
     titel = f"Kapitel {knr}" if knr else (knamn or "Veckans läsläxa")
+    def iso(v):
+        v = str(v or "")[:10]
+        return v if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v) else ""
+
+    prov = []
+    for x in (ai.get("prov") or [])[:6]:
+        if not isinstance(x, dict) or not iso(x.get("datum")):
+            continue
+        a = _amne_match(amnen, str(x.get("amne") or "")) if x.get("amne") else None
+        prov.append({"namn": str(x.get("namn") or f"{x.get('amne') or ''}-prov").strip()[:MAX_NAME], "amne": (a or {}).get("id"),
+                     "amne_namn": str(x.get("amne") or "")[:MAX_NAME], "datum": iso(x["datum"]), "omfattning": str(x.get("omfattning") or "")[:200]})
+    info = []
+    for x in (ai.get("handelser") or [])[:12]:
+        if isinstance(x, dict) and str(x.get("text") or "").strip():
+            text = str(x["text"]).strip().rstrip(".")[:120] + "." + (f" Ta med: {str(x['ta_med']).strip().rstrip('.')[:80]}." if str(x.get("ta_med") or "").strip() else "")
+            info.append({"text": text, "datum": iso(x.get("datum")), "tid": str(x.get("tid") or "")[:5] if re.fullmatch(r"\d{1,2}:\d{2}", str(x.get("tid") or "")) else ""})
+    for x in (ai.get("kom_ihag") or [])[:10]:
+        if str(x).strip():
+            info.append({"text": str(x).strip()[:160], "datum": "", "tid": ""})
     return {
         "mandag": mandag.isoformat(),
+        "prov": prov, "info": info,
         "regler": [str(x)[:200] for x in (ai.get("regler") or [])][:8],
         "note": str(ai.get("note") or "")[:300],
         "kapitel": {bid: [{k: v for k, v in x.items() if k != "nyckel"} for x in lista] for bid, lista in kapitel.items()},
@@ -3515,7 +3568,7 @@ class VeckobrevView(HomeAssistantView):
         try:
             for forsok in range(3):
                 try:
-                    text = await _ai_las(hass, src, VECKOBREV_PROMPT, "Läs veckobrev")
+                    text = await _ai_las(hass, src, _vb_prompt(), "Läs veckobrev")
                     break
                 except Exception as err:  # noqa: BLE001
                     if forsok == 2:
@@ -3612,6 +3665,33 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
                  "par": par, "forhor": forhor, "skapad": dt_util.now().date().isoformat()}
             a["glosor"].append(g)
         skapat.append(f"📝 {g['namn']} ({len(par)} ord)")
+    for x in (body.get("prov") or [])[:6]:  # prov ur brevet blir riktiga prov (med provboss)
+        d = datum(x.get("datum"))
+        if not d:
+            continue
+        a = _find(amnen, x["amne"]) if x.get("amne") else None
+        if a is None and str(x.get("amne_namn") or "").strip():
+            a = _amne_match(amnen, x["amne_namn"])
+            if a is None:
+                a = {"id": _new_id(), "namn": _name(x["amne_namn"]), "farg": FARGER[len(amnen) % len(FARGER)], "bocker": [], "glosor": [], "delar": ["bocker", "glosor"]}
+                amnen.append(a)
+        if a is None:
+            raise ValueError("Välj ett ämne för provet.")
+        u = {"id": _new_id(), "typ": "prov", "namn": _name(x.get("namn") or f"{a['namn']}-prov"), "amne": a["id"], "amne_namn": a["namn"],
+             "bok": None, "fran": None, "till": None, "kapitel": str(x.get("omfattning") or "")[:200], "sidor": [], "glosor": [],
+             "datum": d, "skapad": nu, "av_id": user.id, "av_namn": user.name, "kalla": "veckobrev"}
+        _framsteg(data, u)
+        lista.append(u)
+        skapat.append(f"📝 {u['namn']}")
+    info = [x for x in (body.get("info") or [])[:20] if isinstance(x, dict) and str(x.get("text") or "").strip()]
+    if info:
+        si = data.setdefault("skolinfo", [])
+        mandag = str(body.get("mandag") or "")[:10]
+        for x in info:
+            si.append({"id": _new_id(), "text": str(x["text"]).strip()[:200], "datum": datum(x.get("datum")) if x.get("datum") else "",
+                       "tid": str(x.get("tid") or "")[:5], "vecka": mandag, "skapad": nu})
+        del si[:-80]
+        skapat.append(f"📌 {len(info)} saker från skolan")
     del lista[:-200]
     return skapat
 
@@ -4032,7 +4112,7 @@ class SkolaView(HomeAssistantView):
                 ai = b["ai"]
                 if b.get("fil") and not b.get("fil_last"):  # läraren bifogade brevet: AI:n läser det och fyller i det läraren inte skrev
                     try:
-                        las = _parse_json(await _ai_las(hass, mapp / "filer" / b["fil"]["namn"], VECKOBREV_PROMPT, "Läs veckobrev från läraren"))
+                        las = _parse_json(await _ai_las(hass, mapp / "filer" / b["fil"]["namn"], _vb_prompt(), "Läs veckobrev från läraren"))
                     except Exception as err:  # noqa: BLE001
                         _LOGGER.warning("Lärarens veckobrev kunde inte läsas: %s", err)
                         raise ValueError("AI:n kunde inte läsa det bifogade brevet. Försök igen om en stund.") from err

@@ -3552,3 +3552,24 @@ def lektion_nu(data: dict) -> dict | None:
     if kommande:
         ut["byte"] = nu.replace(hour=min(kommande) // 60, minute=min(kommande) % 60, second=5, microsecond=0).isoformat()
     return ut
+
+
+# ---------- från skolan: händelser och kom ihåg ur veckobrevet ----------
+def skolinfo(data: dict) -> list[dict]:
+    """Det som är aktuellt: händelser de närmaste 3 veckorna och veckans kom ihåg."""
+    idag = dt_util.now().date()
+    mandag = idag - timedelta(days=idag.weekday())
+    if idag.weekday() >= 5:
+        mandag += timedelta(days=7)
+    ut = []
+    for x in data.get("skolinfo", []):
+        if x.get("datum"):
+            try:
+                d = (date.fromisoformat(x["datum"]) - idag).days
+            except ValueError:
+                continue
+            if 0 <= d <= 21:
+                ut.append({**x, "dagar": d})
+        elif x.get("vecka", "") >= (mandag - timedelta(days=7)).isoformat():
+            ut.append({**x, "dagar": None})
+    return sorted(ut, key=lambda x: (x["dagar"] is None, x["dagar"] or 0, x.get("tid") or ""))

@@ -88,6 +88,11 @@ def lage(data: dict) -> str:
             f"{dn}: " + ", ".join(f"{x.get('start') or '?'}–{x.get('slut') or '?'} {x['namn']}" + (f" (sal {x['sal']})" if x.get("sal") else "")
                                   + (f" ({x['info']})" if x.get("info") else "") for x in lekt if x.get("dag") == d)
             for d, dn in enumerate(dagar) if any(x.get("dag") == d for x in lekt)) + f". Idag är det {meriter.VECKODAGAR[dt_util.now().weekday()]}.")
+    si = meriter.skolinfo(data)
+    if si:
+        rader.append("Från skolan (veckobrevet): " + "; ".join(
+            (f"{'idag' if x['dagar'] == 0 else 'imorgon' if x['dagar'] == 1 else x['datum']}{' kl. ' + x['tid'] if x.get('tid') else ''}: " if x["dagar"] is not None else "kom ihåg: ") + x["text"]
+            for x in si[:10]) + ".")
     kist = len(meriter._m(data).get("kistor", []))
     if kist:
         rader.append(f"Oöppnade kistor: {kist}.")
