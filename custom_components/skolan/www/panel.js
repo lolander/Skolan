@@ -1062,6 +1062,10 @@ class SkolanPanel extends HTMLElement {
       title = "🏟️ Arenan";
       back = { name: "hem" };
       body = this._arenaView();
+    } else if (v.name === "lar") {
+      title = `🎓 Lär ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
+      back = { name: "glosor", amne: v.amne, glosor: v.glosor };
+      body = this._larView();
     } else if (v.name === "fokus") {
       title = "⏱️ Fokusläge";
       back = { name: "hem" };
@@ -3686,6 +3690,50 @@ class SkolanPanel extends HTMLElement {
       ${lista.map(({ a, g, sen }) => `<button class="row" data-rep="${a.id}|${g.id}"><span><b>${esc(g.namn)}</b><br><span class="muted small">${esc(a.namn)} · övade för ${sen} dagar sedan</span></span><span>▶</span></button>`).join("")}</div>`;
   }
 
+  // Lär husdjuret: barnet förklarar, husdjuret (AI) frågar vidare eller tackar.
+  _larView() {
+    const v = this._view, d = this._s.meriter?.djur, a = this._amne(v.amne), g = a?.glosor.find((x) => x.id === v.glosor);
+    if (!g || !d) return `<p class="muted">Listan finns inte.</p>`;
+    if (v.i == null) {
+      const idx = g.par.map((p, i) => i).filter((i) => g.par[i].length > 1 && String(g.par[i][0]).trim() && String(g.par[i][1]).trim());
+      v.i = idx[Math.floor(Math.random() * idx.length)];
+      v.historik = [];
+    }
+    const term = g.par[v.i][0];
+    const vad = gTyp(g) === "begrepp" ? "begreppet" : gTyp(g) === "formler" ? "formeln" : "ordet";
+    const fraga = `Hej! Jag har hört ${vad} <b>${esc(term)}</b> men fattar inte vad det betyder. Kan du förklara för mig? 🤔`;
+    const bubbla = (x) => x.vem === "barn" ? `<div class="lar-rad barn"><div class="lar-bubbla">${esc(x.text)}</div></div>`
+      : `<div class="lar-rad djur"><div class="lar-ikon">${d.art}</div><div class="lar-bubbla">${x.html || esc(x.text)}</div></div>`;
+    return `<div class="lar-chatt">${bubbla({ vem: "djur", html: fraga })}${v.historik.map(bubbla).join("")}
+      ${v.tanker ? `<div class="lar-rad djur"><div class="lar-ikon">${d.art}</div><div class="lar-bubbla tanker">🤔 …</div></div>` : ""}</div>
+      ${v.klar ? `<div class="card center">${v.p ? `<div class="lar-beloning">🎓 +${v.p} ⭐</div>` : ""}${v.facit ? `<div class="small">Det betyder: <b>${esc(v.facit)}</b></div>` : ""}
+          <div class="actions"><button class="primary" id="lar-igen">🎓 ${{ begreppet: "Ett begrepp", formeln: "En formel", ordet: "Ett ord" }[vad]} till</button><button class="ghost" id="lar-klar">Klar</button></div></div>`
+        : `<div class="lar-input"><textarea id="lar-text" rows="3" maxlength="400" placeholder="Förklara med egna ord, gärna med ett exempel…" ${v.tanker ? "disabled" : ""}></textarea>
+          <button class="primary" id="lar-skicka" ${v.tanker ? "disabled" : ""}>💬 Förklara</button></div>`}`;
+  }
+
+  async _larSkicka() {
+    const v = this._view, el = this.shadowRoot.querySelector("#lar-text"), text = (el?.value || "").trim();
+    if (!text || v.tanker) return;
+    v.historik.push({ vem: "barn", text });
+    v.tanker = true;
+    this._render();
+    try {
+      const res = await this._hass.fetchWithAuth("/api/skolan/lar", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barn: this._s.barn, amne: v.amne, glosor: v.glosor, i: v.i, text, historik: v.historik.slice(0, -1) }) });
+      const x = await res.json();
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      v.historik.push({ vem: "djur", text: x.svar });
+      if (x.klar) { v.klar = true; v.p = x.p; v.facit = x.facit; if (x.p) this._load(this._s.barn); }
+    } catch (e) {
+      v.historik.pop();
+      this._msg = { type: "error", text: e.message || String(e) };
+    } finally {
+      v.tanker = false;
+      this._render();
+    }
+  }
+
   // Fokusläge: en timer medan husdjuret sover bredvid. Klar tid ger ⭐.
   _fokusView() {
     const d = this._s.meriter?.djur, f = this._s.data.meriter?.fokus;
@@ -4423,6 +4471,7 @@ class SkolanPanel extends HTMLElement {
         ${svara.size ? `<button class="primary svar-knapp" id="ova-svara">🔥 Öva svåra ord (${svara.size})</button>` : ""}
         <button class="ghost" id="edit-glosor">Ändra</button>
       </div>
+      ${spelbaraPar(g).length && this._s.meriter?.djur ? `<button class="row lar-knapp" id="lar-start"><span>🎓 <b>Lär ${esc(this._s.meriter.djur.namn)}</b><br><span class="small">Förklara ${gTyp(g) === "begrepp" ? "ett begrepp" : gTyp(g) === "formler" ? "en formel" : "ett ord"} med egna ord. Den som förklarar lär sig mest!</span></span><span>›</span></button>` : ""}
       ${spelbaraPar(g).length >= 3 && this._s.karta && this._s.meriter?.djur ? `<button class="row glosstrid-knapp" id="glosstrid-start"><span>⚔️ <b>Glosstrid</b><br><span class="small">Varje rätt svar är en attack mot ${esc(this._s.karta.monster?.namn || "monstret")} ${this._s.karta.monster?.ikon || ""}</span></span><span>›</span></button>` : ""}
       ${spelbaraPar(g).length >= 4 ? `<button class="row rekord-knapp" id="rekord-start"><span>⚡ <b>Glosrekord</b><br><span class="small">Så många rätt du hinner på 60 sekunder!</span></span><span class="rekord-siffra">${g.rekord ? `🏆 ${g.rekord.poang}` : "Nytt!"}</span></button>` : ""}
       ${this._s.kan_valja ? `<button class="row skicka-forhor" id="skicka-forhor">📋 Skicka förhör till ${esc(this._s.namn)} ›</button>
@@ -5230,6 +5279,10 @@ class SkolanPanel extends HTMLElement {
     on("#sk-kopiera", () => navigator.clipboard?.writeText(this._s.skola?.lank || "").then(() => { this._msg = { type: "ok", text: "Klasslänken är kopierad 📋" }; this._render(); }));
     r.querySelectorAll("[data-rep]").forEach((b) => b.addEventListener("click", () => { const [am, gl] = b.dataset.rep.split("|"); this._go({ name: "glosor", amne: am, glosor: gl }); }));
     on("#open-fokus", () => this._go({ name: "fokus" }));
+    on("#lar-start", () => this._go({ name: "lar", amne: v.amne, glosor: v.glosor }));
+    on("#lar-skicka", () => this._larSkicka());
+    on("#lar-igen", () => this._go({ name: "lar", amne: this._view.amne, glosor: this._view.glosor }));
+    on("#lar-klar", () => this._go({ name: "glosor", amne: this._view.amne, glosor: this._view.glosor }));
     r.querySelectorAll("[data-fokus]").forEach((b) => b.addEventListener("click", async () => { if (await this._act("fokus_start", { min: Number(b.dataset.fokus) })) await this._load(this._s.barn); this._render(); }));
     on("#fokus-avbryt", async () => { if (confirm("Avbryta fokuspasset? Då blir det inga ⭐.") && await this._act("fokus_avbryt", {})) await this._load(this._s.barn); this._render(); });
     on("#fokus-klar", async () => { if (await this._act("fokus_klar", {})) { this._msg = { type: "ok", text: "⏱️ Bra fokuserat! 🎉" }; await this._load(this._s.barn); } this._render(); });
@@ -6210,6 +6263,17 @@ const CSS = `
   .sak-ikon { position:relative; }
   .bastis-hjarta { position:absolute; top:-6px; right:-10px; font-size:16px; animation:bastis 1.6s ease-in-out infinite; }
   @keyframes bastis { 0%,100% { transform:scale(1); } 50% { transform:scale(1.25); } }
+  .lar-knapp { background:linear-gradient(135deg,#00897b,#43a047) !important; color:#fff !important; }
+  .lar-chatt { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+  .lar-rad { display:flex; gap:8px; align-items:flex-end; }
+  .lar-rad.barn { justify-content:flex-end; }
+  .lar-ikon { font-size:30px; }
+  .lar-bubbla { max-width:78%; padding:9px 12px; border-radius:16px; font-size:15px; line-height:1.35; }
+  .lar-rad.djur .lar-bubbla { background:#e8f5e9; color:#1b5e20; border-bottom-left-radius:4px; }
+  .lar-rad.barn .lar-bubbla { background:#e3f2fd; color:#0d47a1; border-bottom-right-radius:4px; }
+  .lar-bubbla.tanker { animation:andas 1s ease-in-out infinite; }
+  .lar-input { display:flex; flex-direction:column; gap:6px; }
+  .lar-beloning { font-size:28px; font-weight:800; color:#2e7d32; animation:gs-pop .6s; }
   .fokus-djur { position:relative; display:inline-block; }
   .fokus-djur svg { width:140px; height:140px; }
   .fokus-djur.sover svg { animation:andas 3s ease-in-out infinite; }

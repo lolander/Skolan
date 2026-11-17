@@ -2004,6 +2004,22 @@ def attack_kop(data: dict, at_id: str) -> None:
     agda.append(at_id)
 
 
+# ---------- lär husdjuret ----------
+P_LAR = {2: 5, 3: 8}
+LAR_MAX_DAG = 5  # så många förklaringar per dag ger ⭐
+
+
+def lar_djuret(data: dict, g: dict, term: str, betyg: int) -> int:
+    """Barnet förklarade ett ord eller begrepp bra för husdjuret. Returnerar ⭐."""
+    idag = dt_util.now().date().isoformat()
+    aktiv(data, idag)
+    _rakna(data, "lart_ut")
+    for n in range(1, LAR_MAX_DAG + 1):
+        if ge(data, P_LAR.get(betyg, 5), f"🎓 Lärde husdjuret {str(term)[:40]}", f"lar:{idag}:{n}", "🎓"):
+            return P_LAR.get(betyg, 5)
+    return 0
+
+
 # ---------- glosstrid: rätt svar på glosor blir attacker mot kartans monster ----------
 GS_SKADA = 1  # grundskada per rätt svar (× husdjurets kraft, × 2 vid kombo)
 GS_KOMBO = 5  # så många rätt i rad ger dubbel skada

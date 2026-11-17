@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.53.0"
+VERSION = "1.54.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -160,7 +160,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -892,6 +892,89 @@ class StateView(HomeAssistantView):
                 "data": _ut(data, parent),
             }
         )
+
+
+LAR_PROMPT = (
+    "Du är {djur}, ett gulligt och nyfiket husdjur ({art}) som bor i ett läxspel. Ditt barn är 10–13 år och ska förklara "
+    "{vad} \"{term}\" för dig, så att du lär dig. Rätt betydelse: \"{facit}\".\n"
+    "Det ni har sagt hittills:\n{historik}\n"
+    "Bedöm barnets SENASTE förklaring: visar den att barnet förstår? Den behöver inte vara ordagrann, egna ord och exempel är bra. "
+    "betyg: 0 = fel eller inget, 1 = delvis, 2 = bra, 3 = jättebra med eget exempel.\n"
+    "Svara som husdjuret på enkel svenska, högst 2 korta meningar, glatt och uppmuntrande, gärna med en emoji. "
+    "Om betyg är 0 eller 1: ställ EN nyfiken följdfråga som leder barnet rätt, utan att säga svaret. "
+    "Om betyg är 2 eller 3: berätta med egna ord vad du har lärt dig och tacka, och ställ INGEN fråga. "
+    "{sista}"
+    "Svara bara med JSON: {{\"svar\": \"...\", \"betyg\": 0, \"klar\": false}}. klar = true när betyg är 2 eller 3."
+)
+LAR_RUNDOR = 3
+LAR_PER_DAG = 30  # AI-frågor per barn och dag
+
+
+class LarView(HomeAssistantView):
+    """Lär husdjuret: barnet förklarar ett begrepp med egna ord, AI:n svarar som husdjuret."""
+
+    url = "/api/skolan/lar"
+    name = "api:skolan:lar"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest
+        barn = _barn_for(hass, request, body.get("barn"))
+        foralder = _ar_foralder(hass, request)
+        path = _dir(hass, barn)
+        data = await hass.async_add_executor_job(_load, path)
+        try:
+            a = _find(data.get("amnen", []), body.get("amne"))
+            g = _find(a["glosor"], body.get("glosor"))
+            par = g["par"][int(body.get("i"))]
+        except (ValueError, TypeError, IndexError, KeyError):
+            return self.json_message("Ordet finns inte.", 400)
+        text = re.sub(r"\s+", " ", str(body.get("text") or "")).strip()[:400]
+        if not text:
+            return self.json_message("Skriv din förklaring först.", 400)
+        historik = [x for x in (body.get("historik") or []) if isinstance(x, dict)][-6:]
+        runda = sum(1 for x in historik if x.get("vem") == "barn") + 1
+        idag = dt_util.now().date().isoformat()
+        rakna = hass.data[DOMAIN].setdefault("lar_rakna", {})
+        if rakna.get("dag") != idag:
+            rakna.clear()
+            rakna["dag"] = idag
+        if rakna.get(barn, 0) >= LAR_PER_DAG:
+            return self.json_message("Husdjuret är trött efter allt lärande idag. Fortsätt i morgon! 😴", 429)
+        rakna[barn] = rakna.get(barn, 0) + 1
+        d = meriter._m(data).get("djur") or {}
+        typ = g.get("typ") or "glosor"
+        term, facit = (par[0], par[1])
+        vad = {"begrepp": "begreppet", "formler": "formeln"}.get(typ, "ordet")
+        hist = "\n".join(f"{'Barnet' if x.get('vem') == 'barn' else 'Du'}: {str(x.get('text') or '')[:400]}" for x in historik)
+        hist += f"\nBarnet: {text}"
+        entity = hass.data[DOMAIN]["conf"].get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+        if not entity:
+            return self.json_message("Ingen AI finns i Home Assistant.", 503)
+        instr = LAR_PROMPT.format(djur=d.get("namn") or "Husdjuret", art=d.get("art") or "🐾", vad=vad, term=term, facit=facit, historik=hist,
+                                  sista="Det här är sista rundan: om förklaringen fortfarande inte stämmer, berätta snällt vad det betyder. " if runda >= LAR_RUNDOR else "")
+        try:
+            resp = await hass.services.async_call("ai_task", "generate_data", {"task_name": "Läxspelet lär husdjuret", "entity_id": entity, "instructions": instr},
+                                                  blocking=True, return_response=True)
+            raw = (resp or {}).get("data")
+            x = _parse_json(raw if isinstance(raw, str) else json.dumps(raw))
+            svar = str(x.get("svar") or "").strip()[:400]
+            betyg = max(0, min(3, int(x.get("betyg") or 0)))
+            if not svar:
+                raise ValueError("tomt svar")
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Läxspelet: lär husdjuret misslyckades: %s", err)
+            return self.json_message("Husdjuret hörde inte riktigt. Försök igen om en stund.", 503)
+        klar = betyg >= 2 or runda >= LAR_RUNDOR
+        p = 0
+        if klar and betyg >= 2 and not foralder:
+            async with hass.data[DOMAIN]["locks"][barn]:
+                data = await hass.async_add_executor_job(_load, path)
+                p = meriter.lar_djuret(data, g, term, betyg)
+                await hass.async_add_executor_job(_save, path, data)
+        return self.json({"svar": svar, "betyg": betyg, "klar": klar, "p": p, "facit": facit if klar and betyg < 2 else None})
 
 
 class GlosstridView(HomeAssistantView):
