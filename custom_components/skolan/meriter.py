@@ -2004,6 +2004,54 @@ def attack_kop(data: dict, at_id: str) -> None:
     agda.append(at_id)
 
 
+# ---------- syskonuppdrag: ett gemensamt mål varje vecka ----------
+SYSKON_BELONING = 30
+SYSKON_UPPDRAG = [  # (id, ikon, text, mål per barn, "summa" = tillsammans, "alla" = varje barn)
+    ("forhor", "📋", "Gör {mal} förhör tillsammans", 2, "summa"),
+    ("dagar", "📅", "Plugga alla minst {mal} dagar den här veckan", 4, "alla"),
+    ("glosor", "📝", "Öva glosor {mal} gånger tillsammans", 5, "summa"),
+    ("stjarnor", "⭐", "Tjäna {mal} ⭐ tillsammans", 150, "summa"),
+    ("laxor", "✅", "Gör {mal} läxor i tid tillsammans", 2, "summa"),
+]
+
+
+def _syskon_varde(data: dict, uid: str, mandag: date) -> int:
+    m = _m(data)
+    mi = mandag.isoformat()
+    if uid == "forhor":
+        return sum(1 for f in data.get("forhor", []) if f.get("status") == "klart" and (f.get("klart") or "")[:10] >= mi)
+    if uid == "dagar":
+        return sum(1 for d in m.get("ovningsdagar", []) if d >= mi)
+    if uid == "glosor":
+        return sum(1 for a in data.get("amnen", []) for g in a.get("glosor", []) for d in g.get("ovat_dagar", []) if d >= mi)
+    if uid == "stjarnor":
+        return sum(x["p"] for x in m["logg"] if x["p"] > 0 and x.get("ikon") not in EJ_SKADA and x["tid"][:10] >= mi)
+    if uid == "laxor":
+        return int(_andel_vecka(data, mandag, dt_util.now().date())[2])
+    return 0
+
+
+def syskon_uppdrag(alla: list[tuple[str, str, dict]]) -> dict | None:
+    """Veckans gemensamma uppdrag för syskonen. alla = [(id, namn, data)]."""
+    if len(alla) < 2:
+        return None
+    idag = dt_util.now().date()
+    mandag = idag - timedelta(days=idag.weekday())
+    uid, ikon, text, per, satt = SYSKON_UPPDRAG[(mandag.toordinal() // 7 + 3) % len(SYSKON_UPPDRAG)]
+    mal = per * len(alla) if satt == "summa" else per
+    bidrag = [{"id": i, "namn": n, "varde": _syskon_varde(d, uid, mandag)} for i, n, d in alla]
+    nu = sum(b["varde"] for b in bidrag) if satt == "summa" else min(b["varde"] for b in bidrag)
+    vecka = "{}-W{:02d}".format(*idag.isocalendar()[:2])
+    return {"id": uid, "ikon": ikon, "text": text.format(mal=mal), "mal": mal, "nu": min(nu, mal), "satt": satt, "per": per,
+            "bidrag": bidrag, "klar": nu >= mal, "beloning": SYSKON_BELONING, "vecka": vecka}
+
+
+def syskon_belona(data: dict, st: dict) -> bool:
+    if not st or not st["klar"]:
+        return False
+    return ge(data, SYSKON_BELONING, f"🤝 Ni klarade veckans syskonuppdrag!", f"syskon:{st['vecka']}", "🤝")
+
+
 # ---------- lär husdjuret ----------
 P_LAR = {2: 5, 3: 8}
 LAR_MAX_DAG = 5  # så många förklaringar per dag ger ⭐

@@ -3678,6 +3678,19 @@ class SkolanPanel extends HTMLElement {
     }
   }
 
+  // Veckans syskonuppdrag: ett gemensamt mål, alla får belöningen.
+  _syskonKort() {
+    const u = this._s.syskon;
+    if (!u) return "";
+    const pct = Math.round((u.nu / u.mal) * 100);
+    const del = u.bidrag.map((b) => `<span class="sy-del ${b.id === this._s.barn ? "jag" : ""}">${esc(b.namn)}: <b>${b.varde}</b>${u.satt === "alla" ? `/${u.per}` : ""}</span>`).join("");
+    return `<div class="card syskon-kort ${u.klar ? "klar" : ""}"><div class="sy-rubrik">🤝 Veckans syskonuppdrag</div>
+      <div class="sy-text">${u.ikon} ${esc(u.text)}</div>
+      <div class="progress stor"><div style="width:${pct}%"></div></div>
+      <div class="small">${u.nu} av ${u.mal}${u.klar ? ` · 🎉 Klart! Alla får +${u.beloning} ⭐` : ` · alla får +${u.beloning} ⭐ när ni klarar det`}</div>
+      <div class="sy-delar">${del}</div></div>`;
+  }
+
   // Listor som inte har övats på länge: repetera för extra ⭐ (gamla glosor glöms annars).
   _repeteraKort() {
     if (this._s.kan_valja) return "";
@@ -3898,6 +3911,7 @@ class SkolanPanel extends HTMLElement {
       ${this._s.kan_valja ? `<button class="row foralder-knapp" id="open-foralder"><span>⚙️ <b>Föräldrar</b><br><span class="muted small">Läxschema, bonus och belöningsbutik för ${esc(this._s.namn)}</span></span><span>›</span></button>` : ""}
       ${this._hejaropKort()}
       ${this._dagensKort()}
+      ${this._syskonKort()}
       ${this._repeteraKort()}
       ${this._forhorLista()}
       ${this._djurKort()}
@@ -6282,6 +6296,13 @@ const CSS = `
   .fokus-val { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:10px 0; }
   .fokus-val button { min-width:70px; }
   .fokus-tid { font-size:56px; font-weight:800; font-variant-numeric:tabular-nums; margin:8px 0; }
+  .syskon-kort { background:linear-gradient(135deg,#e8eaf6,#e0f7fa); color:#1a237e; }
+  .syskon-kort.klar { background:linear-gradient(135deg,#e8f5e9,#c8e6c9); color:#1b5e20; }
+  .sy-rubrik { font-weight:700; font-size:13px; opacity:.8; }
+  .sy-text { font-size:16px; font-weight:600; margin:4px 0 8px; }
+  .sy-delar { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+  .sy-del { font-size:12px; padding:2px 8px; border-radius:10px; background:rgba(255,255,255,.6); }
+  .sy-del.jag { outline:2px solid currentColor; }
   .repetera-kort { border-left:4px solid #7e57c2; }
   .heja-kort { display:flex; gap:12px; align-items:flex-start; background:linear-gradient(135deg,#fce4ec,#f8bbd0); color:#4a148c; animation:gs-pop .6s; }
   .heja-ikon { font-size:40px; animation:bastis 1.6s ease-in-out infinite; }

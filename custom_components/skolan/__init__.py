@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.54.0"
+VERSION = "1.55.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -847,6 +847,18 @@ class StateView(HomeAssistantView):
             return sorted(ut, key=lambda x: meriter.topp_nyckel(x["vecka"]), reverse=True)
 
         topplista = await hass.async_add_executor_job(_topp)
+
+        def _syskon() -> dict | None:
+            alla = [(b["id"], b["namn"], data if b["id"] == barn else _load(_dir(hass, b["id"]))) for b in conf["barn"]]
+            return meriter.syskon_uppdrag(alla)
+
+        syskon_st = await hass.async_add_executor_job(_syskon)
+        if not parent and syskon_st and syskon_st["klar"] and f"syskon:{syskon_st['vecka']}" not in meriter._m(data)["nycklar"]:
+            async with hass.data[DOMAIN]["locks"][barn]:  # uppdraget klart: belöning till barnet en gång
+                d2 = await hass.async_add_executor_job(_load, _dir(hass, barn))
+                if meriter.syskon_belona(d2, syskon_st):
+                    await hass.async_add_executor_job(_save, _dir(hass, barn), d2)
+                data = d2
         idag = dt_util.now().date()
         butik = await hass.async_add_executor_job(_load_fil, hass.data[DOMAIN]["base"] / "butik.json") if parent else None
         return self.json(
@@ -858,7 +870,7 @@ class StateView(HomeAssistantView):
                 },
                 "topplista": topplista,
                 "dagens": dagens.dagens(data, next((b["namn"] for b in conf["barn"] if b["id"] == barn), "")),
-                "handelse": meriter.vecko_handelse(), "rekord": dagens.rekord(data), "prat": dagens.prat(data),
+                "handelse": meriter.vecko_handelse(), "rekord": dagens.rekord(data), "prat": dagens.prat(data), "syskon": syskon_st,
                 "djurlista": meriter.DJUR,
                 "djurbutik": meriter.butik_lista(),
                 "pass": meriter.pass_status(data),
