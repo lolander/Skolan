@@ -1062,6 +1062,10 @@ class SkolanPanel extends HTMLElement {
       title = "🏟️ Arenan";
       back = { name: "hem" };
       body = this._arenaView();
+    } else if (v.name === "fokus") {
+      title = "⏱️ Fokusläge";
+      back = { name: "hem" };
+      body = this._fokusView();
     } else if (v.name === "glosstrid") {
       title = "⚔️ Glosstrid";
       back = v.gs && !v.gs.klar ? null : v.fran === "glosor" ? { name: "glosor", amne: v.amne, glosor: v.glosor } : { name: "hem" };
@@ -1517,7 +1521,7 @@ class SkolanPanel extends HTMLElement {
         <div class="small">${agg ? `Ägget kläcks om ${kvar} ⭐. Gör läxor för att värma det!` : DJUR_HUMOR[d.humor](esc(d.namn))}</div>
         ${d.nasta ? `<div class="progress"><div style="width:${Math.min(100, Math.round((d.intjanat / d.nasta) * 100))}%"></div></div>
         <div class="small muted">${kvar} ⭐ kvar tills ${esc(d.namn)} växer</div>` : `<div class="small">👑 ${esc(d.namn)} är en legend!</div>`}
-        <div class="djur-knappar"><button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button></div>
+        <div class="djur-knappar">${this._s.kan_valja ? "" : `<button class="mini butik-knapp" id="open-fokus">⏱️ Fokus</button>`}<button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button></div>
         <button class="mini butik-knapp" id="open-widget">📱 ${this._s.kan_valja ? `${esc(this._s.namn)}s husdjur` : "Husdjuret"} på hemskärmen</button>
       </div></div>`;
   }
@@ -3682,6 +3686,36 @@ class SkolanPanel extends HTMLElement {
       ${lista.map(({ a, g, sen }) => `<button class="row" data-rep="${a.id}|${g.id}"><span><b>${esc(g.namn)}</b><br><span class="muted small">${esc(a.namn)} · övade för ${sen} dagar sedan</span></span><span>▶</span></button>`).join("")}</div>`;
   }
 
+  // Fokusläge: en timer medan husdjuret sover bredvid. Klar tid ger ⭐.
+  _fokusView() {
+    const d = this._s.meriter?.djur, f = this._s.data.meriter?.fokus;
+    if (!f) {
+      return `<div class="card center"><div class="fokus-djur">${d ? ritaDjur(d.art, "glad", Math.max(1, d.steg), {}) : "⏱️"}</div>
+        <p>Plugga utan att göra något annat. ${d ? esc(d.namn) : "Husdjuret"} sover bredvid och vaknar när tiden är slut.</p>
+        <div class="fokus-val">${[[10, 5], [15, 8], [20, 10], [25, 12]].map(([m, p]) => `<button class="primary" data-fokus="${m}">${m} min<br><small>+${p} ⭐</small></button>`).join("")}</div>
+        <p class="small muted">Lägg undan telefonen eller ha bara läxan öppen. Två fokuspass om dagen ger ⭐.</p></div>`;
+    }
+    const slut = new Date(f.start).getTime() + f.min * 60000;
+    return `<div class="card center fokus-pagar"><div class="fokus-djur sover">${d ? ritaDjur(d.art, "nojd", Math.max(1, d.steg), {}) : ""}<span class="zzz">💤</span></div>
+      <div class="fokus-tid" id="fokus-tid" data-slut="${slut}">--:--</div>
+      <p class="small">${d ? esc(d.namn) : "Husdjuret"} sover. Plugga på så länge! 📚</p>
+      <button class="primary" id="fokus-klar" style="display:none">🎉 Klar! Väck ${d ? esc(d.namn) : "husdjuret"}</button>
+      <button class="ghost" id="fokus-avbryt">Avbryt</button></div>`;
+  }
+
+  _fokusTick() {
+    const el = this.shadowRoot?.querySelector("#fokus-tid");
+    if (!el) { clearInterval(this._fokusTimer); this._fokusTimer = null; return; }
+    const kvar = Math.max(0, Math.round((Number(el.dataset.slut) - Date.now()) / 1000));
+    el.textContent = `${String(Math.floor(kvar / 60)).padStart(2, "0")}:${String(kvar % 60).padStart(2, "0")}`;
+    if (!kvar) {
+      clearInterval(this._fokusTimer); this._fokusTimer = null;
+      el.textContent = "⏰ Klart!";
+      const k = this.shadowRoot.querySelector("#fokus-klar");
+      if (k) k.style.display = "";
+    }
+  }
+
   // Lappar från mamma eller pappa som har kommit fram.
   _hejaropKort() {
     if (this._s.kan_valja) return "";
@@ -5195,6 +5229,11 @@ class SkolanPanel extends HTMLElement {
     on("#sk-koppla-bort", () => { if (confirm("Koppla bort läraren? Klasslänken byts ut och läraren behöver koppla in eleven igen.")) this._skolaAct({ op: "koppla_bort" }, "Läraren är bortkopplad."); });
     on("#sk-kopiera", () => navigator.clipboard?.writeText(this._s.skola?.lank || "").then(() => { this._msg = { type: "ok", text: "Klasslänken är kopierad 📋" }; this._render(); }));
     r.querySelectorAll("[data-rep]").forEach((b) => b.addEventListener("click", () => { const [am, gl] = b.dataset.rep.split("|"); this._go({ name: "glosor", amne: am, glosor: gl }); }));
+    on("#open-fokus", () => this._go({ name: "fokus" }));
+    r.querySelectorAll("[data-fokus]").forEach((b) => b.addEventListener("click", async () => { if (await this._act("fokus_start", { min: Number(b.dataset.fokus) })) await this._load(this._s.barn); this._render(); }));
+    on("#fokus-avbryt", async () => { if (confirm("Avbryta fokuspasset? Då blir det inga ⭐.") && await this._act("fokus_avbryt", {})) await this._load(this._s.barn); this._render(); });
+    on("#fokus-klar", async () => { if (await this._act("fokus_klar", {})) { this._msg = { type: "ok", text: "⏱️ Bra fokuserat! 🎉" }; await this._load(this._s.barn); } this._render(); });
+    if ($("#fokus-tid") && !this._fokusTimer) { this._fokusTick(); this._fokusTimer = setInterval(() => this._fokusTick(), 1000); }
     r.querySelectorAll("[data-heja-las]").forEach((b) => b.addEventListener("click", async () => {
       if (await this._act("hejarop_las", { id: b.dataset.hejaLas })) { this._msg = { type: "ok", text: "💌 Lappen är sparad i hjärtat ❤️" }; await this._load(this._s.barn); }
       this._render();
@@ -6171,6 +6210,14 @@ const CSS = `
   .sak-ikon { position:relative; }
   .bastis-hjarta { position:absolute; top:-6px; right:-10px; font-size:16px; animation:bastis 1.6s ease-in-out infinite; }
   @keyframes bastis { 0%,100% { transform:scale(1); } 50% { transform:scale(1.25); } }
+  .fokus-djur { position:relative; display:inline-block; }
+  .fokus-djur svg { width:140px; height:140px; }
+  .fokus-djur.sover svg { animation:andas 3s ease-in-out infinite; }
+  @keyframes andas { 0%,100% { transform:scale(1); } 50% { transform:scale(1.04); } }
+  .zzz { position:absolute; top:0; right:-10px; font-size:28px; animation:bastis 2s ease-in-out infinite; }
+  .fokus-val { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:10px 0; }
+  .fokus-val button { min-width:70px; }
+  .fokus-tid { font-size:56px; font-weight:800; font-variant-numeric:tabular-nums; margin:8px 0; }
   .repetera-kort { border-left:4px solid #7e57c2; }
   .heja-kort { display:flex; gap:12px; align-items:flex-start; background:linear-gradient(135deg,#fce4ec,#f8bbd0); color:#4a148c; animation:gs-pop .6s; }
   .heja-ikon { font-size:40px; animation:bastis 1.6s ease-in-out infinite; }

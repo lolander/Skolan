@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.52.0"
+VERSION = "1.53.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -1078,6 +1078,16 @@ def _apply(data: dict, body: dict) -> list[str]:
     if op == "hejarop_las":
         if body.get("_barn"):
             dagens.hejarop_las(data, str(body.get("id") or ""))
+        return []
+    if op in ("fokus_start", "fokus_klar", "fokus_avbryt"):
+        if not body.get("_barn"):
+            raise ValueError("Fokusläget är för barnet.")
+        if op == "fokus_start":
+            dagens.fokus_start(data, int(body.get("min") or 0))
+        elif op == "fokus_klar":
+            dagens.fokus_klar(data)
+        else:
+            dagens.fokus_avbryt(data)
         return []
     if op in ("gata_gissa", "gata_svar"):  # dagens gåta (bara barnet själv)
         if not body.get("_barn"):

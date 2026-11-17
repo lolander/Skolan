@@ -324,3 +324,37 @@ def hejarop_las(data: dict, hid: str) -> None:
     h["last"] = dt_util.now().isoformat(timespec="minutes")
     if h.get("boost"):
         meriter.ge(data, int(h["boost"]), f"💌 Hejarop från {h.get('av') or 'mamma eller pappa'}", f"heja:{h['id']}", "💌")
+
+
+# ---------- fokusläge: en timer medan husdjuret sover bredvid ----------
+FOKUS_MIN = (10, 15, 20, 25)
+P_FOKUS = {10: 5, 15: 8, 20: 10, 25: 12}
+FOKUS_PER_DAG = 2  # så många fokuspass per dag ger ⭐
+
+
+def fokus_start(data: dict, minuter: int) -> None:
+    if minuter not in FOKUS_MIN:
+        raise ValueError("Välj hur länge.")
+    meriter._m(data)["fokus"] = {"start": dt_util.now().isoformat(timespec="seconds"), "min": minuter}
+
+
+def fokus_klar(data: dict) -> int:
+    """Timern är slut. Ger ⭐ om tiden verkligen har gått. Returnerar ⭐ (0 om dagens pass är slut)."""
+    m = meriter._m(data)
+    f = m.get("fokus")
+    if not f:
+        raise ValueError("Inget fokuspass pågår.")
+    gatt = (dt_util.now() - dt_util.parse_datetime(f["start"])).total_seconds()
+    if gatt < f["min"] * 60 - 5:
+        raise ValueError("Tiden är inte slut än.")
+    m.pop("fokus", None)
+    idag = dt_util.now().date().isoformat()
+    for n in range(1, FOKUS_PER_DAG + 1):
+        if meriter.ge(data, P_FOKUS[f["min"]], f"⏱️ Fokuspass {f['min']} minuter", f"fokus:{idag}:{n}", "⏱️"):
+            meriter.aktiv(data, idag)
+            return P_FOKUS[f["min"]]
+    return 0
+
+
+def fokus_avbryt(data: dict) -> None:
+    meriter._m(data).pop("fokus", None)
