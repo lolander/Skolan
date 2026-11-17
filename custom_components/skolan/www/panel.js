@@ -1806,7 +1806,7 @@ class SkolanPanel extends HTMLElement {
           ${h.aktiv ? `<div class="small"><b>✅ Med dig nu</b></div>` : `<button class="mini primary" data-djur-till="${h.id}">🔄 Byt</button>`}</div>`).join("")}</div>
         ${paket.length ? `<h3>📦 Dina paketdjur</h3><div class="small muted">Redan betalda. De börjar som ägg.</div><div class="djur-val">${paket.map((a) => `<button data-djur-nytt="${a}" data-gratis="1" class="rit-val">${ritaDjur(a, "glad", 2)}</button>`).join("")}</div>` : ""}
         <h3>🥚 Skaffa ett nytt husdjur · ${pris} ⭐</h3>
-        <div class="small muted">Det nya djuret börjar som ett ägg och följer med dig direkt. Dina andra djur finns kvar.</div>
+        <div class="small muted">Det nya djuret börjar om från början: ett ägg utan attacker och kompisar. Dina andra djur finns kvar med allt de har.</div>
         <div class="djur-val">${nya.map((a) => `<button data-djur-nytt="${a}" class="rit-val" ${saldo >= pris ? "" : "disabled"}>${ritaDjur(a, "glad", 2)}</button>`).join("")}</div>`;
       })()}
       ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
@@ -2913,7 +2913,7 @@ class SkolanPanel extends HTMLElement {
         `Husdjuret äter när du gör något i Läxspelet. Gör du inget på ett par dagar blir det <b>hungrigt</b> och ledset.`,
         `🛍️ I <b>Husdjursbutiken</b> kan du köpa hattar, bakgrunder och effekter för dina stjärnor. Djuret växer ändå, för storleken räknas på alla meriter du har tjänat.`,
         `🎉 Inför högtider (jul, påsk, Halloween, sommarlov med flera) finns specialsaker i 2 veckor. Det du köper får du behålla för alltid.`,
-        `🐾 Du kan ha <b>flera husdjur</b>. Ett nytt kostar 100 ⭐ och börjar som ett ägg. Byt gratis mellan dina djur i butiken. Bara djuret som är med dig växer, får XP och utvecklas av det du gör.`,
+        `🐾 Du kan ha <b>flera husdjur</b>. Ett nytt kostar 100 ⭐ och börjar som ett ägg. Byt gratis mellan dina djur i butiken. Bara djuret som är med dig växer, får XP och utvecklas av det du gör. Attacker, försvarsträning och kompisar hör till djuret du köper dem till, så ett nytt djur börjar om från början. Allt finns kvar när du byter tillbaka.`,
       ])}
 
       ${kort("🎯", "Dagens utmaning", [
@@ -5837,7 +5837,7 @@ class SkolanPanel extends HTMLElement {
     }));
     r.querySelectorAll("[data-djur-nytt]").forEach((b) => b.addEventListener("click", async () => {
       const art = b.dataset.djurNytt, gratis = b.dataset.gratis === "1";
-      if (!confirm(`Skaffa ${art}${gratis ? "" : ` för ${this._s.nytt_djur_pris} ⭐`}? Det börjar som ett ägg. Dina andra djur finns kvar.`)) return;
+      if (!confirm(`Skaffa ${art}${gratis ? "" : ` för ${this._s.nytt_djur_pris} ⭐`}? Det börjar om från början, utan attacker och kompisar. Dina andra djur finns kvar med allt de har.`)) return;
       const namn = this._ask("Vad ska ditt nya husdjur heta?", "");
       if (namn === null) return;
       if (await this._act("djur", { art, namn: namn || "" })) this._fx({ text: "🥚 NYTT HUSDJUR!", sub: `${art} ${namn || ""}`, emojis: ["🥚", art, "✨", "💖"], antal: 28, farg: "#ffb300" });

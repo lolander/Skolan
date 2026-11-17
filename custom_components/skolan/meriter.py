@@ -114,16 +114,38 @@ def _djur_rakna(data: dict, namn: str, n: int = 0, varde: int | None = None) -> 
     r[namn] = max(r.get(namn, 0), varde) if varde is not None else max(0, r.get(namn, 0) + n)
 
 
+# Det som hör till varje husdjur och sparas hos djuret när man byter: attacker (med nivåer), försvarsträning och kompisar.
+PER_DJUR = {"attacker": list, "attack_niva": dict, "traning": int}
+
+
+def _ar_kompis(sak_id: str) -> bool:
+    return (_sak(sak_id) or {}).get("typ") == "kompis"
+
+
 def _byt_till(data: dict, h: dict) -> None:
-    """Gör h till det aktiva husdjuret. Liv och XP sparas hos djuret man lämnar."""
+    """Gör h till det aktiva husdjuret. Liv, XP, attacker och kompisar sparas hos djuret man lämnar."""
     m = _m(data)
     d = m["djur"]
     k = _karta(data)
     gammal = _aktivt(data)
-    if gammal and gammal is not h:
+    if gammal is h:
+        return
+    if gammal:
         gammal["xp"] = k.get("djur_xp", 0)
         gammal["liv"] = k.get("liv")
         gammal["liv_rest"] = k.get("liv_rest", 0)
+        for nyckel, tom in PER_DJUR.items():
+            gammal[nyckel] = m.pop(nyckel, tom())
+        agt = d.setdefault("agt", [])
+        gammal["kompisar"] = [x for x in agt if _ar_kompis(x)]
+        gammal["kompis_pa"] = d.setdefault("pa", {}).pop("kompis", None)
+        d["agt"] = [x for x in agt if not _ar_kompis(x)]
+    for nyckel, tom in PER_DJUR.items():
+        m[nyckel] = h.pop(nyckel, tom())
+    d.setdefault("agt", []).extend(x for x in h.pop("kompisar", []) if x not in d["agt"])
+    kp = h.pop("kompis_pa", None)
+    if kp:
+        d.setdefault("pa", {})["kompis"] = kp
     k["djur_xp"] = h.get("xp", 0)
     k["liv"] = h.get("liv")
     k["liv_rest"] = h.get("liv_rest", 0)
