@@ -140,7 +140,7 @@ REKORD_MIN = 5  # så många rätt krävs för att Glosrekord ska räknas för s
 DJUR = ["🐶", "🐱", "🦊", "🐼", "🐉", "🐢", "🦄", "🐧", "🐰", "🦖",
         "🐻", "🐨", "🐷", "🐸", "🐯", "🦁", "🐭", "🐮", "🐵", "🐹", "🦉", "🦝",
         "🌭", "🍉", "🍞", "🌵", "🍕", "🍦", "🧦", "🪨", "🍌",  # larviga husdjur
-        "🐙", "🍩", "🥑", "🍄", "☁️", "🦷", "🥔", "👻", "🤖"]
+        "🐙", "🍩", "🥑", "🍄", "☁️", "🦷", "🥔", "👻", "🤖", "🍫"]
 P_BYT_DJUR = 50  # byta till ett annat djur (första valet är gratis)
 # Husdjursbutiken: saker köps för saldot (intjänade meriter och djurets storlek påverkas inte)
 DJURBUTIK = [
@@ -1755,9 +1755,9 @@ KOMPIS_BASTISAR = {
     "k_kyckling": "🐷🐮🐰🍞", "k_mus": "🐱🐹🌭🍕", "k_groda": "🐸🐢🍄", "k_nyckelpiga": "🍉🌵🥑",
     "k_snigel": "🐢🍄🥔🪨", "k_fjaril": "🦄🐰🍉", "k_papegoja": "🐵🍌🦉", "k_blackfisk": "🐙🐢🐧",
     "k_spoke": "👻🦉🦝", "k_robot": "🤖🦖🪨", "k_alien": "☁️🤖🦄", "k_drake": "🐉🦖🐯🦁",
-    "k_enhorning": "🦄🍦🍩☁️", "ps_nalle": "🐻🐼🐨", "ps_valp": "🐶🦊🧦", "ps_katt": "🐱🐭🐯🦁",
+    "k_enhorning": "🦄🍦🍩☁️", "ps_nalle": "🐻🐼🐨🍫", "ps_valp": "🐶🦊🧦", "ps_katt": "🐱🐭🐯🦁",
     "b_zombie": "🦷🥔👻", "b_spoke": "👻🦝🐱",
-    "g_snogubbe": "🐧☁️🦉", "g_pepparkaka": "🍩🍦🍞🍪",
+    "g_snogubbe": "🐧☁️🦉", "g_pepparkaka": "🍩🍦🍞🍪🍫",
 }
 
 

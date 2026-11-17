@@ -308,6 +308,24 @@ const DJUR_UTSEENDE = {
      <path d="M44 84 A56 56 0 0 0 156 84 Z" fill="#ef5350"/>
      <ellipse cx="66" cy="100" rx="3" ry="5" fill="#222"/><ellipse cx="134" cy="100" rx="3" ry="5" fill="#222"/><ellipse cx="80" cy="128" rx="3" ry="5" fill="#222"/><ellipse cx="122" cy="130" rx="3" ry="5" fill="#222"/>
      <ellipse cx="78" cy="168" rx="11" ry="6" fill="#2e7d32"/><ellipse cx="122" cy="168" rx="11" ry="6" fill="#2e7d32"/>` },
+  "🍫": { ansikte: [100, 104, 32], topp: 46, form: () =>
+    `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 -1.5;0 0" dur="2.4s" repeatCount="indefinite"/>
+     <rect x="50" y="140" width="100" height="32" rx="8" fill="#e0a050" stroke="#b07a35" stroke-width="3"/>
+     <path d="M62 152 h6 M82 158 h6 M104 152 h6 M126 158 h6" stroke="#c4873e" stroke-width="3" stroke-linecap="round"/>
+     <g><animateTransform attributeName="transform" type="scale" values="1 1;1.02 0.97;1 1" dur="2.4s" repeatCount="indefinite" additive="sum"/>
+       <rect x="56" y="64" width="88" height="80" rx="26" fill="#fffdf7" stroke="#e0dbd0" stroke-width="3"/>
+       <path d="M64 76 q10 -8 22 -6" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/></g>
+     <path d="M46 138 q8 -6 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 2 v8 h-108 z" fill="#7b4a2e" stroke="#5d3420" stroke-width="2.5" stroke-linejoin="round"/>
+     <g><animateTransform attributeName="transform" type="rotate" values="0 100 160;8 100 160;0 100 160" dur="1.2s" repeatCount="indefinite"/>
+       <path d="M86 166 C80 172 70 176 66 186 C62 196 88 198 92 188 C96 178 96 170 92 166 Z" fill="#fafafa" stroke="#d7d2c8" stroke-width="3"/></g>
+     <g><animateTransform attributeName="transform" type="rotate" values="0 100 160;-8 100 160;0 100 160" dur="1.2s" begin="0.6s" repeatCount="indefinite"/>
+       <path d="M114 166 C120 172 130 176 134 186 C138 196 112 198 108 188 C104 178 104 170 108 166 Z" fill="#fafafa" stroke="#d7d2c8" stroke-width="3"/></g>
+     <circle cx="72" cy="116" r="7" fill="#f48fb1" opacity=".75"/><circle cx="128" cy="116" r="7" fill="#f48fb1" opacity=".75"/>
+     <g><animateTransform attributeName="transform" type="rotate" values="-3 100 60;2 100 60;-3 100 60" dur="2.4s" repeatCount="indefinite"/>
+       <animateTransform attributeName="transform" type="translate" values="0 0;0 -4;0 0" dur="2.4s" repeatCount="indefinite" additive="sum"/>
+       <path d="M42 50 Q44 38 60 38 H142 Q158 38 160 52 L158 70 Q156 76 146 76 H54 Q44 76 42 68 Z" fill="#e0a050" stroke="#b07a35" stroke-width="3"/>
+       <path d="M58 48 q30 -6 84 0" stroke="#f5c27a" stroke-width="4" fill="none" stroke-linecap="round"/>
+       <path d="M70 60 h5 M96 64 h5 M124 60 h5" stroke="#c4873e" stroke-width="3" stroke-linecap="round"/></g></g>` },
   "🍞": { ansikte: [100, 128, 34], topp: 72, form: () =>
     `<path d="M46 178 V96 C30 92 30 52 64 52 C76 40 124 40 136 52 C170 52 170 92 154 96 V178 Z" fill="#c68642" />
      <path d="M56 170 V100 C42 94 44 62 68 62 C80 52 120 52 132 62 C156 62 158 94 144 100 V170 Z" fill="#ffe0b2"/>
