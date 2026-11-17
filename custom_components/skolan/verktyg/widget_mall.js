@@ -31,6 +31,8 @@ if (config.widgetFamily === "medium") {
   rad(v, `🔥 ${d.svit} dagar · ⭐ ${d.stjarnor}`, 13);
   if (d.utmaning && !sc) rad(v, `🎯 Utmaning ${d.utmaning}`, 13);
   if (sc) {
+    if (sc.ledig) rad(v, `🏖️ Ledigt idag: ${sc.ledig}`, 13, true);
+    else if (sc.ledig_imorgon) rad(v, `🏖️ Imorgon: ${sc.ledig_imorgon}`, 12);
     if (sc.nu) rad(v, `📖 Nu: ${sc.nu.namn} till ${sc.nu.slut}`, 13);
     if (sc.nasta) rad(v, `📚 ${sc.nasta_dag ? sc.nasta_dag[0].toUpperCase() + sc.nasta_dag.slice(1) : "Nästa"}: ${sc.nasta.namn} ${sc.nasta.start}`, 13, true);
     if (sc.rast) rad(v, sc.rast.nu ? `🔔 ${sc.rast.lunch ? "Lunch" : "Rast"} nu till ${sc.rast.slut}` : `🔔 ${sc.rast.lunch ? "Lunch" : "Rast"} ${sc.rast.start}–${sc.rast.slut}`, 13);

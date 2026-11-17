@@ -1188,6 +1188,10 @@ class SkolanPanel extends HTMLElement {
       title = s.kan_valja ? `🗓️ ${esc(s.namn)}s schema` : "🗓️ Mitt schema";
       back = { name: "hem" };
       body = this._lektionView();
+    } else if (v.name === "kalender") {
+      title = "📅 Skolkalender";
+      back = { name: "foralder" };
+      body = this._kalenderView();
     } else if (v.name === "veckobrev") {
       title = "📸 Veckobrev";
       back = { name: "foralder" };
@@ -3164,6 +3168,7 @@ class SkolanPanel extends HTMLElement {
           <span><input type="date" id="fd-datum" value="${esc(s.data.fodelsedag || "")}"> <button class="mini" id="fd-spara">Spara</button></span></div>
         ${this._hejaropForalder()}
         <button class="row foralder-knapp" id="open-lektioner" style="margin-top:4px"><span>🗓️ <b>Schema</b><br><span class="muted small">Fota ${esc(s.namn)}s lektionsschema så läser AI:n av lektioner och ämnen</span></span><span>›</span></button>
+        <button class="row foralder-knapp" id="open-kalender" style="margin-top:4px"><span>📅 <b>Skolkalender</b>${s.kalender?.fel ? " ⚠️" : ""}<br><span class="muted small">${s.kalender ? `Uppdateras automatiskt · ${s.kalender.antal} händelser` : `Prenumerera på skolans kalender (t.ex. InfoMentor) så kommer lov, utvecklingsdagar och möten in av sig själva`}</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
         <h3 style="margin-top:4px">📅 Läxschema för ${esc(s.namn)}</h3>
         <p class="muted small">När läxan brukar komma. Lägger ${esc(s.namn)} in den samma dag eller dagen efter blir det +${p.i_tid} ⭐. Glosor får förhörsdagen ifylld automatiskt. ${esc(s.namn)} får en påminnelse kl. 17.15 den dagen läxan brukar komma.</p>
@@ -4025,8 +4030,19 @@ class SkolanPanel extends HTMLElement {
     const dagNamn = (x) => `${veckodag(x.datum)} ${Number(x.datum.slice(8))}/${Number(x.datum.slice(5, 7))}`;
     const nar = (x) => x.dagar == null ? "" : x.dagar === 0 ? `Idag, ${dagNamn(x)}` : x.dagar === 1 ? `Imorgon, ${dagNamn(x)}` : dagNamn(x).replace(/^./, (c) => c.toUpperCase());
     return `<div class="card skolinfo-kort"><div class="djur-rubrik">📌 Från skolan</div>
-      <ul class="lista">${lista.slice(0, 8).map((x) => `<li class="${x.dagar != null && x.dagar <= 1 ? "snart" : ""}">${x.dagar != null ? `<b>${nar(x)}${x.tid ? " kl. " + esc(x.tid) : ""}:</b> ` : "Kom ihåg: "}${esc(x.text)}
+      <ul class="lista">${lista.slice(0, 8).map((x) => `<li class="${x.dagar != null && x.dagar <= 1 ? "snart" : ""}">${x.ledig ? "🏖️ " : ""}${x.dagar != null ? `<b>${nar(x)}${x.tid ? " kl. " + esc(x.tid) : ""}:</b> ` : "Kom ihåg: "}${esc(x.text)}
         ${this._s.kan_valja ? `<button class="mini" data-skolinfo-bort="${x.id}" title="Ta bort">✕</button>` : ""}</li>`).join("")}</ul></div>`;
+  }
+
+  _kalenderView() {
+    const k = this._s.kalender, s = this._s;
+    const dag = (iso) => `${veckodag(iso)} ${Number(iso.slice(8))}/${Number(iso.slice(5, 7))}`;
+    return `<p class="small">Klistra in länken till skolans kalenderprenumeration för ${esc(s.namn)} (i InfoMentor: Kalender → Prenumerera). Läxspelet hämtar den var tredje timme.</p>
+      <div class="form"><label>Länk <input id="kal-url" value="${esc(k?.url || "")}" placeholder="webcal://… eller https://…" autocomplete="off"></label></div>
+      <div class="actions"><button class="primary" id="kal-spara" ${this._busy ? "disabled" : ""}>Spara och hämta</button>${k ? `<button class="danger" id="kal-bort">Sluta prenumerera</button>` : ""}</div>
+      ${k ? `<p class="small muted">${k.fel ? `⚠️ ${esc(k.fel)} · ` : ""}Senast hämtad ${esc((k.hamtad || "").replace("T", " "))}</p>
+        <ul class="lista">${(k.kommande || []).map((x) => `<li>${x.ledig ? "🏖️" : "📅"} <b>${dag(x.start)}${x.slut !== x.start ? ` – ${dag(x.slut)}` : ""}${x.tid ? " kl. " + esc(x.tid) : ""}</b>: ${esc(x.text)}</li>`).join("") || "<li class='muted'>Inga kommande händelser.</li>"}</ul>
+        <p class="small muted">🏖️ = ledig dag. Då räknar widgeten och husdjuret inte med några lektioner. Händelser visas på förstasidan 3 veckor innan, och ${esc(s.namn)} och ni föräldrar får en påminnelse kvällen innan.</p>` : ""}`;
   }
 
   _veckokollRad() {
@@ -5978,6 +5994,12 @@ class SkolanPanel extends HTMLElement {
       this._arenaVisa();
     }));
     on("#open-lektioner", () => this._go({ name: "lektioner" }));
+    on("#open-kalender", () => this._go({ name: "kalender" }));
+    on("#kal-spara", async () => {
+      this._msg = { type: "info", text: "Hämtar kalendern…" };
+      if (await this._act("kalender_satt", { url: r.querySelector("#kal-url").value })) { await this._load(this._s.barn); this._msg = { type: "ok", text: `Klart! ${this._s.kalender?.antal || 0} händelser hämtade 📅` }; this._render(); }
+    });
+    on("#kal-bort", async () => { if (confirm("Sluta prenumerera på skolkalendern?") && (await this._act("kalender_satt", { url: "" }))) { await this._load(this._s.barn); this._render(); } });
     r.querySelectorAll("[data-skolinfo-bort]").forEach((b) => b.addEventListener("click", async () => { if (await this._act("skolinfo_bort", { id: b.dataset.skolinfoBort })) await this._load(this._s.barn); }));
     on("#material-ja", () => this._go({ name: "amne", amne: r.querySelector("#material-ja").dataset.amne }));
     on("#material-sen", async () => { if (await this._act("laxfraga_svar", { material: r.querySelector("#material-sen").dataset.amne })) { await this._load(this._s.barn); this._render(); } });

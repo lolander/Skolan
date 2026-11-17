@@ -3419,7 +3419,7 @@ def laxfraga(data: dict) -> dict | None:
     nu = dt_util.now()
     idag = nu.date().isoformat()
     m = _m(data)
-    if nu.weekday() >= 5 or nu.hour < LAXFRAGA_FRAN or m.get("laxfraga") == idag or m.get("registrerat_dag") == idag:
+    if nu.weekday() >= 5 or nu.hour < LAXFRAGA_FRAN or m.get("laxfraga") == idag or m.get("registrerat_dag") == idag or ledig(data, nu.date()):
         return None
     lektioner = sorted([x for x in data.get("lektioner", []) if x.get("dag") == nu.weekday() and not x.get("ej")], key=lambda x: x.get("start") or "")
     amnen = list(dict.fromkeys(x["namn"] for x in lektioner))
@@ -3525,8 +3525,9 @@ def lektion_nu(data: dict) -> dict | None:
         return None
     nu = dt_util.now()
     klocka = nu.hour * 60 + nu.minute
-    idag = sorted([x for x in lekt if x.get("dag") == nu.weekday() and _min(x.get("start")) is not None], key=lambda x: _min(x["start"]))
-    ut = {"nu": None, "nasta": None, "nasta_dag": None, "rast": None, "byte": None}
+    ledig_idag = ledig(data, nu.date())
+    idag = [] if ledig_idag else sorted([x for x in lekt if x.get("dag") == nu.weekday() and _min(x.get("start")) is not None], key=lambda x: _min(x["start"]))
+    ut = {"nu": None, "nasta": None, "nasta_dag": None, "rast": None, "byte": None, "ledig": ledig_idag}
     byten = []
     for i, x in enumerate(idag):
         st = _min(x["start"])
@@ -3541,12 +3542,14 @@ def lektion_nu(data: dict) -> dict | None:
             if nst - sl >= RAST_MIN and nst > klocka:
                 ut["rast"] = {"start": _hhmm(sl), "slut": _hhmm(nst), "nu": sl <= klocka, "lunch": nst - sl >= LUNCH_MIN}
     if not ut["nasta"] and not ut["nu"]:  # skoldagen är slut: första lektionen nästa skoldag
-        for n in range(1, 8):
-            dag = (nu.weekday() + n) % 7
-            forsta = sorted([x for x in lekt if x.get("dag") == dag and _min(x.get("start")) is not None], key=lambda x: _min(x["start"]))
-            if forsta:
+        for n in range(1, 21):  # nästa skoldag med lektioner som inte är ledig
+            d = nu.date() + timedelta(days=n)
+            forsta = sorted([x for x in lekt if x.get("dag") == d.weekday() and _min(x.get("start")) is not None], key=lambda x: _min(x["start"]))
+            if forsta and not ledig(data, d):
                 ut["nasta"] = {"namn": forsta[0]["namn"], "start": forsta[0]["start"]}
-                ut["nasta_dag"] = "imorgon" if n == 1 else VECKODAGAR[dag].lower()
+                ut["nasta_dag"] = "imorgon" if n == 1 else VECKODAGAR[d.weekday()] if n < 7 else f"{VECKODAGAR[d.weekday()]} {d.day}/{d.month}"
+                if n == 1 or ledig(data, nu.date() + timedelta(days=1)):
+                    ut["ledig_imorgon"] = ledig(data, nu.date() + timedelta(days=1))
                 break
     kommande = [b for b in byten if b > klocka]
     if kommande:
@@ -3572,4 +3575,108 @@ def skolinfo(data: dict) -> list[dict]:
                 ut.append({**x, "dagar": d})
         elif x.get("vecka", "") >= (mandag - timedelta(days=7)).isoformat():
             ut.append({**x, "dagar": None})
+    import difflib
+
+    norm = lambda t: _re.sub(r"[^a-zåäö0-9 ]", " ", t.lower()).split()  # noqa: E731
+    for k in _kalender_info(data, idag):  # samma sak i både veckobrevet och kalendern visas en gång
+        lik = [x for x in ut if x.get("datum") == k["datum"] and difflib.SequenceMatcher(None, " ".join(norm(x["text"])[:4]), " ".join(norm(k["text"])[:4])).ratio() > 0.6]
+        for x in lik:
+            x["ledig"] = x.get("ledig") or k["ledig"]
+        if not lik:
+            ut.append(k)
     return sorted(ut, key=lambda x: (x["dagar"] is None, x["dagar"] or 0, x.get("tid") or ""))
+
+
+# ---------- skolkalendern (prenumeration, t.ex. InfoMentor): lov, utvecklingsdagar, möten ----------
+import re as _re
+
+LEDIG_ORD = _re.compile(r"lov\b|lovdag|utvecklingsdag|studiedag|planeringsdag|skola och fritids stängt|skolan stängd|ledig dag|klämdag", _re.I)
+
+
+def _ics_datum(namn_param: str, varde: str) -> tuple[date, str]:
+    """(datum, "HH:MM" eller "") ur DTSTART/DTEND. Tider med Z görs om till lokal tid."""
+    v = varde.strip()
+    if "T" not in v:
+        return date(int(v[:4]), int(v[4:6]), int(v[6:8])), ""
+    t = datetime(int(v[:4]), int(v[4:6]), int(v[6:8]), int(v[9:11]), int(v[11:13]))
+    if v.endswith("Z"):
+        from datetime import timezone
+        t = dt_util.as_local(t.replace(tzinfo=timezone.utc))
+    return t.date(), f"{t.hour:02d}:{t.minute:02d}"
+
+
+def ics_las(text: str) -> list[dict]:
+    """Enkel tolkning av en iCal-fil: heldagar, flerdagar och händelser med tid."""
+    rader = []
+    for r in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if r[:1] in (" ", "\t") and rader:
+            rader[-1] += r[1:]
+        else:
+            rader.append(r)
+    ut, ev = [], None
+    avesc = lambda s: s.replace("\\n", " ").replace("\\N", " ").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\").strip()  # noqa: E731
+    for r in rader:
+        if r == "BEGIN:VEVENT":
+            ev = {}
+        elif r == "END:VEVENT" and ev is not None:
+            if ev.get("DTSTART") and ev.get("SUMMARY"):
+                try:
+                    start, tid = _ics_datum(*ev["DTSTART"])
+                    if ev.get("DTEND"):
+                        slut, sluttid = _ics_datum(*ev["DTEND"])
+                        if not sluttid and slut > start:
+                            slut -= timedelta(days=1)  # heldagar: slutdatum är dagen efter
+                    else:
+                        slut, sluttid = start, ""
+                    text = avesc(ev["SUMMARY"][1])
+                    info = avesc(ev.get("DESCRIPTION", ("", ""))[1])
+                    ut.append({"uid": avesc(ev.get("UID", ("", f"{start}{text}"))[1])[:120], "start": start.isoformat(), "slut": max(slut, start).isoformat(),
+                               "tid": tid, "sluttid": sluttid, "text": text[:160], "info": info[:300] if info and info.lower() not in text.lower() else "",
+                               "plats": avesc(ev.get("LOCATION", ("", ""))[1])[:80], "ledig": bool(LEDIG_ORD.search(text))})
+                except (ValueError, IndexError):
+                    pass
+            ev = None
+        elif ev is not None and ":" in r:
+            nyckel, varde = r.split(":", 1)
+            namn, _, param = nyckel.partition(";")
+            ev[namn.upper()] = (param, varde)
+    return sorted(ut, key=lambda x: (x["start"], x["tid"]))
+
+
+def kalender_spara(data: dict, handelser: list[dict]) -> None:
+    idag = dt_util.now().date()
+    fran, till = (idag - timedelta(days=7)).isoformat(), (idag + timedelta(days=200)).isoformat()
+    data["skolkalender"] = [x for x in handelser if x["slut"] >= fran and x["start"] <= till][:150]
+    data.setdefault("kalender", {})["hamtad"] = dt_util.now().isoformat(timespec="minutes")
+    data["kalender"]["fel"] = ""
+
+
+def ledig(data: dict, dag: date) -> str | None:
+    """Texten om dagen är ledig enligt skolkalendern (lov, utvecklingsdag …), annars None."""
+    d = dag.isoformat()
+    for x in data.get("skolkalender", []):
+        if x.get("ledig") and x["start"] <= d <= x["slut"] and x.get("uid") not in data.get("kalender_dolda", []):
+            return x["text"]
+    return None
+
+
+def _kalender_info(data: dict, idag: date) -> list[dict]:
+    dolda = set(data.get("kalender_dolda", []))
+    ut = []
+    for x in data.get("skolkalender", []):
+        if x.get("uid") in dolda:
+            continue
+        start, slut = date.fromisoformat(x["start"]), date.fromisoformat(x["slut"])
+        if slut < idag or (start - idag).days > 21:
+            continue
+        text = x["text"].rstrip(".") + "."
+        if slut > start:
+            text += f" Till och med {VECKODAGAR[slut.weekday()]} {slut.day}/{slut.month}."
+        if x.get("info"):
+            text += f" {x['info'].rstrip('.')}."
+        if x.get("plats"):
+            text += f" Plats: {x['plats']}."
+        d = max(start, idag)
+        ut.append({"id": f"kal:{x['uid']}", "text": text, "datum": d.isoformat(), "tid": x.get("tid") if start >= idag else "",
+                   "dagar": (d - idag).days, "kalender": True, "ny_start": start >= idag, "ledig": bool(x.get("ledig"))})
+    return ut

@@ -27,6 +27,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import voluptuous as vol
+import aiohttp
 from aiohttp import web
 
 from homeassistant.components import panel_custom
@@ -351,7 +352,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
         conf = hass.data[DOMAIN]["conf"]
         for b in conf["barn"]:
             data = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
-            imorgon = [x for x in meriter.skolinfo(data) if x["dagar"] == 1]
+            imorgon = [x for x in meriter.skolinfo(data) if x["dagar"] == 1 and (not x.get("kalender") or x.get("ny_start"))]
             if not imorgon:
                 continue
             dag = imorgon[0]["datum"]
@@ -362,6 +363,15 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
                 await _notis(hass, tjanst, f"🎒 {b['namn']} imorgon", rader, f"/skolan?barn={b['id']}")
 
     async_track_time_change(hass, _skolinfo_notis, hour=18, minute=30, second=0)
+
+    async def _kalendrar(_now=None) -> None:
+        for b in hass.data[DOMAIN]["conf"]["barn"]:
+            try:
+                await _kalender_hamta(hass, b["id"])
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Skolkalendern: %s", err)
+
+    async_track_time_change(hass, _kalendrar, minute=[7, 37], second=0)
 
     async def _hungrig_notis(_now=None) -> None:
         """Kl. 16: säg till om husdjuret är hungrigt eller ledset (en gång per dag)."""
@@ -901,6 +911,8 @@ class StateView(HomeAssistantView):
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
                 "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
+                "kalender": {**{k: v for k, v in (data.get("kalender") or {}).items() if parent or k != "url"},
+                             "antal": len(data.get("skolkalender", [])), "kommande": [x for x in data.get("skolkalender", []) if x["slut"] >= idag.isoformat()][:40]} if data.get("kalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
                 "skola": await _skola_status(hass, barn, parent) if skola.PA else None,
                 "lag_lista": (await hass.async_add_executor_job(_load_fil, _lag_fil(hass))).get("lag", []) if parent else None,
@@ -1170,6 +1182,11 @@ class ActionView(HomeAssistantView):
                 return self.json_message("Den motståndaren finns inte.", 400)
             jag = next(b for b in conf["barn"] if b["id"] == barn)
             body["_mot"] = (mot["id"], mot["namn"], await hass.async_add_executor_job(_load, _dir(hass, mot["id"])), jag["namn"])
+        if op == "kalender_satt" and foralder and str(body.get("url") or "").strip():
+            try:
+                body["_kal"] = await _kalender_ladda(hass, str(body.get("url")))
+            except ValueError as err:
+                return self.json_message(str(err), 400)
         if op in ("lag_spara", "lag_ta_bort"):
             if not foralder:
                 raise web.HTTPForbidden
@@ -1236,7 +1253,7 @@ def _ebok_fil(bok_id: str) -> str:
 FORALDER_OPS = {
     "schema_spara", "bonus", "los_in", "butik_lagg_till", "butik_ta_bort",
     "manuell_uppdrag", "manuell_schema", "manuell_forhor", "manuell_ovning", "manuell_plugg", "angra_ovning",
-    "hejarop_ny", "hejarop_bort", "fodelsedag_satt", "lektioner_spara", "skolinfo_bort",
+    "hejarop_ny", "hejarop_bort", "fodelsedag_satt", "lektioner_spara", "skolinfo_bort", "kalender_satt",
 }
 
 
@@ -1429,7 +1446,19 @@ def _apply(data: dict, body: dict) -> list[str]:
         meriter.prov_studiedag(data, u, dag)
         return []
     if op == "skolinfo_bort":
-        data["skolinfo"] = [x for x in data.get("skolinfo", []) if x.get("id") != body.get("id")]
+        i = str(body.get("id") or "")
+        if i.startswith("kal:"):  # händelse från skolkalendern: göm den
+            data["kalender_dolda"] = (data.get("kalender_dolda", []) + [i[4:]])[-200:]
+        data["skolinfo"] = [x for x in data.get("skolinfo", []) if x.get("id") != i]
+        return []
+    if op == "kalender_satt":
+        url = _kal_url(body.get("url"))
+        if not url:
+            data.pop("kalender", None)
+            data.pop("skolkalender", None)
+            return []
+        data["kalender"] = {"url": url}
+        meriter.kalender_spara(data, body.get("_kal") or [])
         return []
     if op == "manuell_schema":
         meriter.manuell_schema(data, str(body.get("schema")), str(body.get("ankomst"))[:10], bool(body.get("i_tid")))
@@ -2607,6 +2636,8 @@ def _ut(data: dict, foralder: bool) -> dict:
         ]
     if "meriter" in data:
         data["meriter"] = {k: v for k, v in data["meriter"].items() if k != "nycklar"}
+    if data.get("kalender"):  # länken är hemlig (den ger hela kalendern): bara föräldrar ser den
+        data["kalender"] = {k: v for k, v in data["kalender"].items() if foralder or k != "url"}
     if not foralder:  # hejarop som inte har kommit fram än är en överraskning
         data["hejarop"] = dagens.hejarop_synliga(data)
     return data
@@ -3492,6 +3523,51 @@ async def _ta_emot_filer(hass: HomeAssistant, form, prefix: str) -> list[Path]:
         await hass.async_add_executor_job(lambda: [p.unlink(missing_ok=True) for p in ut])
         raise
     return ut
+
+
+def _kal_url(url: str) -> str:
+    u = re.sub(r"^webcals?://", "https://", str(url or "").strip(), flags=re.I)
+    if u and not re.fullmatch(r"https?://[^\s]{4,500}", u):
+        raise ValueError("Klistra in hela länken till kalendern (börjar med https:// eller webcal://).")
+    return u
+
+
+async def _kalender_ladda(hass: HomeAssistant, url: str) -> list[dict]:
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    try:
+        async with async_get_clientsession(hass).get(_kal_url(url), timeout=aiohttp.ClientTimeout(total=30)) as r:
+            if r.status != 200:
+                raise ValueError(f"Kalendern svarade {r.status}.")
+            text = await r.text()
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        raise ValueError("Kunde inte hämta kalendern.") from err
+    if "BEGIN:VCALENDAR" not in text[:2000]:
+        raise ValueError("Länken ger ingen kalender (iCal).")
+    return await hass.async_add_executor_job(meriter.ics_las, text)
+
+
+async def _kalender_hamta(hass: HomeAssistant, barn: str) -> None:
+    """Hämta barnets skolkalender igen om den är äldre än 3 timmar."""
+    path = _dir(hass, barn)
+    data = await hass.async_add_executor_job(_load, path)
+    k = data.get("kalender") or {}
+    if not k.get("url"):
+        return
+    if k.get("hamtad") and (dt_util.now() - datetime.fromisoformat(k["hamtad"])).total_seconds() < 3 * 3600:
+        return
+    try:
+        handelser, fel = await _kalender_ladda(hass, k["url"]), ""
+    except ValueError as err:
+        handelser, fel = None, str(err)
+    async with hass.data[DOMAIN]["locks"][barn]:
+        data = await hass.async_add_executor_job(_load, path)
+        if handelser is not None:
+            meriter.kalender_spara(data, handelser)
+        else:
+            data.setdefault("kalender", {}).update({"fel": fel, "hamtad": dt_util.now().isoformat(timespec="minutes")})
+            _LOGGER.info("Skolkalendern för %s kunde inte hämtas: %s", barn, fel)
+        await hass.async_add_executor_job(_save, path, data)
 
 
 class SchemaSidaView(HomeAssistantView):
