@@ -3500,3 +3500,55 @@ def material_ny(data: dict, a: dict) -> None:
     """Barnet lade in det första studiematerialet i ett ämne."""
     _m(data).get("material_vanta", {}).pop(a["id"], None)
     kista_ge(data, "silver", f"Första materialet i {a['namn']}", f"kista:material:{a['id']}")
+
+
+# ---------- lektionsschemat i widgeten: nästa ämne och närmaste rast ----------
+RAST_MIN = 5  # minuter mellan lektioner som räknas som rast
+LUNCH_MIN = 30
+
+
+def _min(hhmm: str) -> int | None:
+    try:
+        h, m = str(hhmm).split(":")
+        return int(h) * 60 + int(m)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _hhmm(n: int) -> str:
+    return f"{n // 60:02d}:{n % 60:02d}"
+
+
+def lektion_nu(data: dict) -> dict | None:
+    lekt = data.get("lektioner") or []
+    if not lekt:
+        return None
+    nu = dt_util.now()
+    klocka = nu.hour * 60 + nu.minute
+    idag = sorted([x for x in lekt if x.get("dag") == nu.weekday() and _min(x.get("start")) is not None], key=lambda x: _min(x["start"]))
+    ut = {"nu": None, "nasta": None, "nasta_dag": None, "rast": None, "byte": None}
+    byten = []
+    for i, x in enumerate(idag):
+        st = _min(x["start"])
+        sl = _min(x.get("slut")) or (_min(idag[i + 1]["start"]) if i + 1 < len(idag) else st + 40)
+        byten += [st, sl]
+        if st <= klocka < sl:
+            ut["nu"] = {"namn": x["namn"], "slut": _hhmm(sl)}
+        if st > klocka and not ut["nasta"]:
+            ut["nasta"] = {"namn": x["namn"], "start": x["start"]}
+        if i + 1 < len(idag) and not ut["rast"]:
+            nst = _min(idag[i + 1]["start"])
+            if nst - sl >= RAST_MIN and nst > klocka:
+                ut["rast"] = {"start": _hhmm(sl), "slut": _hhmm(nst), "nu": sl <= klocka, "lunch": nst - sl >= LUNCH_MIN}
+    if not ut["nasta"] and not ut["nu"]:  # skoldagen är slut: första lektionen nästa skoldag
+        for n in range(1, 8):
+            dag = (nu.weekday() + n) % 7
+            forsta = sorted([x for x in lekt if x.get("dag") == dag and _min(x.get("start")) is not None], key=lambda x: _min(x["start"]))
+            if forsta:
+                ut["nasta"] = {"namn": forsta[0]["namn"], "start": forsta[0]["start"]}
+                ut["nasta_dag"] = "imorgon" if n == 1 else VECKODAGAR[dag].lower()
+                break
+    kommande = [b for b in byten if b > klocka]
+    if kommande:
+        ut["byte"] = nu.replace(hour=min(kommande) // 60, minute=min(kommande) % 60, second=5, microsecond=0).isoformat()
+    return ut

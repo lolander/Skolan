@@ -2027,7 +2027,7 @@ class WidgetNyckelView(HomeAssistantView):
 
 class WidgetView(HomeAssistantView):
     """Husdjurets status för hemskärmswidgeten. Ingen inloggning, men en hemlig nyckel per barn
-    och bara husdjurets status (inga läxor eller annat)."""
+    och bara husdjurets status och lektionsschemat (inga läxor eller annat)."""
 
     url = "/api/skolan/widget/{nyckel}"
     name = "api:skolan:widget"
@@ -2072,6 +2072,7 @@ class WidgetView(HomeAssistantView):
             "fg": (bg or {}).get("fg", "#263238"),
             "svit": m["streak"], "idag": m["streak_idag"], "stjarnor": m["saldo"],
             "utmaning": f"{sum(1 for x in utm if x['klar'])}/{len(utm)}" if utm else None,
+            "schema": meriter.lektion_nu(data),
         }, headers={"Cache-Control": "no-store"})
 
 
