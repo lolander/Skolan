@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.43.0"
+VERSION = "1.43.1"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -174,20 +174,25 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     async def _dagens_peppning(b: dict, data: dict) -> None:
         """17:00: vem leder veckan + vad barnet kan göra nu för att få meriter."""
 
-        def _alla() -> list[tuple[str, int]]:
-            return [
-                (x["namn"], meriter.veckoresultat(data if x["id"] == b["id"] else _load(base / x["id"]))["poang"])
-                for x in conf["barn"]
-            ]
+        def _alla() -> list[tuple[str, int, tuple]]:
+            ut = []
+            for x in conf["barn"]:
+                v = meriter.veckoresultat(data if x["id"] == b["id"] else _load(base / x["id"]))
+                ut.append((x["namn"], v["poang"], meriter.topp_nyckel(v)))
+            return ut
 
-        alla = sorted(await hass.async_add_executor_job(_alla), key=lambda x: -x[1])
-        mina = next(p for n, p in alla if n == b["namn"])
-        andra = [(n, p) for n, p in alla if n != b["namn"]]
+        alla = sorted(await hass.async_add_executor_job(_alla), key=lambda x: x[2], reverse=True)
+        mina, min_nyckel = next((p, k) for n, p, k in alla if n == b["namn"])
+        andra = [(n, p, k) for n, p, k in alla if n != b["namn"]]
         basta_andra = andra[0] if andra else None
         if alla[0][1] == 0:
             titel, rad1 = "🏆 Veckans topplista", "Ingen har några veckopoäng än. Bli först!"
-        elif basta_andra and basta_andra[1] == mina:
+        elif basta_andra and basta_andra[2] == min_nyckel:
             titel, rad1 = "🏆 Det är jämnt!", f"Du och {basta_andra[0]} har {mina} veckopoäng var. Ta ledningen!"
+        elif basta_andra and basta_andra[1] == mina:
+            leder = min_nyckel > basta_andra[2]
+            titel = f"🥇 Du leder veckan med {mina} poäng!" if leder else f"🏆 {basta_andra[0]} leder veckan med {mina} poäng"
+            rad1 = f"Ni har lika många poäng, men {'du' if leder else basta_andra[0]} har gjort mer den här veckan." + ("" if leder else " Gör en läxa eller öva så går du om!")
         elif not basta_andra or mina > basta_andra[1]:
             titel = f"🥇 Du leder veckan med {mina} poäng!"
             rad1 = f"{basta_andra[0]} har {basta_andra[1]}. Håll ledningen!" if basta_andra else "Bra jobbat!"
@@ -839,7 +844,7 @@ class StateView(HomeAssistantView):
                 d = data if b["id"] == barn else _load(_dir(hass, b["id"]))
                 ut.append({"id": b["id"], "namn": b["namn"], **meriter.sammanfattning(d), "vecka": meriter.veckoresultat(d),
                            "titel": meriter.titel(d), "karta": meriter.karta_kort(d)})
-            return sorted(ut, key=lambda x: -x["vecka"]["poang"])
+            return sorted(ut, key=lambda x: meriter.topp_nyckel(x["vecka"]), reverse=True)
 
         topplista = await hass.async_add_executor_job(_topp)
         idag = dt_util.now().date()

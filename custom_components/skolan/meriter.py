@@ -1048,6 +1048,11 @@ def veckoresultat(data: dict) -> dict:
 
 
 
+def topp_nyckel(v: dict) -> tuple:
+    """Ordningen på topplistan. Vid lika veckopoäng avgör läxor klara i tid och sedan veckans stjärnor."""
+    return (v["poang"], v["klara"], v["denna"])
+
+
 def schema_status(data: dict) -> list[dict]:
     """Veckans läxor enligt schemat och om de är gjorda (för föräldrarnas registrering)."""
     idag = dt_util.now().date()

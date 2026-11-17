@@ -2952,7 +2952,7 @@ class SkolanPanel extends HTMLElement {
           })
           .join("")}
       </div>
-      <p class="muted small">Veckopoäng = hur stor del av dina egna läxor du klarat i tid + din insats jämfört med dina senaste 4 veckor. Har du alla läxor i tid vecka efter vecka får du full insats och +5 bonus för varje perfekt vecka i rad (max +20). Så har alla samma chans.</p>
+      <p class="muted small">Veckopoäng = hur stor del av dina egna läxor du klarat i tid + din insats jämfört med dina senaste 4 veckor. Har du alla läxor i tid vecka efter vecka får du full insats och +5 bonus för varje perfekt vecka i rad (max +20). Så har alla samma chans. Har två lika många poäng vinner den som har klarat flest läxor i tid, och sedan den som har fått flest ⭐ den här veckan.</p>
 
       <h3>🏅 Medaljer</h3>
       <div class="medaljer">
