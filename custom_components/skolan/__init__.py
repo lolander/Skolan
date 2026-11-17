@@ -160,7 +160,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -879,6 +879,9 @@ class StateView(HomeAssistantView):
                 "djurbutik": meriter.butik_lista(),
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
+                "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
+                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data),
+                "lektioner": data.get("lektioner", []),
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
                 "skola": await _skola_status(hass, barn, parent) if skola.PA else None,
                 "lag_lista": (await hass.async_add_executor_job(_load_fil, _lag_fil(hass))).get("lag", []) if parent else None,
@@ -1275,6 +1278,17 @@ def _apply(data: dict, body: dict) -> list[str]:
         if body.get("_barn"):
             meriter.kort_sett(data)
         return []
+    if op in ("kista_oppna", "laxfraga_svar"):  # bara barnet själv
+        if not body.get("_barn"):
+            raise ValueError("Det är barnet som gör det här.")
+        if op == "kista_oppna":
+            meriter.kista_oppna(data, str(body.get("id") or ""))
+        else:
+            meriter.laxfraga_svar(data, bool(body.get("ja")))
+        return []
+    if op == "lektioner_spara":
+        _lektioner_spara(data, body)
+        return []
     if op in ("gata_gissa", "gata_svar"):  # dagens gåta (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som gissar.")
@@ -1283,7 +1297,7 @@ def _apply(data: dict, body: dict) -> list[str]:
         else:
             dagens.visa_svar(data)
         return []
-    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack_upp", "uppsattning", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "traning_kop", "lagstrid_start", "lagstrid_drag", "lagstrid_ge_upp", "arena_start", "arena_drag", "arena_ge_upp", "revansch_start"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
+    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack_upp", "uppsattning", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "traning_kop", "lagstrid_start", "lagstrid_drag", "lagstrid_ge_upp", "arena_start", "arena_drag", "arena_ge_upp", "revansch_start", "provboss_start"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
         if op == "djur":
@@ -1327,6 +1341,8 @@ def _apply(data: dict, body: dict) -> list[str]:
                 raise ValueError("Välj en motståndare.")
         elif op == "revansch_start":
             meriter.revansch_start(data, str(body.get("varld") or ""))
+        elif op == "provboss_start":
+            meriter.provboss_start(data, str(body.get("id") or ""))
         elif op == "arena_drag":
             meriter.arena_drag(data, str(body.get("drag") or ""))
         elif op == "lagstrid_start":
@@ -3022,6 +3038,8 @@ class UppdragView(HomeAssistantView):
                         if not foralder and u["av_id"] != user.id:
                             raise web.HTTPForbidden
                         lista.remove(u)
+                        if not foralder:
+                            meriter.kista_ta_bort(data, f"kista:{u['id']}")
                     elif op == "las_tid":
                         if foralder:
                             return self.json({"ok": True})  # föräldrars läsning räknas inte
@@ -3302,6 +3320,122 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
             "ord": ord_lista, "forhor": diktamen, "sprak": ai.get("glosor_sprak"),
         } if ord_lista else None,
     }
+
+
+LEKTION_PROMPT = (
+    "Det här är ett foto av en elevs lektionsschema (skolschema för en vecka). Läs av alla lektioner måndag till fredag. "
+    'Svara ENDAST med giltig JSON: {"lektioner": [{"dag": 0 för måndag, 1 tisdag, 2 onsdag, 3 torsdag, 4 fredag, '
+    '"start": "HH:MM", "slut": "HH:MM", "amne": ämnets namn}], "amnen": [varje skolämne i schemat en gång]}. '
+    "Skriv ämnena med vanliga svenska namn och stor första bokstav, och skriv ut förkortningar "
+    "(t.ex. Ma = Matte, Sv = Svenska, En = Engelska, Idh = Idrott, Tk = Teknik, Hkk = Hemkunskap, Mu = Musik, Sl = Slöjd, "
+    "Bi = Biologi, Fy = Fysik, Ke = Kemi, Ge = Geografi, Hi = Historia, Re = Religion, Sh = Samhällskunskap, Mod = Moderna språk). "
+    "Står ett språk (Spanska, Tyska, Franska) så använd det. Ta INTE med rast, lunch, mentorstid, klassråd, fritids eller studietid. "
+    'Saknas en tid, skriv "". Hittar du inget schema: {"lektioner": [], "amnen": []}.'
+)
+
+
+def _amne_match(amnen: list, namn: str) -> dict | None:
+    """Hitta ett befintligt ämne som är samma som ett ämne från schemat (Matte = Matematik = matte)."""
+    n = _norm(namn)
+    lika = {"matematik": "matte", "idrott och hälsa": "idrott", "hemkunskap": "hkk", "samhällskunskap": "samhälle"}
+    n = lika.get(n, n)
+    for a in amnen:
+        x = lika.get(_norm(a["namn"]), _norm(a["namn"]))
+        if x == n or (len(n) >= 4 and len(x) >= 4 and (x.startswith(n) or n.startswith(x))) or _liknar(x, n) >= 0.85:
+            return a
+    return None
+
+
+def _lektion_forslag(data: dict, ai: dict) -> dict:
+    lektioner = []
+    for x in ai.get("lektioner") or []:
+        if not isinstance(x, dict):
+            continue
+        try:
+            dag = int(x.get("dag"))
+        except (TypeError, ValueError):
+            continue
+        namn = str(x.get("amne") or "").strip()[:MAX_NAME]
+        if not 0 <= dag <= 4 or not namn:
+            continue
+        tid = lambda v: v if re.fullmatch(r"\d{1,2}[:.]\d{2}", str(v or "").strip()) else ""
+        lektioner.append({"dag": dag, "start": tid(x.get("start")).replace(".", ":").zfill(5) if tid(x.get("start")) else "",
+                          "slut": tid(x.get("slut")).replace(".", ":").zfill(5) if tid(x.get("slut")) else "", "namn": namn})
+    lektioner.sort(key=lambda x: (x["dag"], x["start"]))
+    namn = list(dict.fromkeys([str(a).strip()[:MAX_NAME] for a in (ai.get("amnen") or []) if str(a).strip()] + [x["namn"] for x in lektioner]))
+    amnen = data.get("amnen", [])
+    ut = []
+    for n in namn:
+        if any(_norm(n) == _norm(y["namn"]) for y in ut):
+            continue
+        a = _amne_match(amnen, n)
+        ut.append({"namn": n, "amne": a["id"] if a else None, "amne_namn": a["namn"] if a else None})
+    return {"lektioner": lektioner, "amnen": ut}
+
+
+def _lektioner_spara(data: dict, body: dict) -> None:
+    amnen = data.setdefault("amnen", [])
+    for n in (body.get("skapa") or [])[:20]:
+        namn = _name(n)
+        if not _amne_match(amnen, namn):
+            amnen.append({"id": _new_id(), "namn": namn, "farg": FARGER[len(amnen) % len(FARGER)], "bocker": [], "glosor": [], "delar": ["bocker", "glosor"]})
+    ut = []
+    for x in (body.get("lektioner") or [])[:80]:
+        if not isinstance(x, dict):
+            continue
+        dag = int(x.get("dag") or 0)
+        namn = str(x.get("namn") or "").strip()[:MAX_NAME]
+        if not 0 <= dag <= 4 or not namn:
+            continue
+        a = _amne_match(amnen, namn)
+        ut.append({"dag": dag, "start": str(x.get("start") or "")[:5], "slut": str(x.get("slut") or "")[:5], "namn": a["namn"] if a else namn,
+                   "amne": a["id"] if a else None})
+    data["lektioner"] = sorted(ut, key=lambda x: (x["dag"], x["start"]))
+
+
+class LektionView(HomeAssistantView):
+    """Barnet (eller en förälder) fotar lektionsschemat. AI:n läser lektioner och ämnen. Inget sparas här."""
+
+    url = "/api/skolan/lektionsschema"
+    name = "api:skolan:lektionsschema"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        form = await request.post()
+        barn = _barn_for(hass, request, form.get("barn"))
+        field = form.get("file")
+        if field is None or not hasattr(field, "file"):
+            return self.json_message("Ingen bild skickades.", 400)
+        mime = _mime(field)
+        if not _ok_file(mime):
+            return self.json_message("Bara bilder och PDF:er.", 400)
+        content = await hass.async_add_executor_job(field.file.read)
+        if len(content) > MAX_BYTES:
+            return self.json_message("Filen är för stor (max 20 MB).", 400)
+        ext = (Path(field.filename or "").suffix or mimetypes.guess_extension(mime) or ".jpg").lower()[:6]
+        src = hass.data[DOMAIN]["base"] / f".schema_{uuid.uuid4().hex}{ext}"
+        await hass.async_add_executor_job(src.write_bytes, content)
+        try:
+            for forsok in range(3):
+                try:
+                    text = await _ai_las(hass, src, LEKTION_PROMPT, "Läs lektionsschema")
+                    break
+                except Exception as err:  # noqa: BLE001
+                    if forsok == 2:
+                        _LOGGER.warning("Schemat kunde inte läsas: %s", err)
+                        return self.json_message(f"AI:n kunde inte läsa schemat: {err}", 502)
+                    await asyncio.sleep(5)
+        finally:
+            await hass.async_add_executor_job(lambda: src.unlink(missing_ok=True))
+        try:
+            ai = _parse_json(text)
+        except (ValueError, json.JSONDecodeError):
+            return self.json_message("AI:n svarade inte i rätt format. Försök igen.", 502)
+        data = await hass.async_add_executor_job(_load, _dir(hass, barn))
+        forslag = _lektion_forslag(data, ai if isinstance(ai, dict) else {})
+        if not forslag["lektioner"] and not forslag["amnen"]:
+            return self.json_message("AI:n hittade inget schema på bilden. Fota hela schemat rakt framifrån.", 422)
+        return self.json(forslag)
 
 
 class VeckobrevView(HomeAssistantView):

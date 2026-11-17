@@ -1184,6 +1184,10 @@ class SkolanPanel extends HTMLElement {
       title = "ℹ️ Så funkar det";
       back = v.fran || { name: "hem" };
       body = this._infoView();
+    } else if (v.name === "lektioner") {
+      title = "🗓️ Mitt schema";
+      back = { name: "hem" };
+      body = this._lektionView();
     } else if (v.name === "veckobrev") {
       title = "📸 Veckobrev";
       back = { name: "foralder" };
@@ -1619,7 +1623,7 @@ class SkolanPanel extends HTMLElement {
       .map((x) => `<div class="vantar">📥 <b>${esc(x.namn)}</b> ${x.idag ? "brukar komma idag" : "kom igår"}. Lägg in den för <b>+${this._s.poang.i_tid} ⭐</b></div>`)
       .join("");
     return `
-      ${this._s.kan_valja ? "" : vantar}
+      ${this._s.kan_valja ? "" : vantar + this._veckokollRad()}
       <button class="merit-kort" id="open-meriter">
         <div class="mk-rad"><span class="mk-niva">Nivå ${n.niva} · ${esc(n.namn)}</span><span>⭐ ${m.saldo}</span></div>
         <div class="progress"><div style="width:${n.procent}%"></div></div>
@@ -2348,6 +2352,12 @@ class SkolanPanel extends HTMLElement {
           <div class="small">🏆 ${a.poang} arenapoäng · ${a.vinster} vinster · ⚡ ${k.energi}</div></div></div>
       ${this._traningKort(a, d, barn)}
       ${a.pagar ? `<button class="primary" id="arena-fortsatt">⚔️ Fortsätt striden mot ${esc(a.pagar.mot_namn)}</button>` : ""}
+      ${(() => { const pb = (s.provbossar || []).filter((b) => !b.vunnen); const tr = s.data?.meriter?.karta?.provtrofeer || [];
+        if (!pb.length && !tr.length) return "";
+        return `${pb.length ? `<h3>📝 Provbossar</h3>
+          <div class="small muted">Varje prov du lägger in blir en boss. Varje dag du pluggar inför provet tar den skada. Slutstriden öppnar dagen före provet och kostar inget ⚡.</div>
+          <ul class="lista arena-lista">${pb.map((b) => this._provbossRad(b, barn && !a.pagar)).join("")}</ul>` : ""}
+          ${tr.length ? `<h3>🏆 Provtroféer</h3><div class="trofe-rad">${tr.slice(-12).reverse().map((t) => `<span class="trofe" title="${esc(t.prov)} ${esc(t.datum)}">${t.ikon}<span class="small">${esc(t.namn)}</span></span>`).join("")}</div>` : ""}`; })()}
       ${(() => { const rv = s.revansch; if (!rv?.bossar?.length) return "";
         return `<h3>🔁 Revansch mot bossar</h3>
         <div class="small muted">Slå en boss du redan har besegrat igen och vinn kort till albumet 🃏. Kostar ${rv.energi} ⚡. Din stridsuppsättning och dina laddattacker gäller. ${rv.kort_kvar > 0 ? `Kort kvar att vinna idag: <b>${rv.kort_kvar}</b>.` : "Dagens kort är slut, men du kan träna ändå."}</div>
@@ -2381,7 +2391,7 @@ class SkolanPanel extends HTMLElement {
     const motAt = tur?.mot_at ? info[tur.mot_at] : null;
     const rv = a.revansch && (this._s.revansch?.bossar || []).find((x) => x.varld === a.revansch);
     return { at, djur: { art: a.jag.art, steg: Math.max(1, a.jag.steg), namn: a.jag.namn }, motDjur: a.de.boss ? null : { art: a.de.art, steg: Math.max(1, a.de.steg) },
-      mon: a.de.boss ? { ikon: a.de.art, namn: `${a.de.namn}`, boss: true, varld: { farg: rv?.farg || "#6a1b9a" } } : { ikon: "", namn: `${a.de.namn}`, boss: false, varld: { farg: "#6a1b9a" } }, hp: a.de.max, kvar: tur ? tur.de_fore : a.de.liv,
+      mon: a.de.boss ? { ikon: a.de.art, namn: `${a.de.namn}`, boss: true, varld: { farg: rv?.farg || (a.provboss ? "#c62828" : "#6a1b9a") } } : { ikon: "", namn: `${a.de.namn}`, boss: false, varld: { farg: "#6a1b9a" } }, hp: a.de.max, kvar: tur ? tur.de_fore : a.de.liv,
       skada: tur?.skada || 0, jagMiss: !!tur?.miss, svag: !!tur?.super, klar: tur?.slut === "vinst", mot: tur?.mot || 0, miss: !!tur?.mot_miss, motAt,
       livFore: tur ? tur.jag_fore : a.jag.liv, livMax: a.jag.max, arena: true,
       efter: tur?.de_efter, livEfter: tur?.jag_efter, skold: a.jag.skold, motSkold: a.de.skold,
@@ -2405,10 +2415,15 @@ class SkolanPanel extends HTMLElement {
     if (!fore || this._busy) return false;
     if (!(await this._act("arena_drag", { drag }))) return false;
     const k = this._s.data?.meriter?.karta || {};
-    const a = k.arena || (fore.revansch ? k.revansch_hist : k.arena_hist || [])?.at(-1);
+    const a = k.arena || (fore.revansch || fore.provboss ? k.revansch_hist : k.arena_hist || [])?.at(-1);
     const tur = a?.turer?.at(-1);
     if (!tur) return false;
     const laddat = this._load();
+    if (fore.provboss && tur.slut) laddat.then(() => setTimeout(() => {
+      const h = (this._s.data?.meriter?.karta?.revansch_hist || []).at(-1);
+      if (h?.vann && h.trofe) this._fx({ text: "🏆 PROVBOSSEN BESEGRAD!", sub: `${fore.mot_namn} · +20 ⭐ och en provtrofé`, emojis: ["🏆", "📝", fore.de.art, "⭐", "✨"], antal: 40, konfetti: true, farg: "#c62828", ljud: true });
+      else if (!h?.vann) this._msg = { type: "info", text: `${fore.mot_namn} vann den här gången. Plugga lite till så blir den svagare, och försök igen!` };
+    }, 2600));
     if (fore.revansch && tur.slut) laddat.then(() => setTimeout(() => {
       const h = (this._s.data?.meriter?.karta?.revansch_hist || []).at(-1);
       if (h?.vann && h.kort) this._fx({ text: "🃏 NYTT KORT!", sub: `${fore.mot_namn} tappade ett kort`, emojis: ["🃏", "✨", fore.de.art, "⭐"], antal: 30, konfetti: true, farg: "#7e57c2" });
@@ -2970,6 +2985,10 @@ class SkolanPanel extends HTMLElement {
         `🎉 Inför högtider (jul, påsk, Halloween, sommarlov med flera) finns specialsaker i 2 veckor. Det du köper får du behålla för alltid.`,
         `🐾 Du kan ha <b>flera husdjur</b>. Ett nytt kostar 100 ⭐ och börjar som ett ägg. Byt gratis mellan dina djur i butiken. Bara djuret som är med dig växer, får XP och utvecklas av det du gör. Attacker, försvarsträning och kompisar hör till djuret du köper dem till, så ett nytt djur börjar om från början. Allt finns kvar när du byter tillbaka.`,
         `🃏 <b>Samlarkort:</b> besegrade monster tappar ibland sitt kort (50 %). I 🏟️ Arenan kan du ta <b>🔁 revansch</b> på bossar du redan har slagit (2 ⚡) och vinna kort, högst 3 kort per dag.`,
+        `🎁 <b>Kistor:</b> varje gång du lägger in en läxa eller ett prov får du en kista med ⭐, ⚡ eller ett kort. Ett prov inlagt minst 3 dagar innan ger en 💎 silverkista, minst 7 dagar innan en 👑 guldkista. Högst 4 kistor per dag.`,
+        `📝 <b>Provbossar:</b> varje prov blir en boss. Varje dag du pluggar inför provet tar den 15 % skada (allt klart i tid ger 20 % till). Dagen före provet öppnar slutstriden. Vinst: +20 ⭐ och en 🏆 provtrofé.`,
+        `📅 <b>Veckans koll:</b> lägg in alla läxor i läxschemat i tid under veckan så får du +15 ⭐, ett 🛡️ svitskydd och en 👑 guldkista.`,
+        `🗓️ <b>Mitt schema:</b> fota ditt lektionsschema så läser AI:n av dina ämnen. Efter skolan frågar husdjuret om du fick någon läxa. Svarar du ärligt nej får du +2 ⭐.`,
         `🎒 <b>Stridsuppsättning:</b> i arenan och mot världsbossar får djuret bara ta med 4 attacker. Välj dem i butiken. Mot bossen låses de när striden har börjat.`,
         `🎯 I arenan är varje djur svagt mot en typ: 🔥 mot 🌊, 🌊 mot ⚡, ⚡ mot 🍃, 🍃 mot 🔥, ❄️ mot 💥 och 💥 mot ❄️. Träffar du den svaga punkten blir det <b>×1,5</b> skada.`,
         `🌟 <b>Laddattacker</b> köps i butiken. De laddas upp av bra träffar (mest av träffar på den svaga punkten) och kan bara användas 1–2 gånger per strid.`,
@@ -3927,6 +3946,107 @@ class SkolanPanel extends HTMLElement {
         : `<button class="primary" id="kort-vand">✨ Vänd korten</button>`}</div>`;
   }
 
+  // Fångstkistor: belöning direkt när barnet lägger in läxor och prov.
+  _kistKort() {
+    const ks = this._s.kistor?.kistor || [];
+    const senast = this._kistaVisa;
+    if (this._s.kan_valja || (!ks.length && !senast)) return "";
+    return `<div class="card kista-kort">
+      <div class="djur-rubrik">🎁 ${ks.length ? (ks.length === 1 ? "Du har en kista!" : `Du har ${ks.length} kistor!`) : "Kistan är öppnad"}</div>
+      ${senast ? `<div class="kista-innehall">${senast.saker.map((x, i) => `<div class="kista-sak" style="animation-delay:${i * 0.25}s"><span>${x.ikon}</span><b>${esc(x.text)}</b></div>`).join("")}</div>` : ""}
+      ${ks.length ? `<div class="kista-rad">${ks.map((x) => `<button class="kista ${x.typ}" data-kista="${x.id}" ${this._busy ? "disabled" : ""}>
+          <span class="kista-ikon">${x.ikon}</span><span class="small"><b>${esc(x.namn)}</b><br>${esc(x.orsak)}</span></button>`).join("")}</div>
+        <div class="small muted">Tryck för att öppna. Du får en kista varje gång du lägger in en läxa eller ett prov, och ett prov inlagt i god tid ger en finare kista.</div>`
+        : `<button class="ghost" id="kista-ok">OK</button>`}
+    </div>`;
+  }
+
+  // Husdjuret frågar efter skolan om det blev någon läxa.
+  _laxfragaKort() {
+    const f = this._s.laxfraga, d = this._s.meriter?.djur;
+    if (!f || this._s.kan_valja) return "";
+    const amnen = f.amnen.length ? ` Du hade ${f.amnen.slice(0, 5).map(esc).join(", ")} idag.` : "";
+    const schema = f.schema.length ? ` ${esc(f.schema[0])} brukar komma idag.` : "";
+    return `<div class="card laxfraga-kort">
+      ${d ? `<div class="laxfraga-djur">${ritaDjur(d.art, "glad", Math.max(1, d.steg), {})}</div>` : ""}
+      <div><div class="pratbubbla"><b>${d ? esc(d.namn) : "Husdjuret"}:</b> Hej! Fick du någon läxa eller något prov idag?${amnen}${schema}</div>
+        <div class="actions"><button class="primary" id="laxfraga-ja">📥 Ja, lägg in</button><button class="ghost" id="laxfraga-nej">🙅 Nej, ingen idag (+${f.p} ⭐)</button></div></div>
+    </div>`;
+  }
+
+  _veckokollRad() {
+    const v = this._s.veckokoll;
+    if (!v || this._s.kan_valja) return "";
+    if (v.klar) return `<div class="vantar ok">📅 <b>Veckans koll klar!</b> Alla läxor inlagda i tid: +${v.p} ⭐, 🛡️ svitskydd och 👑 guldkista.</div>`;
+    if (v.miss) return "";
+    return `<div class="vantar">📅 <b>Veckans koll ${v.klara}/${v.av}</b>: lägg in alla veckans läxor i tid så får du +${v.p} ⭐, ett 🛡️ svitskydd och en 👑 guldkista.</div>`;
+  }
+
+  // Provbossar: varje prov blir ett monster som blir svagare för varje dag man pluggar.
+  _provbossRad(b, knapp) {
+    const kvar = b.dagar_kvar;
+    const nar = kvar > 1 ? `Provet om ${kvar} dagar` : kvar === 1 ? "Provet är i morgon" : kvar === 0 ? "Provet är idag" : "Provet är gjort";
+    return `<li class="provboss ${b.vunnen ? "vunnen" : ""}"><span class="pb-ikon">${b.ikon}</span>
+      <span><b>${esc(b.namn)}</b> <span class="small muted">· ${esc(b.prov)}</span><br>
+        <span class="small">${nar} · 🎯 svag mot ${TYP_TEXT[b.svag] || b.svag} · 📚 ${b.pluggdagar} pluggdag${b.pluggdagar === 1 ? "" : "ar"}${b.klart ? " · ✅ allt klart" : ""}</span>
+        <div class="pb-liv" title="Skada från plugget"><div style="width:${100 - b.skada}%"></div></div>
+        <span class="small">${b.vunnen ? "🏆 Besegrad!" : b.skada ? `💥 ${b.skada} % skadad av ditt plugg` : "Oskadd: plugga inför provet så blir den svagare!"}</span></span>
+      ${knapp && !b.vunnen ? (b.oppen ? `<button class="mini primary" data-provboss="${b.id}" ${this._busy || this._s.arena?.pagar ? "disabled" : ""}>⚔️ Slutstrid</button>`
+        : `<span class="small muted center">Öppnar dagen före provet</span>`) : ""}</li>`;
+  }
+
+  _provbossKort() {
+    if (this._s.kan_valja || !this._s.meriter?.djur) return "";
+    const lista = (this._s.provbossar || []).filter((b) => !b.vunnen && (b.dagar_kvar >= 0 || b.oppen));
+    if (!lista.length) return "";
+    return `<div class="card provboss-kort"><div class="djur-rubrik">📝 Provbossar</div>
+      <ul class="lista arena-lista">${lista.map((b) => this._provbossRad(b, true)).join("")}</ul>
+      <div class="small muted">Varje dag du pluggar inför provet tar bossen ${15} % skada. Dagen före provet kan du slåss mot den. Vinst: +20 ⭐ och en 🏆 provtrofé.</div></div>`;
+  }
+
+  // Lektionsschemat: fota schemat, AI:n läser lektionerna och ämnena.
+  _lektionView() {
+    const v = this._view, s = this._s;
+    const dagar = ["Mån", "Tis", "Ons", "Tor", "Fre"];
+    const rutnat = (lekt) => `<div class="schema-rutnat">${dagar.map((dn, i) => `<div class="schema-dag"><div class="schema-rubrik">${dn}</div>
+      ${lekt.filter((x) => x.dag === i).map((x) => { const a = (s.data.amnen || []).find((y) => y.id === x.amne);
+        return `<div class="schema-lektion" style="--c:${a?.farg || "#9e9e9e"}">${x.start ? `<span class="small">${esc(x.start)}</span>` : ""}<b>${esc(x.namn)}</b></div>`; }).join("") || `<div class="small muted">–</div>`}</div>`).join("")}</div>`;
+    const ladda = `<label class="primary upload">📷 ${s.lektioner?.length || v.f ? "Fota schemat igen" : "Fota ditt schema"}<input type="file" id="ls-foto" accept="image/*,application/pdf" hidden></label>`;
+    if (v.f) {
+      const f = v.f;
+      return `<p class="small">Kolla att det stämmer och tryck Spara. Nya ämnen skapas bara om de är ibockade.</p>
+        <h3>📚 Ämnen i schemat</h3>
+        <div class="list">${f.amnen.map((a, i) => a.amne ? `<div class="row static"><span>✅ <b>${esc(a.namn)}</b></span><span class="small muted">finns redan${a.amne_namn.toLowerCase() !== a.namn.toLowerCase() ? ` som ${esc(a.amne_namn)}` : ""}</span></div>`
+          : `<label class="row del-val"><span>＋ <b>${esc(a.namn)}</b><br><span class="small muted">Skapa ämnet</span></span><input type="checkbox" data-ls-skapa="${i}" ${a.skapa !== false ? "checked" : ""}></label>`).join("")}</div>
+        <h3>🗓️ Veckan</h3>
+        ${rutnat(f.lektioner)}
+        <div class="actions"><button class="primary" id="ls-spara" ${this._busy ? "disabled" : ""}>Spara schemat</button>${ladda}</div>`;
+    }
+    if (!s.lektioner?.length)
+      return `${ladda}<p class="muted small">Fota ditt lektionsschema så läser AI:n av vilka lektioner du har och vilka ämnen du läser. Ämnen som saknas kan skapas direkt. Efter skolan frågar ditt husdjur om du fick någon läxa på lektionerna.</p>`;
+    return `${rutnat(s.lektioner)}<div class="actions">${ladda}</div>`;
+  }
+
+  async _lektionLas(file) {
+    this._busy = true;
+    this._msg = { type: "info", text: "AI:n läser schemat… (tar några sekunder)" };
+    this._render();
+    try {
+      const fd = new FormData();
+      fd.append("barn", this._s.barn);
+      fd.append("file", file, file.name);
+      const res = await this._hass.fetchWithAuth("/api/skolan/lektionsschema", { method: "POST", body: fd });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || res.statusText);
+      this._view.f = body;
+      this._msg = { type: "ok", text: "Kolla förslaget och tryck Spara." };
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+    }
+    this._busy = false;
+    this._render();
+  }
+
   _albumView() {
     const k = this._s.kort;
     if (!k) return `<p class="muted">Hämtar…</p>`;
@@ -4226,13 +4346,16 @@ class SkolanPanel extends HTMLElement {
       ${this._s.kan_valja ? `<button class="row foralder-knapp" id="open-foralder"><span>⚙️ <b>Föräldrar</b><br><span class="muted small">Läxschema, bonus och belöningsbutik för ${esc(this._s.namn)}</span></span><span>›</span></button>` : ""}
       ${this._fodelsedagKort()}
       ${this._julKort()}
+      ${this._kistKort()}
       ${this._nyaKort()}
+      ${this._laxfragaKort()}
       ${this._hejaropKort()}
       ${this._dagensKort()}
       ${this._syskonKort()}
       ${this._repeteraKort()}
       ${this._forhorLista()}
       ${this._djurKort()}
+      ${this._provbossKort()}
       ${this._utmaningKort()}
       ${this._passKort()}
       ${this._nivaKort()}
@@ -4240,7 +4363,7 @@ class SkolanPanel extends HTMLElement {
       <button class="info-lank" id="open-info">ℹ️ Så funkar meriter och tävlingen ›</button>
       ${this._uppdragLista()}
       <h3>📚 Ämnen</h3>
-
+      <button class="row" id="open-lektioner"><span>🗓️ <b>Mitt schema</b><br><span class="muted small">${this._s.lektioner?.length ? "Dina lektioner i veckan" : "Fota ditt schema så läser AI:n av dina ämnen"}</span></span><span>›</span></button>
       <div class="grid">
         ${amnen
           .map(
@@ -5645,6 +5768,36 @@ class SkolanPanel extends HTMLElement {
     });
     const kortSett = async (album) => { this._kortVanda = false; await this._act("kort_sett", {}); await this._load(this._s.barn); if (album) this._go({ name: "album" }); else this._render(); };
     on("#kort-ok", () => kortSett(false));
+    r.querySelectorAll("[data-kista]").forEach((b) => b.addEventListener("click", async () => {
+      if (this._busy) return;
+      b.classList.add("skakar");
+      await new Promise((ok) => setTimeout(ok, 600));
+      if (!(await this._act("kista_oppna", { id: b.dataset.kista }))) return;
+      const ut = this._s.data?.meriter?.kista_senast;
+      this._kistaVisa = ut;
+      await this._load(this._s.barn);
+      if (ut) this._fx({ text: ut.typ === "guld" ? "👑 GULDKISTA!" : ut.typ === "silver" ? "💎 Silverkista!" : "🎁 Kistan öppnad!", sub: ut.saker.map((x) => x.text).join(" · "),
+        emojis: ["🎁", "✨", ...ut.saker.map((x) => x.ikon)], antal: ut.typ === "guld" ? 40 : 24, konfetti: ut.typ !== "brons", farg: ut.typ === "guld" ? "#ffb300" : "#7e57c2", ljud: ut.typ === "guld" });
+      this._render();
+    }));
+    on("#kista-ok", () => { this._kistaVisa = null; this._render(); });
+    on("#laxfraga-ja", async () => { if (await this._act("laxfraga_svar", { ja: true })) this._go({ name: "laxa", steg: "amne" }); });
+    on("#laxfraga-nej", async () => { if (await this._act("laxfraga_svar", { ja: false })) { await this._load(this._s.barn); this._fx({ emojis: ["🐾", "⭐"], antal: 12 }); this._render(); } });
+    r.querySelectorAll("[data-provboss]").forEach((b) => b.addEventListener("click", async () => {
+      if (this._busy || !(await this._act("provboss_start", { id: b.dataset.provboss }))) return this._render();
+      await this._load();
+      this._arenaVisa();
+    }));
+    on("#open-lektioner", () => this._go({ name: "lektioner" }));
+    $("#ls-foto")?.addEventListener("change", (e) => { const file = e.target.files?.[0]; if (file) this._lektionLas(file); });
+    r.querySelectorAll("[data-ls-skapa]").forEach((el) => el.addEventListener("change", () => { v.f.amnen[Number(el.dataset.lsSkapa)].skapa = el.checked; }));
+    on("#ls-spara", async () => {
+      const f = v.f;
+      if (!f || !(await this._act("lektioner_spara", { lektioner: f.lektioner, skapa: f.amnen.filter((a) => !a.amne && a.skapa !== false).map((a) => a.namn) }))) return;
+      await this._load(this._s.barn);
+      this._msg = { type: "ok", text: "Schemat är sparat! 🗓️" };
+      this._go({ name: "lektioner" });
+    });
     on("#kort-album", () => kortSett(true));
     on("#lar-start", () => this._go({ name: "lar", amne: v.amne, glosor: v.glosor }));
     on("#lar-skicka", () => this._larSkicka());
@@ -6717,6 +6870,37 @@ const CSS = `
   .kort-vand.vand .samlarkort.ovanlig { animation:kort-ovanlig 1.6s ease-in-out .8s infinite; }
   @keyframes kort-ovanlig { 50% { box-shadow:0 0 20px #4fc3f7; } }
   .kort-nya { background:linear-gradient(135deg,#ede7f6,#fff8e1); color:#311b92; }
+  .kista-kort { background:linear-gradient(135deg,#fff8e1,#fce4ec); color:#4a2c00; }
+  .kista-rad { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
+  .kista { display:flex; align-items:center; gap:8px; text-align:left; border:2px solid #d7a85b; background:#fffdf5; color:#4a2c00; border-radius:14px; padding:8px 12px; cursor:pointer; flex:1 1 200px; }
+  .kista.silver { border-color:#64b5f6; background:#f3f9ff; }
+  .kista.guld { border-color:#ffb300; background:linear-gradient(135deg,#fff8e1,#ffecb3); box-shadow:0 0 12px rgba(255,179,0,.5); }
+  .kista-ikon { font-size:34px; animation:kista-hopp 1.6s ease-in-out infinite; }
+  .kista.skakar .kista-ikon { animation:kista-skak .15s linear infinite; }
+  @keyframes kista-hopp { 0%,80%,100% { transform:translateY(0) } 88% { transform:translateY(-6px) rotate(-6deg) } 94% { transform:translateY(-2px) rotate(5deg) } }
+  @keyframes kista-skak { 0% { transform:rotate(-12deg) } 50% { transform:rotate(12deg) } 100% { transform:rotate(-12deg) } }
+  .kista-innehall { display:flex; flex-wrap:wrap; gap:10px; margin:8px 0; }
+  .kista-sak { display:flex; flex-direction:column; align-items:center; background:#fff; border-radius:12px; padding:8px 12px; animation:kista-pop .5s both; }
+  .kista-sak span { font-size:30px; }
+  @keyframes kista-pop { from { transform:scale(0); opacity:0 } to { transform:scale(1); opacity:1 } }
+  .laxfraga-kort { display:flex; gap:12px; align-items:center; }
+  .laxfraga-djur { width:64px; flex:none; }
+  .laxfraga-kort .actions { flex-wrap:wrap; }
+  .pratbubbla { background:var(--secondary-background-color,#f1f1f1); border-radius:14px; padding:8px 12px; position:relative; }
+  .provboss-kort { border:2px solid #ef9a9a; }
+  .provboss .pb-ikon { font-size:34px; text-align:center; flex:none; width:42px; }
+  .arena-lista li.provboss > span:nth-child(2) { flex:1 1 auto; min-width:0; }
+  .provboss > :nth-child(3) { flex:none; max-width:92px; }
+  .provboss.vunnen { opacity:.7; }
+  .pb-liv { height:8px; border-radius:6px; background:#e0e0e0; overflow:hidden; margin:4px 0 2px; max-width:220px; }
+  .pb-liv div { height:100%; background:linear-gradient(90deg,#e53935,#ff7043); }
+  .trofe-rad { display:flex; flex-wrap:wrap; gap:8px; }
+  .trofe { display:flex; flex-direction:column; align-items:center; font-size:28px; background:linear-gradient(135deg,#fff8e1,#ffe082); border-radius:12px; padding:6px 10px; color:#4a2c00; }
+  .vantar.ok { background:#e8f5e9; color:#1b5e20; }
+  .schema-rutnat { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; margin:8px 0; }
+  .schema-rubrik { font-weight:700; text-align:center; font-size:13px; margin-bottom:4px; }
+  .schema-lektion { border-left:4px solid var(--c); background:var(--secondary-background-color,#f5f5f5); border-radius:6px; padding:3px 4px; margin-bottom:3px; font-size:12px; overflow:hidden; overflow-wrap:anywhere; }
+  .schema-lektion span { display:block; opacity:.7; font-size:11px; }
   .fodelsedag-kort { text-align:center; background:linear-gradient(135deg,#fce4ec,#fff9c4,#e1f5fe); color:#880e4f; }
   .fd-tarta { font-size:64px; animation:hopp 1.2s ease-in-out infinite; }
   .fd-text { font-size:22px; font-weight:800; margin:4px 0 10px; }

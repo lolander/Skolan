@@ -711,6 +711,8 @@ def _senaste_ankomst(veckodag: int, idag: date) -> date:
 def lagt_in(data: dict, amne_id: str, typ: str, glosor: dict | None = None) -> None:
     """Barnet har lagt in glosor/sidor i ett ämne. Matchar mot läxschemat."""
     idag = dt_util.now().date()
+    har_registrerat(data)
+    traff = False
     for s in data.get("schema", []):
         if s.get("amne") != amne_id or s.get("typ") != typ:
             continue
@@ -718,17 +720,24 @@ def lagt_in(data: dict, amne_id: str, typ: str, glosor: dict | None = None) -> N
         sen = (idag - ankomst).days
         nyckel = f"lagt_in:{s['id']}:{ankomst.isoformat()}"
         if sen <= 1:
+            traff = True
             if ge(data, P_I_TID, f"Lade in {s['namn']} i tid", nyckel, "⏰"):
                 _rakna(data, "i_tid")
                 _m(data)["nycklar"].append(f"itid:{s['id']}:{ankomst.isoformat()}")
+            kista_ge(data, "silver", f"{s['namn']} inlagd i tid", f"kista:{nyckel}")
         elif sen <= 3:
+            traff = True
             ge(data, P_SENT, f"Lade in {s['namn']}", nyckel, "📥")
+            kista_ge(data, "brons", f"{s['namn']} inlagd", f"kista:{nyckel}")
         aktiv(data)
         # Förhörsdag från schemat fylls i automatiskt på nya glosor.
         if glosor is not None and not glosor.get("forhor") and s.get("forhor") is not None:
             d = ankomst + timedelta(days=(int(s["forhor"]) - ankomst.weekday()) % 7 or 7)
             if d >= idag:
                 glosor["forhor"] = d.isoformat()
+    if not traff and glosor is not None:  # egen lista som inte finns i läxschemat
+        kista_ge(data, "brons", f"{glosor['namn']} inlagd", f"kista:glosor:{glosor['id']}")
+    _veckokoll_kolla(data)
     kolla_medaljer(data)
 
 
@@ -1061,6 +1070,10 @@ def registrerat(data: dict, u: dict) -> None:
         return
     if u["typ"] == "prov" and dagar >= 3:
         ge(data, P_REG_PROV, f"Registrerade provet {u['namn']} i god tid", f"regprov:{u['id']}", "🗓️")
+    har_registrerat(data)
+    if dagar >= 0:
+        typ = "guld" if u["typ"] == "prov" and dagar >= 7 else "silver" if dagar >= 3 else "brons"
+        kista_ge(data, typ, f"{'Provet' if u['typ'] == 'prov' else 'Läxan'} {u['namn']} {'inlagt' if u['typ'] == 'prov' else 'inlagd'}", f"kista:{u['id']}")
 
 
 
@@ -1226,6 +1239,7 @@ def manuell_schema(data: dict, schema_id: str, ankomst: str, i_tid: bool) -> Non
         _m(data)["nycklar"].append(f"itid:{s['id']}:{ankomst}")
     else:
         ge(data, P_SENT, f"{s['namn']} gjord (registrerad av förälder)", nyckel, "📥")
+    _veckokoll_kolla(data)
     kolla_medaljer(data)
 
 
@@ -2887,6 +2901,9 @@ def arena_ge_upp(data: dict) -> None:
 def _arena_slut(data: dict, vann: bool, gav_upp: bool = False) -> None:
     k = _karta(data)
     a = k.pop("arena")
+    if a.get("provboss"):
+        _provboss_slut(data, a, vann, gav_upp)
+        return
     if a.get("revansch"):  # revansch mot en boss: kort i stället för arenapoäng
         idag = dt_util.now().date().isoformat()
         rk = k.setdefault("revansch_kort", {})
@@ -3222,3 +3239,229 @@ def lagstrid_status(data: dict) -> dict:
     k = _karta(data)
     return {"pagar": k.get("lagstrid"), "hist": k.get("lagstrid_hist", [])[-3:], "vinster": _m(data)["raknare"].get("lagstrid_vinster", 0),
             "vinst": LAGSTRID_VINST, "forlust": LAGSTRID_FORLUST}
+
+
+# ---------- fångstkista: en belöning direkt när barnet lägger in läxor och prov ----------
+KISTA_DAG = 4  # högst så många kistor per dag
+KISTA_TYPER = {
+    "brons": {"ikon": "🎁", "namn": "Kista"},
+    "silver": {"ikon": "💎", "namn": "Silverkista"},
+    "guld": {"ikon": "👑", "namn": "Guldkista"},
+}
+# (vikt, vad) per kista. Guldkistan ger alltid kort + energi + stjärnor.
+KISTA_INNEHALL = {
+    "brons": [(60, ("stjarnor", 3, 6)), (30, ("energi", 1, 1)), (10, ("kort", 1, 1))],
+    "silver": [(45, ("stjarnor", 6, 10)), (35, ("energi", 2, 2)), (20, ("kort", 1, 1))],
+}
+
+
+def kista_ge(data: dict, typ: str, orsak: str, nyckel: str) -> bool:
+    m = _m(data)
+    if nyckel in m["nycklar"]:
+        return False
+    idag = dt_util.now().date().isoformat()
+    kd = m.setdefault("kista_dag", {})
+    if kd.get("dag") != idag:
+        kd.clear()
+        kd.update({"dag": idag, "n": 0})
+    if kd["n"] >= KISTA_DAG:
+        return False
+    kd["n"] += 1
+    m["nycklar"].append(nyckel)
+    m["kistor"] = (m.get("kistor", []) + [{"id": f"{random.getrandbits(40):x}", "typ": typ, "orsak": orsak, "nyckel": nyckel,
+                                           "tid": dt_util.now().isoformat(timespec="minutes")}])[-10:]
+    return True
+
+
+def kista_ta_bort(data: dict, nyckel: str) -> None:
+    """Barnet tog bort det som gav kistan: oöppnad kista försvinner också."""
+    m = _m(data)
+    m["kistor"] = [x for x in m.get("kistor", []) if x.get("nyckel") != nyckel]
+
+
+def _kista_kort(data: dict) -> str:
+    kort = _m(data).get("kort", {})
+    k = _m(data).get("karta") or {}
+    hogsta = min(len(VARLDAR) - 1, (k.get("niva", 1) - 1) // NIVA_PER_VARLD + 1)
+    alla = [f"{VARLDAR[v]['id']}:{i}" for v in range(hogsta + 1) for i in range(9)]
+    saknas = [x for x in alla if not kort.get(x)]
+    kid = random.choice(saknas) if saknas and random.random() < 0.6 else random.choice(alla)
+    _kort_ge(data, kid)
+    return kid
+
+
+def kista_oppna(data: dict, kista_id: str) -> dict:
+    m = _m(data)
+    x = next((y for y in m.get("kistor", []) if y["id"] == kista_id), None)
+    if not x:
+        raise ValueError("Kistan finns inte.")
+    m["kistor"].remove(x)
+    if x["typ"] == "guld":
+        delar = [("kort", 1, 1), ("energi", 2, 2), ("stjarnor", 10, 10)]
+    else:
+        lista = KISTA_INNEHALL.get(x["typ"], KISTA_INNEHALL["brons"])
+        delar = [random.choices([v for _w, v in lista], weights=[w for w, _v in lista])[0]]
+    ut = {"typ": x["typ"], "saker": []}
+    for vad, lo, hi in delar:
+        n = random.randint(lo, hi)
+        if vad == "stjarnor":
+            ge(data, n, f"{KISTA_TYPER[x['typ']]['ikon']} {KISTA_TYPER[x['typ']]['namn']}: {x['orsak']}", None, "🎁")
+            ut["saker"].append({"ikon": "⭐", "text": f"+{n} ⭐"})
+        elif vad == "energi":
+            k = _karta(data)
+            k["energi"] = min(ENERGI_MAX, k.get("energi", 0) + n)
+            ut["saker"].append({"ikon": "⚡", "text": f"+{n} ⚡"})
+        else:
+            kid = _kista_kort(data)
+            info = _kort_info(kid)
+            ut["saker"].append({"ikon": info["ikon"], "text": f"🃏 {info['namn']}"})
+    m["kista_senast"] = ut
+    return ut
+
+
+def kista_status(data: dict) -> dict:
+    m = _m(data)
+    return {"kistor": [{**x, **KISTA_TYPER.get(x["typ"], KISTA_TYPER["brons"])} for x in m.get("kistor", [])], "typer": KISTA_TYPER, "per_dag": KISTA_DAG}
+
+
+# ---------- provboss: varje prov blir ett monster som man gör svagare genom att plugga ----------
+PROVBOSS_DAG_SKADA = 0.15  # varje pluggdag före provet
+PROVBOSS_KLART_SKADA = 0.20  # allt inför provet klart i tid
+PROVBOSS_MAX_SKADA = 0.80
+PROVBOSS_FORE = 1  # slutstriden öppnar dagen före provet
+PROVBOSS_EFTER = 3  # och går att göra så här många dagar efter
+PROVBOSS_STARK = 1.6  # en opluggad provboss har mer liv än husdjuret
+PROVBOSS_SLAG = 1.15  # och slår lite hårdare
+P_PROVBOSS = 20
+PROVBOSS_XP = 10
+PROVBOSS_IKONER = ["👹", "👺", "🐲", "👾", "🤖", "🧟", "🦑", "🦂", "🐉", "👻"]
+PROVBOSS_ELEMENT = ["eld", "vatten", "blixt", "natur", "is", "kraft"]
+
+
+def _provboss_info(data: dict, u: dict) -> dict:
+    h = sum(ord(c) for c in u["id"])
+    el = PROVBOSS_ELEMENT[h % len(PROVBOSS_ELEMENT)]
+    dagar = len([d for d in u.get("studiedagar", []) if d < u["datum"]])
+    klart = bool(u.get("klart")) and u["klart"][:10] < u["datum"]
+    skada = min(PROVBOSS_MAX_SKADA, min(5, dagar) * PROVBOSS_DAG_SKADA + (PROVBOSS_KLART_SKADA if klart else 0))
+    idag = dt_util.now().date()
+    datum = date.fromisoformat(u["datum"])
+    amne = (u.get("amne_namn") or u["namn"]).strip()
+    return {"id": u["id"], "prov": u["namn"], "namn": f"{amne[:1].upper()}{amne[1:]}-monstret", "ikon": PROVBOSS_IKONER[h % len(PROVBOSS_IKONER)],
+            "element": el, "svag": ELEMENT_SVAG_MOT[el], "datum": u["datum"], "dagar_kvar": (datum - idag).days,
+            "pluggdagar": dagar, "klart": klart, "skada": round(skada * 100),
+            "oppen": -PROVBOSS_EFTER <= (datum - idag).days <= PROVBOSS_FORE, "vunnen": bool(u.get("provboss_vunnen"))}
+
+
+def provboss_lista(data: dict) -> list[dict]:
+    idag = dt_util.now().date()
+    ut = []
+    for u in data.get("uppdrag", []):
+        if u.get("typ") != "prov":
+            continue
+        try:
+            dagar = (date.fromisoformat(u["datum"]) - idag).days
+        except (ValueError, KeyError):
+            continue
+        if dagar >= -PROVBOSS_EFTER:
+            ut.append(_provboss_info(data, u))
+    return sorted(ut, key=lambda x: x["datum"])
+
+
+def provboss_start(data: dict, uid: str) -> dict:
+    m = _m(data)
+    if not m.get("djur"):
+        raise ValueError("Du behöver ett husdjur först.")
+    u = next((x for x in data.get("uppdrag", []) if x["id"] == uid and x.get("typ") == "prov"), None)
+    if not u:
+        raise ValueError("Provet finns inte.")
+    info = _provboss_info(data, u)
+    if info["vunnen"]:
+        raise ValueError("Den provbossen har du redan besegrat!")
+    if not info["oppen"]:
+        raise ValueError(f"Slutstriden öppnar dagen före provet. Plugga så länge, så blir {info['namn']} svagare!")
+    k = _karta(data)
+    if k.get("arena") or k.get("lagstrid"):
+        raise ValueError("Gör klart striden som pågår först.")
+    vi = min(len(VARLDAR) - 1, (k.get("niva", 1) - 1) // NIVA_PER_VARLD)
+    de = _boss_kampe(data, vi)
+    s = info["skada"] / 100
+    de["drag"] = {a: max(1, round(v * (PROVBOSS_SLAG - s / 2))) for a, v in de["drag"].items()}
+    de["max"] = round(de["max"] * PROVBOSS_STARK / (1.1 + 0.06 * vi))
+    de["liv"] = max(1, round(de["max"] * (1 - s)))
+    de.update({"namn": info["namn"], "art": info["ikon"], "element": info["element"]})
+    k["arena"] = {"mot": "boss", "mot_namn": info["namn"], "provboss": uid, "jag": _kampe(data, "jag"), "de": de,
+                  "turer": [], "start": dt_util.now().isoformat(timespec="seconds")}
+    return k["arena"]
+
+
+def _provboss_slut(data: dict, a: dict, vann: bool, gav_upp: bool) -> None:
+    k = _karta(data)
+    u = next((x for x in data.get("uppdrag", []) if x["id"] == a["provboss"]), None)
+    trofe = None
+    if vann and u and not u.get("provboss_vunnen"):
+        u["provboss_vunnen"] = dt_util.now().isoformat(timespec="minutes")
+        ge(data, P_PROVBOSS, f"Besegrade {a['mot_namn']} ({u['namn']})", f"provboss:{u['id']}", "🏆")
+        trofe = {"namn": a["mot_namn"], "ikon": a["de"]["art"], "prov": u["namn"], "datum": u["datum"]}
+        k["provtrofeer"] = (k.get("provtrofeer", []) + [trofe])[-60:]
+        _djur_xp(data, 0)
+        k["djur_xp"] += PROVBOSS_XP
+    k["revansch_hist"] = (k.get("revansch_hist", []) + [{"provboss": a["provboss"], "mot_namn": a["mot_namn"], "vann": vann, "gav_upp": gav_upp,
+                                                         "trofe": trofe, "tid": dt_util.now().isoformat(timespec="seconds"), "turer": a["turer"][-40:]}])[-10:]
+
+
+# ---------- husdjuret frågar efter skolan: fick du någon läxa idag? ----------
+P_LAXFRAGA = 2
+LAXFRAGA_FRAN = 12  # klockslag
+
+
+def laxfraga(data: dict) -> dict | None:
+    nu = dt_util.now()
+    idag = nu.date().isoformat()
+    m = _m(data)
+    if nu.weekday() >= 5 or nu.hour < LAXFRAGA_FRAN or m.get("laxfraga") == idag or m.get("registrerat_dag") == idag:
+        return None
+    lektioner = sorted([x for x in data.get("lektioner", []) if x.get("dag") == nu.weekday()], key=lambda x: x.get("start") or "")
+    amnen = list(dict.fromkeys(x["namn"] for x in lektioner))
+    schema = [s["namn"] for s in data.get("schema", []) if int(s["kommer"]) == nu.weekday()]
+    return {"amnen": amnen, "schema": schema, "p": P_LAXFRAGA}
+
+
+def laxfraga_svar(data: dict, ja: bool) -> None:
+    idag = dt_util.now().date().isoformat()
+    m = _m(data)
+    if m.get("laxfraga") == idag:
+        return
+    m["laxfraga"] = idag
+    if not ja:
+        ge(data, P_LAXFRAGA, "Berättade för husdjuret att det inte blev någon läxa idag", f"laxfraga:{idag}", "🐾")
+
+
+def har_registrerat(data: dict) -> None:
+    _m(data)["registrerat_dag"] = dt_util.now().date().isoformat()
+
+
+# ---------- veckans koll: alla läxor i läxschemat inlagda i tid ----------
+P_VECKOKOLL = 15
+
+
+def veckokoll(data: dict) -> dict | None:
+    st = schema_status(data)
+    if not st:
+        return None
+    idag = dt_util.now().date()
+    mandag = (idag - timedelta(days=idag.weekday())).isoformat()
+    return {"klara": sum(1 for x in st if x["status"] == "i_tid"), "av": len(st), "miss": any(x["status"] in ("sent", "ej") for x in st),
+            "klar": f"veckokoll:{mandag}" in _m(data)["nycklar"], "p": P_VECKOKOLL}
+
+
+def _veckokoll_kolla(data: dict) -> None:
+    st = schema_status(data)
+    if not st or not all(x["status"] == "i_tid" for x in st):
+        return
+    idag = dt_util.now().date()
+    mandag = (idag - timedelta(days=idag.weekday())).isoformat()
+    m = _m(data)
+    if ge(data, P_VECKOKOLL, "📅 Veckans koll: alla läxor inlagda i tid!", f"veckokoll:{mandag}", "📅"):
+        m["skydd"] = min(SKYDD_MAX, m.get("skydd", 0) + 1)
+        kista_ge(data, "guld", "Veckans koll", f"kista:veckokoll:{mandag}")
