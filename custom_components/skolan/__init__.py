@@ -38,14 +38,14 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import meriter, skola, tillsammans, vanner
+from . import dagens, meriter, skola, tillsammans, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.49.0"
+VERSION = "1.50.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -857,6 +857,8 @@ class StateView(HomeAssistantView):
                     "schema_status": meriter.schema_status(data) if parent else [],
                 },
                 "topplista": topplista,
+                "dagens": dagens.dagens(data, next((b["namn"] for b in conf["barn"] if b["id"] == barn), "")),
+                "handelse": meriter.vecko_handelse(), "rekord": dagens.rekord(data), "prat": dagens.prat(data),
                 "djurlista": meriter.DJUR,
                 "djurbutik": meriter.butik_lista(),
                 "pass": meriter.pass_status(data),
@@ -1032,6 +1034,14 @@ def _apply(data: dict, body: dict) -> list[str]:
     if op in ("ova_tips", "ova_forsok"):
         if body.get("_barn"):  # föräldrar som provar övningen betalar inget
             meriter.kop_tips(data, "forsok" if op == "ova_forsok" else "tips")
+        return []
+    if op in ("gata_gissa", "gata_svar"):  # dagens gåta (bara barnet själv)
+        if not body.get("_barn"):
+            raise ValueError("Det är barnet som gissar.")
+        if op == "gata_gissa":
+            dagens.gissa(data, str(body.get("svar") or ""))
+        else:
+            dagens.visa_svar(data)
         return []
     if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack_upp", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "traning_kop", "lagstrid_start", "lagstrid_drag", "lagstrid_ge_upp", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):

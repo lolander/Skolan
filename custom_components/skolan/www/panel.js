@@ -661,6 +661,18 @@ const toc = (sidor, bokToc) => {
   return t;
 };
 
+// En kort berättelse för varje värld på kartan, och vad bossen säger.
+const VARLD_BERATTELSE = {
+  skog: ["I Glosskogen har orden rymt från böckerna och gömmer sig bland träden. Bara den som kan glosorna hittar vägen igenom.", "Glosmonstret har ätit upp alla glosor i skogen! Besegra det så kommer orden tillbaka."],
+  hav: ["Havet är svart av bläck sedan någon välte ut alla pennor. Fiskarna hittar inte hem i mörkret.", "Bläckbläckfisken sprutar bläck på allt du har skrivit. Visa vem som bestämmer!"],
+  berg: ["Uppe på Trollberget bor troll som tycker att läxor är det tråkigaste som finns. De bygger murar av struntprat.", "Läxtrollet har gömt alla läxböcker under sin bro. Hämta tillbaka dem!"],
+  trask: ["I Sömnträsket blir alla så trötta att de somnar mitt i en mening. Håll dig vaken genom att plugga!", "Sömnzombien vill att alla ska sova över provet. Väck den med en riktig attack!"],
+  fabrik: ["Robotarna i fabriken har glömt hur man räknar och har börjat gissa. Det blir fel överallt.", "Robotkungen påstår att 2 + 2 = 5. Bevisa att han har fel!"],
+  vulkan: ["Det mullrar i Drakvulkanen. Där inne bor drakar som bränner upp allt man har lärt sig, om man slutar öva.", "Glömskedraken andas glömska. Allt du har övat på skyddar dig mot elden!"],
+  slott: ["I Spökslottet spökar det bland halvfärdiga läxor. Ingen vågar gå in, utom du och ditt husdjur.", "Slarvspöket gör slarvfel i allt du skriver. Var noggrann så försvinner det!"],
+  tid: ["Vid Tidshavet går klockorna åt alla håll. Den som skjuter upp sina läxor fastnar i tidsvirvlarna.", "Tidshajen äter upp all din tid. Gör läxan i tid så går den hungrig!"],
+};
+
 class SkolanPanel extends HTMLElement {
   constructor() {
     super();
@@ -1491,6 +1503,7 @@ class SkolanPanel extends HTMLElement {
     return `<div class="djur-kort humor-${d.humor}">
       ${this._djurFigur(d)}
       <div class="djur-info">
+        ${this._s.prat && !agg ? `<div class="prat-bubbla">💬 ${esc(this._s.prat)}</div>` : ""}
         <div class="djur-rubrik">${esc(d.namn)} <span class="muted small">· ${d.form ? `${d.form.ikon} ${esc(d.form.namn)}` : esc(d.steg_namn)}</span></div>
         ${this._s.titel ? `<div class="small"><b>${esc(this._s.titel)}</b></div>` : ""}
         ${d.bastis && !agg ? (() => { const k = (this._s.djurbutik || []).find((x) => x.id === d.pa?.kompis);
@@ -1729,6 +1742,7 @@ class SkolanPanel extends HTMLElement {
       <div class="boss-figur ${anim ? "traff" : ""}">${mon.ikon}</div>
       <div class="djur-info">
         <div class="djur-rubrik">${mon.varld.ikon} Nivå ${k.niva}${mon.boss ? ` · 👑 ${esc(mon.namn)}` : ""}</div>
+        ${VARLD_BERATTELSE[mon.varld.id] ? `<div class="varld-berattelse">📖 ${esc(VARLD_BERATTELSE[mon.varld.id][mon.boss ? 1 : 0])}</div>` : ""}
         <div class="progress boss-hp"><div style="width:${Math.round((kvar / k.hp) * 100)}%"></div></div>
         <div class="small">❤️ ${kvar} av ${k.hp} liv · 🎯 svag mot <b>${k.typer[mon.svag]}</b></div>
         <div class="small muted">Varje merit du tjänar gör skada.${mon.boss && mon.sak ? ` Besegra bossen för ${mon.sak.ikon} ${esc(mon.sak.namn)}!` : ""}${sen ? ` Senast: nivå ${sen.niva} ${"⭐".repeat(sen.stjarnor)}` : ""}</div>
@@ -2560,7 +2574,9 @@ class SkolanPanel extends HTMLElement {
     }).join("");
     const sista = noder[noder.length - 1].varld;
     const forbi = syskon.filter((t) => t.karta.niva < k.karta[0].niva || t.karta.niva > k.karta[k.karta.length - 1].niva);
+    const nuVarld = k.monster?.varld;
     return `<div class="karta-topp">⭐ ${k.stjarnor_tot} stjärnor · nivå ${k.niva}${syskon.map((t) => ` · ${esc(t.namn)}: nivå ${t.karta.niva}`).join("")}</div>
+      ${nuVarld && VARLD_BERATTELSE[nuVarld.id] ? `<div class="varld-berattelse stor" style="--farg:${nuVarld.farg}"><b>${nuVarld.ikon} ${esc(nuVarld.namn)}</b><br>${esc(VARLD_BERATTELSE[nuVarld.id][0])}</div>` : ""}
       <div class="karta">${rader}<div class="karta-varld" style="background:${sista.farg}">${sista.ikon} Värld ${sista.nr}: ${esc(sista.namn)}${sista.varv ? " ★".repeat(sista.varv) : ""}</div></div>
       ${forbi.length ? `<div class="small muted center">${forbi.map((t) => `${esc(t.namn)} är på nivå ${t.karta.niva}`).join(" · ")}</div>` : ""}
       <p class="small muted center">Klara nivån snabbt för ⭐⭐⭐. Var tionde nivå är en världsboss med en egen pris-sak.</p>`;
@@ -3018,6 +3034,8 @@ class SkolanPanel extends HTMLElement {
       </div>
 
       ${this._topplista()}
+      ${(s.rekord || []).length ? `<h3>🏅 Dina rekord</h3><div class="list">${s.rekord.map((x) => `<div class="row static rekord-rad ${x.ny ? "ny" : ""}">
+        <span>${x.ikon} ${esc(x.namn)}${x.info ? `<br><span class="muted small">${esc(x.info)}</span>` : ""}</span><span><b>${esc(x.varde)}</b>${x.ny ? ` <span class="ny-bricka">🆕 nytt!</span>` : ""}</span></div>`).join("")}</div>` : ""}
 
       <h3>🏅 Medaljer</h3>
       <div class="medaljer">
@@ -3645,10 +3663,32 @@ class SkolanPanel extends HTMLElement {
     }
   }
 
+  // Dagens hälsning, veckans händelse och dagens gåta (svaret kommer i morgon).
+  _dagensKort() {
+    const g = this._s.dagens, h = this._s.handelse;
+    if (!g) return "";
+    const barn = !this._s.kan_valja;
+    const ig = g.igar;
+    let igar = "";
+    if (ig.visad) igar = `<div class="gata-igar">🔓 Gårdagens gåta: <i>${esc(ig.gata)}</i><br>Svar: <b>${esc(ig.svar)}</b>${ig.gissning ? ` · du gissade ”${esc(ig.gissning)}” ${ig.ratt ? `✅ Rätt! +${g.p_gata} ⭐` : "❌"}` : ""}</div>`;
+    else if (barn) igar = `<button class="mini" id="gata-visa">🔓 Se svaret på gårdagens gåta${ig.gissning ? " (du gissade!)" : ""}</button>`;
+    const fraga = g.gissning
+      ? `<div class="small">Din gissning: <b>${esc(g.gissning)}</b> · svaret kommer i morgon 🤫 ${barn ? `<button class="mini" id="gata-andra">Ändra</button>` : ""}</div>`
+      : barn ? `<div class="gata-rad"><input id="gata-svar" maxlength="60" placeholder="Din gissning…"><button class="mini primary" id="gata-gissa">Gissa</button></div>`
+      : `<div class="small muted">Barnet har inte gissat än.</div>`;
+    return `<div class="card dagens-kort">
+      <div class="dagens-halsning">🌞 ${esc(g.halsning)}</div>
+      ${h ? `<div class="handelse"><b>${h.ikon} ${esc(h.namn)}</b> · ${esc(h.info)}</div>` : ""}
+      <div class="gata"><div class="gata-rubrik">🧩 Dagens gåta</div><div class="gata-fraga">${esc(g.gata)}</div>${this._gataAndra ? `<div class="gata-rad"><input id="gata-svar" maxlength="60" value="${esc(g.gissning)}"><button class="mini primary" id="gata-gissa">Spara</button></div>` : fraga}
+      <div class="small muted">Rätt svar ger +${g.p_gata} ⭐ när du öppnar svaret i morgon.</div></div>
+      ${igar}</div>`;
+  }
+
   _hem() {
     const amnen = this._s.data.amnen || [];
     return `
       ${this._s.kan_valja ? `<button class="row foralder-knapp" id="open-foralder"><span>⚙️ <b>Föräldrar</b><br><span class="muted small">Läxschema, bonus och belöningsbutik för ${esc(this._s.namn)}</span></span><span>›</span></button>` : ""}
+      ${this._dagensKort()}
       ${this._forhorLista()}
       ${this._djurKort()}
       ${this._utmaningKort()}
@@ -5025,6 +5065,16 @@ class SkolanPanel extends HTMLElement {
     on("#sk-test", () => this._skolaAct({ op: "mejl_test", till: $("#sk-test-till")?.value || "" }, "Testmejlet är skickat 📧"));
     on("#sk-koppla-bort", () => { if (confirm("Koppla bort läraren? Klasslänken byts ut och läraren behöver koppla in eleven igen.")) this._skolaAct({ op: "koppla_bort" }, "Läraren är bortkopplad."); });
     on("#sk-kopiera", () => navigator.clipboard?.writeText(this._s.skola?.lank || "").then(() => { this._msg = { type: "ok", text: "Klasslänken är kopierad 📋" }; this._render(); }));
+    on("#gata-gissa", async () => {
+      const v = $("#gata-svar")?.value.trim();
+      if (!v) return;
+      this._gataAndra = false;
+      if (await this._act("gata_gissa", { svar: v })) { this._msg = { type: "ok", text: "Gissningen är sparad. Svaret kommer i morgon! 🤫" }; await this._load(this._s.barn); }
+      this._render();
+    });
+    $("#gata-svar")?.addEventListener("keydown", (e) => { if (e.key === "Enter") $("#gata-gissa")?.click(); });
+    on("#gata-andra", () => { this._gataAndra = true; this._render(); });
+    on("#gata-visa", async () => { if (await this._act("gata_svar", {})) await this._load(this._s.barn); this._render(); });
     r.querySelectorAll("[data-ink-avvisa]").forEach((b) => b.addEventListener("click", () => confirm("Ta bort det här från inkorgen?") && this._skolaAct({ op: "inkorg_avvisa", id: b.dataset.inkAvvisa }, "Borttaget från inkorgen.")));
     r.querySelectorAll("[data-ink-spara]").forEach((b) => b.addEventListener("click", async () => {
       const v = r.querySelector(`[data-ink-amne="${b.dataset.inkSpara}"]`)?.value || "";
@@ -5960,6 +6010,20 @@ const CSS = `
   .sak-ikon { position:relative; }
   .bastis-hjarta { position:absolute; top:-6px; right:-10px; font-size:16px; animation:bastis 1.6s ease-in-out infinite; }
   @keyframes bastis { 0%,100% { transform:scale(1); } 50% { transform:scale(1.25); } }
+  .dagens-kort { background:linear-gradient(135deg,#fff8e1,#e1f5fe); color:#263238; }
+  .dagens-halsning { font-size:15px; font-weight:600; margin-bottom:8px; }
+  .handelse { font-size:13px; padding:6px 10px; border-radius:10px; background:rgba(255,152,0,.18); margin-bottom:8px; }
+  .gata { padding:8px 10px; border-radius:10px; background:rgba(255,255,255,.6); margin-bottom:6px; }
+  .gata-rubrik { font-weight:700; font-size:13px; }
+  .gata-fraga { font-size:15px; margin:4px 0 6px; font-style:italic; }
+  .gata-rad { display:flex; gap:6px; align-items:center; margin-bottom:4px; }
+  .gata-rad input { flex:1; min-width:0; }
+  .gata-igar { font-size:13px; padding:6px 10px; border-radius:10px; background:rgba(76,175,80,.15); }
+  .prat-bubbla { position:relative; font-size:13px; padding:6px 10px; margin-bottom:6px; border-radius:12px; background:var(--secondary-background-color, #f1f1f1); }
+  .rekord-rad.ny { background:rgba(255,193,7,.15); }
+  .ny-bricka { font-size:11px; font-weight:700; color:#e65100; }
+  .varld-berattelse { font-size:12px; font-style:italic; opacity:.9; margin:4px 0 6px; }
+  .varld-berattelse.stor { font-size:14px; padding:10px 12px; border-radius:12px; border-left:4px solid var(--farg); background:color-mix(in srgb, var(--farg) 12%, transparent); font-style:normal; }
   .tl-ledare { display:flex; gap:12px; align-items:center; padding:12px 14px; border-radius:14px; background:linear-gradient(135deg,#fff8e1,#ffe082); color:#4e342e; margin-bottom:10px; }
   .tl-ledare.tom { justify-content:center; }
   .tl-krona { font-size:34px; }

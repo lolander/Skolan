@@ -1482,7 +1482,8 @@ def _klara_niva(data: dict, k: dict) -> None:
     k["stjarnor"][str(n)] = max(st, k["stjarnor"].get(str(n), 0))
     ge(data, st * P_NIVA_STJARNA, f"🗺️ Nivå {n} klar! {'⭐' * st}", f"niva:{n}", "🗺️")
     if info["boss"]:
-        ge(data, P_VARLDSBOSS, f"👾 Du besegrade {info['namn']}!", f"varldsboss:{n}", "👾")
+        extra = HANDELSE_BOSS_EXTRA if vecko_handelse()["id"] == "boss" else 0
+        ge(data, P_VARLDSBOSS + extra, f"👾 Du besegrade {info['namn']}!" + (" (Bossveckan +25 ⭐)" if extra else ""), f"varldsboss:{n}", "👾")
         d = _m(data).get("djur")
         if d and info["sak"]["id"] not in d.setdefault("agt", []):
             d["agt"].append(info["sak"]["id"])
@@ -1511,8 +1512,9 @@ def _karta_skada(data: dict, skada: int) -> None:
 def _karta_energi(data: dict, poang: int) -> None:
     k = _karta(data)
     rest = k.get("energi_rest", 0) + int(poang)
-    k["energi"] = min(ENERGI_MAX, k.get("energi", 0) + rest // P_ENERGI)
-    k["energi_rest"] = rest % P_ENERGI
+    p = _p_energi()
+    k["energi"] = min(ENERGI_MAX, k.get("energi", 0) + rest // p)
+    k["energi_rest"] = rest % p
 
 
 def karta_status(data: dict) -> dict:
@@ -1540,7 +1542,7 @@ def karta_status(data: dict) -> dict:
     return {"niva": n, "hp": k["hp"], "skada": min(k["skada"], k["hp"]), "monster": info, "dagar": niva_dagar(n),
             "liv": djur_liv(data)[0], "liv_max": djur_liv(data)[1], "p_liv": P_LIV,
             "drycker": [{**x, "antal": k.get("drycker", {}).get(x["id"], 0)} for x in DRYCKER], "dryck_max": DRYCK_MAX,
-            "energi": k.get("energi", 0), "energi_max": ENERGI_MAX, "p_energi": P_ENERGI,
+            "energi": k.get("energi", 0), "energi_max": ENERGI_MAX, "p_energi": _p_energi(),
             "energi_pris": ENERGI_PRIS, "energi_kop_kvar": ENERGI_KOP_DAG - _energi_kopt(k), "attacker": lista, "typer": TYPER,
             "super_anvand": k.get("super") == vecka, "senaste": k.get("senaste"), "karta": karta,
             "stjarnor_tot": sum(k["stjarnor"].values()), "klara": k.get("klara", [])[-3:], "laxor": laxor, "prov": prov,
@@ -1636,6 +1638,32 @@ def attack_uppgradera_pris(at: dict, niva: int) -> int | None:
 
 
 P_ENERGI = 25  # 1 energi per 25 intjänade meriter
+
+# Veckans händelse: en ny twist varje vecka (samma för alla barn).
+VECKOHANDELSER = [
+    {"id": "eld", "ikon": "🔥", "namn": "Eldveckan", "info": "🔥 Eldattacker gör +50 % skada.", "typ": "eld"},
+    {"id": "energi", "ikon": "⚡", "namn": "Energiveckan", "info": "Du får 1 ⚡ per 18 ⭐ i stället för 25."},
+    {"id": "natur", "ikon": "🍃", "namn": "Skogsveckan", "info": "🍃 Naturattacker gör +50 % skada.", "typ": "natur"},
+    {"id": "boss", "ikon": "👾", "namn": "Bossveckan", "info": "Alla attacker gör +50 % skada mot världsbossar, och bossarna ger +25 ⭐ extra."},
+    {"id": "blixt", "ikon": "⚡", "namn": "Åskveckan", "info": "⚡ Blixtattacker gör +50 % skada.", "typ": "blixt"},
+    {"id": "lak", "ikon": "❤️", "namn": "Läkeveckan", "info": "Plugg ger dubbelt så mycket ❤️ tillbaka till husdjuret."},
+    {"id": "vatten", "ikon": "🌊", "namn": "Havsveckan", "info": "🌊 Vattenattacker gör +50 % skada.", "typ": "vatten"},
+    {"id": "tur", "ikon": "🍀", "namn": "Turveckan", "info": "Monstren missar dubbelt så ofta."},
+    {"id": "is", "ikon": "❄️", "namn": "Isveckan", "info": "❄️ Isattacker gör +50 % skada.", "typ": "is"},
+    {"id": "kompis", "ikon": "💞", "namn": "Kompisveckan", "info": "Psst… kompisarna verkar extra peppade den här veckan. 😏"},
+]
+HANDELSE_BOSS_EXTRA = 25
+
+
+def vecko_handelse(dag: date | None = None) -> dict:
+    dag = dag or dt_util.now().date()
+    mandag = dag - timedelta(days=dag.weekday())
+    h = VECKOHANDELSER[(mandag.toordinal() // 7) % len(VECKOHANDELSER)]
+    return {**h, "slut": (mandag + timedelta(days=6)).isoformat()}
+
+
+def _p_energi() -> int:
+    return 18 if vecko_handelse()["id"] == "energi" else P_ENERGI
 SVAG_GANGER = 2  # monstret tar dubbel skada av sin svaghet
 
 # ---------- husdjurets liv ----------
@@ -1702,7 +1730,8 @@ def _kompis_bastis(d: dict) -> bool:
 def kompis_boost(data: dict) -> dict:
     d = _m(data).get("djur") or {}
     b = KOMPIS_BOOST.get((d.get("pa") or {}).get("kompis") or "", {})
-    return {k: v * 2 for k, v in b.items()} if _kompis_bastis(d) else b
+    gange = (2 if _kompis_bastis(d) else 1) * (2 if vecko_handelse()["id"] == "kompis" else 1)
+    return {k: v * gange for k, v in b.items()}
 
 
 def djur_kraft(data: dict) -> float:
@@ -1729,7 +1758,7 @@ def _djur_laka(data: dict, poang: int) -> None:
     """Plugg ger tillbaka liv."""
     k = _karta(data)
     liv, mx = djur_liv(data)
-    rest = k.get("liv_rest", 0) + int(poang)
+    rest = k.get("liv_rest", 0) + int(poang) * (2 if vecko_handelse()["id"] == "lak" else 1)
     k["liv"] = min(mx, liv + rest // P_LIV)
     k["liv_rest"] = rest % P_LIV
 
@@ -1943,6 +1972,9 @@ def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
         skada += min(10, _dag_poang(data, idag) // 10)
     elif at["id"] == "a_lava" and mon.get("boss"):
         skada *= 1.5
+    h = vecko_handelse()
+    if h.get("typ") == at["typ"] or (h["id"] == "boss" and mon.get("boss")):
+        skada *= 1.5
     svag = mon.get("svag") == at["typ"] or bool(at.get("per_dag") and mon.get("svag"))  # regnbågen: alla monster är svaga
     return round(skada * djur_kraft(data)) * (SVAG_GANGER if svag else 1), svag
 
@@ -2016,7 +2048,7 @@ def attack(data: dict, at_id: str) -> dict:
     _karta_skada(data, skada)
     klar = k["niva"] > n
     # Monstret slår tillbaka om det överlevde
-    miss = not klar and random.random() < MISS_CHANS
+    miss = not klar and random.random() < MISS_CHANS * (2 if vecko_handelse()["id"] == "tur" else 1)
     sk = skold(data)
     laka = sk.get("laka", 0) if sk else 0
     laka += at.get("laka", 0)  # blomsterstormen läker också
@@ -2135,8 +2167,8 @@ def rensa_kampe(k: dict, agare: str) -> tuple[dict, int]:
     får vara större än vad som går att få i Skolan. Returnerar (kämpe, antal borttagna drag)."""
     if not isinstance(k, dict) or not isinstance(k.get("drag"), dict):
         raise ValueError("Vännens husdjur gick inte att läsa.")
-    kompis_max = max([b.get("kraft", 0) for b in KOMPIS_BOOST.values()] or [0]) * 2  # bästis ger dubbelt
-    kraft_max = (1 + (DJUR_NIVA_MAX - 1) * 0.02) * (1 + LAG_BONUS_PER * LAG_MAX) * (1 + kompis_max)
+    kompis_max = max([b.get("kraft", 0) for b in KOMPIS_BOOST.values()] or [0]) * 4  # bästis och kompisveckan ger dubbelt var
+    kraft_max = (1 + (DJUR_NIVA_MAX - 1) * 0.02) * (1 + LAG_BONUS_PER * LAG_MAX) * (1 + kompis_max) * 1.5  # 1,5: veckans händelse
     kanda = {"knuff": KNUFF, **{x["id"]: x for x in ATTACKER}}
     drag, okanda = {}, 0
     for at_id, varde in list(k["drag"].items())[:30]:
@@ -2147,7 +2179,7 @@ def rensa_kampe(k: dict, agare: str) -> tuple[dict, int]:
         tak = math.ceil((attack_skada(at, ATTACK_NIVA_MAX) * 2 + 3) * kraft_max * ARENA_GANGER * 1.2)
         drag[at_id] = _int(varde, 1, tak)
     drag.setdefault("knuff", KNUFF["skada"] * ARENA_GANGER)
-    liv_tak = LIV_MAX[-1] + (DJUR_NIVA_MAX - 1) * 4 + max([b.get("liv", 0) for b in KOMPIS_BOOST.values()] or [0]) * 2
+    liv_tak = LIV_MAX[-1] + (DJUR_NIVA_MAX - 1) * 4 + max([b.get("liv", 0) for b in KOMPIS_BOOST.values()] or [0]) * 4
     mx = _int(k.get("max"), 1, liv_tak)
     sk = SKOLD.get(k.get("skold") if isinstance(k.get("skold"), str) else "")  # DEF räknas här, vännens siffra används inte
     return {"agare": str(agare)[:16], "namn": str(k.get("namn") or "?")[:20], "art": str(k.get("art") or "")[:8],
