@@ -3423,7 +3423,7 @@ class SchemaSidaView(HomeAssistantView):
         data = await hass.async_add_executor_job(_load, _dir(hass, barn))
         namn = next(b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn)
         farger = {a["namn"].lower(): a.get("farg") for a in data.get("amnen", [])}
-        sida = schemavy.sida(f"{namn}s schema", data.get("lektioner", []), farger)
+        sida = schemavy.sida(f"{namn}s schema", data.get("lektioner", []), farger, hem=f"/skolan?barn={barn}")
         return web.Response(text=sida, content_type="text/html", headers={"Cache-Control": "no-store"})
 
 

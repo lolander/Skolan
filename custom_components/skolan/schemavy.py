@@ -23,7 +23,7 @@ def _farg(namn: str, farger: dict) -> str:
     return FARGER[sum(ord(c) for c in namn) % len(FARGER)]
 
 
-def sida(titel: str, lektioner: list, farger: dict | None = None) -> str:
+def sida(titel: str, lektioner: list, farger: dict | None = None, hem: str = "/") -> str:
     """Hela HTML-sidan. farger: ämnesnamn (gemener) -> #rrggbb."""
     farger = farger or {}
     e = lambda s: html.escape(str(s or ""))  # noqa: E731
@@ -51,7 +51,7 @@ def sida(titel: str, lektioner: list, farger: dict | None = None) -> str:
                 + "".join(rader) + "</div>")
 
     kolumner = "".join(
-        f'<div class="dag"><div class="rub">{d}</div><div class="kol" style="height:{hojd:.0f}px">'
+        f'<div class="dag"><div class="rub"><span class="lang">{d}</span><span class="kort">{d[:3]}</span></div><div class="kol" style="height:{hojd:.0f}px">'
         + "".join(f'<i class="lin" style="top:{(t - fran) * px:.0f}px"></i>' for t in range(fran, till + 1, 60))
         + "".join(block(x) for x in lekt if int(x["dag"]) == i and _min(x.get("start")) is not None)
         + "</div></div>"
@@ -66,11 +66,14 @@ body{{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:16
 h1{{font-size:22px;margin:0 0 10px}}
 .verktyg{{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}}
 .verktyg input{{flex:1;min-width:180px;padding:9px 12px;font-size:16px;border:1px solid #c9ced8;border-radius:10px}}
+.verktyg .bak{{background:#eef1f6;color:#1d2330}}
 .verktyg button{{padding:9px 14px;font-size:15px;border:0;border-radius:10px;background:#4f8ef7;color:#fff;cursor:pointer}}
 .schema{{display:grid;grid-template-columns:44px repeat(5,minmax(0,1fr));gap:4px}}
 .axel{{position:relative;margin-top:26px}}
 .axel span{{position:absolute;right:4px;font-size:11px;color:#667;transform:translateY(-50%)}}
 .rub{{text-align:center;font-weight:700;height:26px;line-height:26px;background:#eef1f6;border-radius:6px}}
+.kort{{display:none}}
+@media (max-width:600px){{.lang{{display:none}}.kort{{display:inline}}body{{margin:10px}}.schema{{grid-template-columns:34px repeat(5,minmax(0,1fr))}}}}
 .kol{{position:relative;background:#f7f8fa;border-radius:6px}}
 .lin{{position:absolute;left:0;right:0;border-top:1px dashed #d5d9e0}}
 .l{{position:absolute;left:2px;right:2px;box-sizing:border-box;border-left:5px solid var(--c);background:color-mix(in srgb,var(--c) 18%,#fff);
@@ -86,17 +89,24 @@ h1{{font-size:22px;margin:0 0 10px}}
   body{{margin:0}} .verktyg,#traffar{{display:none}} .l.dim{{opacity:1}}
   .rub,.kol,.l{{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 }}
-</style></head><body>
+</style></head><body data-hem="{e(hem)}">
 <h1>🗓️ {e(titel)}</h1>
-<div class="verktyg"><input id="sok" type="search" placeholder="Sök ämne, sal, lärare eller dag"><button onclick="window.print()">🖨️ Skriv ut</button></div>
+<div class="verktyg"><button class="bak" onclick="tillbaka()">← Tillbaka</button><input id="sok" type="search" placeholder="Sök ämne, sal, lärare eller dag"><button onclick="window.print()">🖨️ Skriv ut</button></div>
 <ul id="traffar"></ul>
 <div class="schema"><div class="axel" style="height:{hojd:.0f}px">{axel}</div>{kolumner}</div>
 {utan_html}
 <div class="fot">Läxspelet · digital kopia av schemat</div>
 <script>
+// Tillbaka: stäng fliken om den öppnades av appen, annars backa, och sist gå till startsidan.
+function tillbaka(){{
+  if(window.opener&&!window.opener.closed){{window.close();}}
+  const forr=location.href;
+  if(history.length>1)history.back();
+  setTimeout(()=>{{if(location.href===forr)location.href=document.body.dataset.hem||"/";}},400);
+}}
 const sok=document.getElementById("sok"),ut=document.getElementById("traffar"),L=[...document.querySelectorAll(".l")];
 sok.addEventListener("input",()=>{{const t=sok.value.trim().toLowerCase();ut.innerHTML="";
   L.forEach(l=>{{const m=!t||l.dataset.sok.includes(t);l.classList.toggle("dim",!m);
-    if(t&&m){{const li=document.createElement("li");li.textContent=l.closest(".dag").querySelector(".rub").textContent+" · "+[...l.children].map(c=>c.textContent).join(" · ");ut.appendChild(li);}}}});
+    if(t&&m){{const li=document.createElement("li");li.textContent=l.closest(".dag").querySelector(".rub .lang").textContent+" · "+[...l.children].map(c=>c.textContent).join(" · ");ut.appendChild(li);}}}});
   if(t&&!ut.children.length)ut.innerHTML="<li>Inget hittades.</li>";}});
 </script></body></html>"""
