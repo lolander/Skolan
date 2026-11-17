@@ -1493,6 +1493,8 @@ class SkolanPanel extends HTMLElement {
       <div class="djur-info">
         <div class="djur-rubrik">${esc(d.namn)} <span class="muted small">· ${d.form ? `${d.form.ikon} ${esc(d.form.namn)}` : esc(d.steg_namn)}</span></div>
         ${this._s.titel ? `<div class="small"><b>${esc(this._s.titel)}</b></div>` : ""}
+        ${d.bastis && !agg ? (() => { const k = (this._s.djurbutik || []).find((x) => x.id === d.pa?.kompis);
+          return k ? `<div class="bastis-bricka">💞 ${esc(d.namn)} och ${k.ikon} ${esc(k.namn)} är bästisar!</div>` : ""; })() : ""}
         <div class="small">${agg ? `Ägget kläcks om ${kvar} ⭐. Gör läxor för att värma det!` : DJUR_HUMOR[d.humor](esc(d.namn))}</div>
         ${d.nasta ? `<div class="progress"><div style="width:${Math.min(100, Math.round((d.intjanat / d.nasta) * 100))}%"></div></div>
         <div class="small muted">${kvar} ⭐ kvar tills ${esc(d.namn)} växer</div>` : `<div class="small">👑 ${esc(d.namn)} är en legend!</div>`}
@@ -1516,7 +1518,7 @@ class SkolanPanel extends HTMLElement {
     const glod = eff?.glod ? `glod-${eff.glod}` : "";
     return `<div class="djur-scen ${glod} humor-${d.humor}" style="width:${px}px;height:${px}px;background:${bg?.bg || standard}">
       ${ritaDjur(d.art, d.humor, d.steg, { hatt, kompis, eff, deko: bg?.deko, krona: d.steg >= 5 && !hatt, form: d.form,
-        variant: d.variant ? (this._s.varianter || []).find((v) => v.id === d.variant) : null })}</div>`;
+        variant: d.variant ? (this._s.varianter || []).find((v) => v.id === d.variant) : null })}${kompis && d.bastis ? `<span class="scen-bastis" title="Bästisar!">💞</span>` : ""}</div>`;
   }
 
   _bgSak(d) {
@@ -5894,6 +5896,8 @@ const CSS = `
   .djur-kort:not(.humor-glad):not(.humor-nojd):not(.humor-hungrig):not(.humor-ledsen) { flex-direction:column; align-items:stretch; }
   .djur-val { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
   .djur-val button { font-size:34px; background:var(--secondary-background-color); border:none; border-radius:12px; width:58px; height:58px; cursor:pointer; }
+  .scen-bastis { position:absolute; right:6%; bottom:30%; font-size:22px; animation:bastis 1.6s ease-in-out infinite; filter:drop-shadow(0 0 4px #fff); }
+  .bastis-bricka { display:inline-block; font-size:12px; font-weight:600; padding:2px 10px; margin:3px 0; border-radius:12px; background:linear-gradient(90deg,#f8bbd0,#e1bee7); color:#6a1b9a; }
   .djur-scen { position:relative; flex:none; border-radius:22px; overflow:hidden; box-shadow:inset 0 0 0 3px rgba(255,255,255,.4); }
   .djur-scen svg { display:block; }
   .djur-scen.humor-glad .kropp { animation:hoppSvg 1.6s ease-in-out infinite; }
