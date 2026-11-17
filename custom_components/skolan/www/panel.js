@@ -1415,6 +1415,44 @@ class SkolanPanel extends HTMLElement {
     this._fanfar();
   }
 
+  // Effekt över hela skärmen: stor text, emojis som sprutar ut och ev. konfetti. Respekterar "minska rörelse".
+  _fx({ text = "", sub = "", emojis = ["✨"], antal = 26, konfetti = false, farg = "#ffd23f", ljud = false } = {}) {
+    const lugn = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById("skolan-fx")?.remove();
+    const el = document.createElement("div");
+    el.id = "skolan-fx";
+    el.innerHTML = `<style>
+      #skolan-fx{position:fixed;inset:0;z-index:10000;pointer-events:none;overflow:hidden}
+      #skolan-fx .fx-t{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%) scale(.3);font:900 46px/1.1 system-ui,sans-serif;color:#fff;text-align:center;
+        text-shadow:0 3px 0 ${farg},0 0 22px ${farg},0 8px 20px rgba(0,0,0,.5);animation:fx-pop 2.2s cubic-bezier(.2,1.4,.4,1) forwards;white-space:nowrap}
+      #skolan-fx .fx-t small{display:block;font-size:20px;font-weight:700;margin-top:6px}
+      #skolan-fx b{position:absolute;left:50%;top:42%;font-size:var(--s);animation:fx-spruta var(--t) cubic-bezier(.15,.7,.3,1) var(--d) forwards;opacity:0}
+      #skolan-fx i{position:absolute;top:-20px;width:10px;height:16px;border-radius:2px;animation:fx-fall var(--t) cubic-bezier(.3,.6,.5,1) var(--d) forwards}
+      #skolan-fx .fx-ring{position:absolute;left:50%;top:42%;width:40px;height:40px;margin:-20px;border-radius:50%;border:6px solid ${farg};animation:fx-ring .9s ease-out forwards}
+      @keyframes fx-pop{0%{transform:translate(-50%,-50%) scale(.3) rotate(-8deg);opacity:0}18%{transform:translate(-50%,-50%) scale(1.2) rotate(3deg);opacity:1}30%{transform:translate(-50%,-50%) scale(1) rotate(0)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-60%) scale(1)}}
+      @keyframes fx-spruta{0%{opacity:1;transform:translate(-50%,-50%) scale(.3) rotate(0)}70%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--x)),calc(-50% + var(--y))) scale(1.2) rotate(var(--r))}}
+      @keyframes fx-fall{0%{transform:translate(0,0) rotate(0)}100%{transform:translate(var(--x),110vh) rotate(var(--r));opacity:.9}}
+      @keyframes fx-ring{0%{opacity:1;transform:scale(.2)}100%{opacity:0;transform:scale(9)}}
+    </style>${text ? `<div class="fx-t">${text}${sub ? `<small>${sub}</small>` : ""}</div>` : ""}${lugn ? "" : `<div class="fx-ring"></div>`}`;
+    if (!lugn) {
+      for (let i = 0; i < antal; i++) {
+        const b = document.createElement("b"), v = Math.random() * Math.PI * 2, l = 90 + Math.random() * 170;
+        b.textContent = emojis[i % emojis.length];
+        b.style.cssText = `--x:${Math.cos(v) * l}px;--y:${Math.sin(v) * l - 40}px;--r:${(Math.random() - 0.5) * 720}deg;--t:${0.9 + Math.random() * 0.8}s;--d:${Math.random() * 0.25}s;--s:${22 + Math.random() * 22}px`;
+        el.appendChild(b);
+      }
+      const farger = ["#ff4d6d", "#ffd23f", "#3bceac", "#4d96ff", "#b76eff", "#ff8c42"];
+      for (let i = 0; i < (konfetti ? 90 : 0); i++) {
+        const c = document.createElement("i");
+        c.style.cssText = `left:${Math.random() * 100}%;background:${farger[i % farger.length]};--t:${2 + Math.random() * 1.6}s;--d:${Math.random() * 0.6}s;--x:${(Math.random() - 0.5) * 240}px;--r:${(Math.random() - 0.5) * 1440}deg;${Math.random() < 0.4 ? "width:8px;height:8px;border-radius:50%;" : ""}`;
+        el.appendChild(c);
+      }
+    }
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3200);
+    if (ljud) this._fanfar();
+  }
+
   _fanfar() {
     // Egen kort segerfanfar (trumpetlik ton i C-dur).
     try {
@@ -3769,7 +3807,10 @@ class SkolanPanel extends HTMLElement {
       const x = await res.json();
       if (!res.ok) throw new Error(x.message || res.statusText);
       v.historik.push({ vem: "djur", text: x.svar });
-      if (x.klar) { v.klar = true; v.p = x.p; v.facit = x.facit; if (x.p) this._load(this._s.barn); }
+      if (x.klar) {
+        v.klar = true; v.p = x.p; v.facit = x.facit;
+        if (x.p) { this._fx({ text: x.betyg >= 3 ? "🎓 SUPERFÖRKLARAT!" : "🎓 BRA FÖRKLARAT!", sub: `+${x.p} ⭐`, emojis: ["🎓", "💡", "⭐", "🧠"], antal: 30, konfetti: x.betyg >= 3, farg: "#43a047" }); this._load(this._s.barn); }
+      }
     } catch (e) {
       v.historik.pop();
       this._msg = { type: "error", text: e.message || String(e) };
@@ -3877,10 +3918,16 @@ class SkolanPanel extends HTMLElement {
     }
     const gs = v.gs, mon = gs.mon;
     const bar = (x, mx, kl) => `<div class="progress ${kl}"><div style="width:${mx ? Math.round((x / mx) * 100) : 0}%"></div></div>`;
-    const scen = `<div class="gs-scen" style="--varld:${k.monster.varld?.farg || "#5c6bc0"}">
-      <div class="gs-sida"><div class="gs-figur">${ritaDjur(d.art, gs.senaste && !gs.senaste.ratt ? "ledsen" : "glad", Math.max(1, d.steg), {})}</div>${bar(gs.liv, gs.liv_max, "liv")}<div class="small">❤️ ${gs.liv}/${gs.liv_max}</div></div>
-      <div class="gs-mitt">${gs.senaste ? (gs.senaste.ratt ? `<div class="gs-traff">⚔️ −${gs.senaste.skada || 0}${gs.kombo >= GS.kombo ? "<small>🔥 KOMBO ×2</small>" : ""}${gs.senaste.trott ? "<small>Monstret är trött på glosor idag</small>" : ""}</div>` : `<div class="gs-miss">💥 −${gs.senaste.mot} ❤️</div>`) : "⚔️"}</div>
-      <div class="gs-sida"><div class="gs-figur mon ${gs.senaste?.ratt ? "traff" : ""}">${mon.ikon}</div>${bar(gs.kvar, gs.hp, "boss-hp")}<div class="small">${mon.boss ? "👑 " : ""}${esc(mon.namn)} · ${gs.kvar}/${gs.hp}</div></div></div>
+    const sen = gs.senaste, ny = sen && gs.animId !== gs.visadAnim; // animationen spelas bara en gång per svar
+    if (ny) gs.visadAnim = gs.animId;
+    const kombo = gs.kombo >= GS.kombo;
+    const skott = kombo ? "🔥" : ["✨", "⚡", "💫", "⭐"][gs.pos % 4];
+    const scen = `<div class="gs-scen ${kombo ? "kombo" : ""} ${ny && sen?.ratt && kombo ? "skak" : ""}" style="--varld:${k.monster.varld?.farg || "#5c6bc0"}">
+      ${ny && sen?.ratt && sen.skada ? `<div class="gs-skott">${skott}</div><div class="gs-siffra ${kombo ? "stor" : ""}">−${sen.skada}</div>` : ""}
+      ${ny && sen && !sen.ratt ? `<div class="gs-blixt"></div>` : ""}
+      <div class="gs-sida"><div class="gs-figur ${ny && sen && !sen.ratt ? "traffad" : ""} ${ny && sen?.ratt ? "skjuter" : ""}">${ritaDjur(d.art, sen && !sen.ratt ? "ledsen" : "glad", Math.max(1, d.steg), {})}</div>${bar(gs.liv, gs.liv_max, "liv")}<div class="small">❤️ ${gs.liv}/${gs.liv_max}</div></div>
+      <div class="gs-mitt">${sen ? (sen.ratt ? `<div class="gs-traff">${kombo ? "🔥 KOMBO" : "TRÄFF!"}${sen.trott ? "<small>Monstret är trött på glosor idag</small>" : ""}</div>` : `<div class="gs-miss">💥 −${sen.mot} ❤️</div>`) : "⚔️"}</div>
+      <div class="gs-sida"><div class="gs-figur mon ${ny && sen?.ratt ? "traff" : ""} ${ny && sen && !sen.ratt ? "anfall" : ""}">${mon.ikon}</div>${bar(gs.kvar, gs.hp, "boss-hp")}<div class="small">${mon.boss ? "👑 " : ""}${esc(mon.namn)} · ${gs.kvar}/${gs.hp}</div></div></div>
       <div class="gs-kombo">${gs.kombo ? `🔥 ${gs.kombo} i rad${gs.kombo >= GS.kombo ? " · dubbel skada!" : ` · ${GS.kombo - gs.kombo} till kombo`}` : "&nbsp;"}</div>`;
     if (gs.klar) {
       return `${scen}<div class="card center"><h3>${gs.niva_klar ? "🎉 Du klarade nivån!" : "Bra kämpat! 💪"}</h3>
@@ -3910,7 +3957,10 @@ class SkolanPanel extends HTMLElement {
       const g = this._amne(v.amne).glosor.find((y) => y.id === v.glosor);
       gs.ord.push({ o: g.par[i][0], r: x.ratt });
       gs.senaste = x;
+      gs.animId = (gs.animId || 0) + 1;
       if (x.ratt) gs.ratt++;
+      if (x.niva_klar) this._fx({ text: "🎉 NIVÅ KLAR!", sub: "Monstret är besegrat!", emojis: ["⭐", "🎉", "⚔️", "✨"], antal: 36, konfetti: true, farg: "#ffb300", ljud: true });
+      else if (x.ratt && x.kombo === GS.kombo) this._fx({ text: "🔥 KOMBO!", sub: "Dubbel skada!", emojis: ["🔥", "💥", "⚡"], antal: 24, farg: "#ff5722" });
       if (!x.prov) {
         gs.kombo = x.kombo; gs.skada += x.skada || 0; gs.liv = x.liv; gs.liv_max = x.liv_max; gs.niva_klar = gs.niva_klar || x.niva_klar;
         gs.hp = x.hp; gs.kvar = x.kvar; gs.mon = { ...gs.mon, ...x.mon };
@@ -5327,7 +5377,17 @@ class SkolanPanel extends HTMLElement {
     r.querySelectorAll("[data-rep]").forEach((b) => b.addEventListener("click", () => { const [am, gl] = b.dataset.rep.split("|"); this._go({ name: "glosor", amne: am, glosor: gl }); }));
     on("#open-fokus", () => this._go({ name: "fokus" }));
     on("#open-album", () => this._go({ name: "album" }));
-    on("#kort-vand", () => { this._kortVanda = true; this._render(); });
+    on("#kort-vand", () => {
+      const nya = this._s.kort?.nya || [];
+      const legend = nya.some((k) => k.sallsynt === "legendarisk"), ovanlig = nya.some((k) => k.sallsynt === "ovanlig");
+      this.shadowRoot.querySelectorAll(".kort-vand").forEach((x) => x.classList.add("skakar"));
+      setTimeout(() => {
+        this._kortVanda = true; this._render();
+        if (legend) this._fx({ text: "🌟 LEGENDARISK!", sub: nya.find((k) => k.sallsynt === "legendarisk").namn, emojis: ["🌟", "✨", "👑", "💫"], antal: 40, konfetti: true, farg: "#ffb300", ljud: true });
+        else if (ovanlig) this._fx({ text: "✨ Ovanligt kort!", emojis: ["✨", "💎", "⭐"], antal: 28, farg: "#29b6f6" });
+        else this._fx({ emojis: ["✨", "⭐", "🃏"], antal: 18, farg: "#b388ff" });
+      }, 700);
+    });
     const kortSett = async (album) => { this._kortVanda = false; await this._act("kort_sett", {}); await this._load(this._s.barn); if (album) this._go({ name: "album" }); else this._render(); };
     on("#kort-ok", () => kortSett(false));
     on("#kort-album", () => kortSett(true));
@@ -5337,10 +5397,10 @@ class SkolanPanel extends HTMLElement {
     on("#lar-klar", () => this._go({ name: "glosor", amne: this._view.amne, glosor: this._view.glosor }));
     r.querySelectorAll("[data-fokus]").forEach((b) => b.addEventListener("click", async () => { if (await this._act("fokus_start", { min: Number(b.dataset.fokus) })) await this._load(this._s.barn); this._render(); }));
     on("#fokus-avbryt", async () => { if (confirm("Avbryta fokuspasset? Då blir det inga ⭐.") && await this._act("fokus_avbryt", {})) await this._load(this._s.barn); this._render(); });
-    on("#fokus-klar", async () => { if (await this._act("fokus_klar", {})) { this._msg = { type: "ok", text: "⏱️ Bra fokuserat! 🎉" }; await this._load(this._s.barn); } this._render(); });
+    on("#fokus-klar", async () => { if (await this._act("fokus_klar", {})) { this._msg = { type: "ok", text: "⏱️ Bra fokuserat! 🎉" }; this._fx({ text: "⏱️ BRA FOKUSERAT!", emojis: ["⭐", "🧠", "✨", "💪"], antal: 30, konfetti: true, farg: "#26a69a", ljud: true }); await this._load(this._s.barn); } this._render(); });
     if ($("#fokus-tid") && !this._fokusTimer) { this._fokusTick(); this._fokusTimer = setInterval(() => this._fokusTick(), 1000); }
     r.querySelectorAll("[data-heja-las]").forEach((b) => b.addEventListener("click", async () => {
-      if (await this._act("hejarop_las", { id: b.dataset.hejaLas })) { this._msg = { type: "ok", text: "💌 Lappen är sparad i hjärtat ❤️" }; await this._load(this._s.barn); }
+      if (await this._act("hejarop_las", { id: b.dataset.hejaLas })) { this._msg = { type: "ok", text: "💌 Lappen är sparad i hjärtat ❤️" }; this._fx({ emojis: ["💖", "💕", "❤️", "💗", "⭐"], antal: 34, farg: "#ec407a" }); await this._load(this._s.barn); }
       this._render();
     }));
     const hejaNar = $("#heja-nar"), hejaVarde = $("#heja-varde");
@@ -5371,7 +5431,15 @@ class SkolanPanel extends HTMLElement {
     });
     $("#gata-svar")?.addEventListener("keydown", (e) => { if (e.key === "Enter") $("#gata-gissa")?.click(); });
     on("#gata-andra", () => { this._gataAndra = true; this._render(); });
-    on("#gata-visa", async () => { if (await this._act("gata_svar", {})) await this._load(this._s.barn); this._render(); });
+    on("#gata-visa", async () => {
+      if (await this._act("gata_svar", {})) {
+        await this._load(this._s.barn);
+        const ig = this._s.dagens?.igar;
+        if (ig?.ratt) this._fx({ text: "🧩 RÄTT!", sub: `+${this._s.dagens.p_gata} ⭐`, emojis: ["🧩", "⭐", "✨", "🎉"], antal: 30, konfetti: true, farg: "#43a047" });
+        else this._fx({ text: "🔓", sub: ig?.svar || "", emojis: ["❓", "💡"], antal: 10, farg: "#7e57c2" });
+      }
+      this._render();
+    });
     r.querySelectorAll("[data-ink-avvisa]").forEach((b) => b.addEventListener("click", () => confirm("Ta bort det här från inkorgen?") && this._skolaAct({ op: "inkorg_avvisa", id: b.dataset.inkAvvisa }, "Borttaget från inkorgen.")));
     r.querySelectorAll("[data-ink-spara]").forEach((b) => b.addEventListener("click", async () => {
       const v = r.querySelector(`[data-ink-amne="${b.dataset.inkSpara}"]`)?.value || "";
@@ -5488,7 +5556,7 @@ class SkolanPanel extends HTMLElement {
       b.addEventListener("click", async () => {
         const x = (this._s.karta?.attacker || []).find((y) => y.id === b.dataset.attackUpp);
         if (!x || !confirm(`Träna upp ${x.namn} ${x.ikon} till nivå ${x.lvl + 1} för ${x.lvl_pris} ⭐? Skadan blir ${x.skada_nasta} i stället för ${x.skada_lvl}.`)) return;
-        if (await this._act("attack_upp", { attack: x.id })) { this._msg = { type: "ok", text: `⬆️ ${x.ikon} ${x.namn} är nu nivå ${x.lvl + 1}! 💪` }; await this._load(); }
+        if (await this._act("attack_upp", { attack: x.id })) { this._msg = { type: "ok", text: `⬆️ ${x.ikon} ${x.namn} är nu nivå ${x.lvl + 1}! 💪` }; this._fx({ text: `⬆️ NIVÅ ${x.lvl + 1}!`, sub: `${x.ikon} ${x.namn}`, emojis: [x.ikon, "⚡", "✨", "💥"], antal: 30, farg: "#ff7043" }); await this._load(); }
         this._render();
       })
     );
@@ -5553,8 +5621,10 @@ class SkolanPanel extends HTMLElement {
     r.querySelectorAll("[data-djur-pa]").forEach((b) => b.addEventListener("click", async () => {
       const ok = await this._act("djur_pa", { typ: b.dataset.typ, sak: b.dataset.djurPa });
       if (ok && b.dataset.typ === "kompis") { // en liten ledtråd om kompisens hemliga boost, inga siffror
+        await this._load(this._s.barn);
         const d = this._s.meriter?.djur, ikon = b.dataset.ikon || "✨";
         const rad = ["viskar något i örat på", "blinkar hemlighetsfullt mot", "ger en hemlig high five till", "delar ett hemligt mellanmål med"];
+        if (d?.bastis) this._fx({ text: "💞 BÄSTISAR!", emojis: ["💞", "💖", ikon, "✨"], antal: 32, farg: "#ec407a" });
         this._msg = { type: "ok", text: d?.bastis ? `💞 ${ikon} och ${d.art} ${d.namn || ""} är bästisar! Tillsammans känns de extra starka… ✨`
           : `${ikon} ${rad[Math.floor(Math.random() * rad.length)]} ${d?.namn || "ditt husdjur"}… ✨` };
         this._render();
@@ -6345,8 +6415,15 @@ const CSS = `
   .sk-sallsynt { font-size:9px; opacity:.9; margin-top:2px; }
   .sk-antal { position:absolute; top:2px; right:4px; font-size:10px; font-weight:800; background:rgba(0,0,0,.4); border-radius:6px; padding:0 4px; }
   .kort-rad, .album-rutnat { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:8px 0; }
-  .kort-vand.vand { animation:vand .6s ease both; }
-  @keyframes vand { 0% { transform:rotateY(90deg) scale(.8); } 100% { transform:rotateY(0) scale(1); } }
+  .kort-rad { perspective:800px; }
+  .kort-vand.skakar { animation:kort-skak .7s ease-in-out; }
+  @keyframes kort-skak { 0%,100% { transform:none; } 15% { transform:rotate(-6deg) scale(1.04); } 30% { transform:rotate(6deg) scale(1.08); } 45% { transform:rotate(-8deg) scale(1.1); } 60% { transform:rotate(8deg) scale(1.12); } 80% { transform:rotate(-3deg) scale(1.15); } }
+  .kort-vand.vand { animation:vand .8s cubic-bezier(.2,1.5,.4,1) both; }
+  @keyframes vand { 0% { transform:rotateY(180deg) scale(.6); opacity:.3; } 100% { transform:rotateY(0) scale(1); opacity:1; } }
+  .kort-vand.vand .samlarkort.legendarisk { animation:kort-legend 1.4s ease-in-out .8s infinite; }
+  @keyframes kort-legend { 50% { box-shadow:0 0 26px #ffd54f, 0 0 50px #ff8f00; transform:translateY(-4px); } }
+  .kort-vand.vand .samlarkort.ovanlig { animation:kort-ovanlig 1.6s ease-in-out .8s infinite; }
+  @keyframes kort-ovanlig { 50% { box-shadow:0 0 20px #4fc3f7; } }
   .kort-nya { background:linear-gradient(135deg,#ede7f6,#fff8e1); color:#311b92; }
   .syskon-kort { background:linear-gradient(135deg,#e8eaf6,#e0f7fa); color:#1a237e; }
   .syskon-kort.klar { background:linear-gradient(135deg,#e8f5e9,#c8e6c9); color:#1b5e20; }
@@ -6376,7 +6453,7 @@ const CSS = `
   .varld-berattelse { font-size:12px; font-style:italic; opacity:.9; margin:4px 0 6px; }
   .varld-berattelse.stor { font-size:14px; padding:10px 12px; border-radius:12px; border-left:4px solid var(--farg); background:color-mix(in srgb, var(--farg) 12%, transparent); font-style:normal; }
   .glosstrid-knapp { background:linear-gradient(135deg,#311b92,#c62828) !important; color:#fff !important; }
-  .gs-scen { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px; border-radius:16px; color:#fff;
+  .gs-scen { position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px; border-radius:16px; color:#fff;
     background:radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--varld) 60%, #000), #0b0b20 80%); }
   .gs-sida { flex:1; text-align:center; min-width:0; }
   .gs-sida .progress { height:8px; background:rgba(255,255,255,.2); margin:4px 8px; }
@@ -6391,6 +6468,26 @@ const CSS = `
   .gs-traff small, .gs-miss small { display:block; font-size:11px; }
   .gs-miss { color:#ff8a80; font-weight:800; animation:gs-pop .5s; }
   @keyframes gs-pop { 0% { transform:scale(.4); opacity:0; } 60% { transform:scale(1.3); opacity:1; } 100% { transform:scale(1); } }
+  .gs-scen.kombo { box-shadow:0 0 0 3px #ff6d00, 0 0 22px #ff6d00; animation:gs-glod 1.2s ease-in-out infinite; }
+  @keyframes gs-glod { 50% { box-shadow:0 0 0 3px #ffab00, 0 0 34px #ff3d00; } }
+  .gs-scen.skak { animation:gs-skak .45s, gs-glod 1.2s ease-in-out infinite; }
+  @keyframes gs-skak { 0%,100% { transform:none; } 20% { transform:translate(-10px,6px); } 40% { transform:translate(9px,-7px); } 60% { transform:translate(-7px,-4px); } 80% { transform:translate(6px,5px); } }
+  .gs-skott { position:absolute; left:22%; top:38%; font-size:34px; z-index:2; animation:gs-flyg .45s cubic-bezier(.5,0,.9,.6) forwards; filter:drop-shadow(0 0 8px #fff); }
+  @keyframes gs-flyg { 0% { transform:translateX(0) scale(.6) rotate(0); opacity:1; } 90% { opacity:1; } 100% { transform:translateX(52vw) scale(1.5) rotate(540deg); opacity:0; } }
+  .gs-siffra { position:absolute; right:14%; top:30%; z-index:3; font-size:30px; font-weight:900; color:#ffeb3b; text-shadow:0 2px 0 #e65100, 0 0 10px #ff6d00; opacity:0;
+    animation:gs-siffra 1.1s ease-out .4s forwards; }
+  .gs-siffra.stor { font-size:44px; }
+  @keyframes gs-siffra { 0% { opacity:0; transform:translateY(10px) scale(.5); } 20% { opacity:1; transform:translateY(-10px) scale(1.3); } 100% { opacity:0; transform:translateY(-60px) scale(1); } }
+  .gs-figur.skjuter { animation:gs-rekyl .4s; }
+  @keyframes gs-rekyl { 30% { transform:translateX(14px) scale(1.08); } }
+  .gs-figur.mon.traff { animation:gs-skaka .4s .4s, gs-vit .4s .4s; }
+  @keyframes gs-vit { 30% { filter:brightness(3) saturate(0); } }
+  .gs-figur.mon.anfall { animation:gs-anfall .6s; }
+  @keyframes gs-anfall { 40% { transform:translateX(-46vw) scale(1.25) rotate(-10deg); } }
+  .gs-figur.traffad { animation:gs-traffad .6s .3s; }
+  @keyframes gs-traffad { 0% { filter:brightness(3) saturate(0); transform:translateX(-12px); } 30% { transform:translateX(8px); filter:none; } 50% { filter:brightness(2) hue-rotate(-40deg); transform:translateX(-6px); } 100% { transform:none; filter:none; } }
+  .gs-blixt { position:absolute; inset:0; background:#ff1744; opacity:0; animation:gs-blixt .5s .25s; pointer-events:none; }
+  @keyframes gs-blixt { 30% { opacity:.35; } }
   .gs-kombo { text-align:center; font-weight:700; color:#ff6d00; margin:6px 0; min-height:20px; }
   .gs-fraga { font-size:26px; font-weight:700; text-align:center; margin:10px 0 12px; }
   .gs-facit { text-align:center; margin-bottom:8px; color:#c62828; }
