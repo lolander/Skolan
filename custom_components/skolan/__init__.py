@@ -170,6 +170,8 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
             if j.get("barn") in hass.data[DOMAIN]["locks"]:
                 _LOGGER.info("Fortsätter e-bok %s för %s efter omstart", j.get("bok"), j.get("barn"))
                 _starta_ebok(hass, j["barn"], j.get("amne"), j.get("bok"), False)
+        for b in conf["barn"]:
+            hass.async_create_background_task(_rakna_ord(hass, b["id"]), f"skolan_ord_{b['id']}")
 
     async def _dagens_peppning(b: dict, data: dict) -> None:
         """17:00: vem leder veckan + vad barnet kan göra nu för att få meriter."""
@@ -2137,6 +2139,7 @@ EBOK_PROMPT = (
     '"kapitel": kapitelrubriken om ett nytt kapitel BÖRJAR på sidan, annars null (inte sidhuvuden som upprepas), '
     '"rubriker": [mindre rubriker/avsnitt som börjar på sidan], '
     '"sammanfattning": 1–3 meningar på svenska med egna ord om vad sidan handlar om, skrivet för ett barn, '
+    '"ord": ungefär hur många ord som finns att läsa på sidan (heltal; räkna brödtext, rubriker och bildtexter, inte sidnummer eller sidhuvud; 0 om sidan bara har bilder), '
     '"innehallsforteckning": true om sidan är bokens innehållsförteckning, annars false}}]}}. '
     "Ett objekt per boksida i läsordning (ett uppslag = två sidor, en PDF kan ha många sidor). Hitta inte på."
 )
@@ -2264,6 +2267,7 @@ async def _bygg_ebok(hass: HomeAssistant, barn: str, amne_id: str, bok_id: str, 
                             "rubriker": [r for r in (_txt(r, 120) for r in (x.get("rubriker") or [])[:10]) if r],
                             "sammanfattning": _txt(x.get("sammanfattning"), 600),
                             "toc": x.get("innehallsforteckning") is True,
+                            "ord": _ord_int(x.get("ord")),
                         }
                         for x in parsed.get("sidor") or []
                         if isinstance(x, dict)
@@ -2801,7 +2805,31 @@ class ForhorView(HomeAssistantView):
 # E-boken mäter lästid per sida. När alla sidor är lästa (minst LAS_MIN_SEK var)
 # ställer AI:n kontrollfrågor från sidornas sammanfattningar. Klarar barnet dem ges meriter.
 
-LAS_MIN_SEK = 20
+LAS_MIN_SEK = 20  # längsta lästid som krävs för en sida (och för sidor där vi inte vet hur mycket text det är)
+LAS_KORT_SEK = 6  # kortaste lästid, t.ex. en sida med bara en bild
+LAS_ORD_PER_SEK = 2.5  # ungefär hur fort ett barn på mellanstadiet läser tyst
+
+ORD_PROMPT = (
+    "Du får ett foto eller en PDF med en eller flera sidor ur en skolbok. Skriv INTE av texten. "
+    "Räkna bara ungefär hur många ord som finns att läsa på varje sida (brödtext, rubriker och bildtexter, inte sidnummer eller sidhuvud; 0 om sidan bara har bilder). "
+    'Svara ENDAST med giltig JSON: {"sidor": [{"sidnummer": tryckt sidnummer som text eller null, "ord": heltal}]}, ett objekt per boksida i läsordning.'
+)
+
+
+def _ord_int(v) -> int | None:
+    try:
+        n = int(float(v))
+    except (TypeError, ValueError):
+        return None
+    return n if 0 <= n <= 3000 else None
+
+
+def _sid_sek(sida: dict) -> int:
+    """Hur länge en sida måste vara öppen för att räknas som läst. Korta sidor går fortare."""
+    ord_ = sida.get("ord")
+    if ord_ is None:
+        return LAS_MIN_SEK
+    return max(LAS_KORT_SEK, min(LAS_MIN_SEK, math.ceil(ord_ / LAS_ORD_PER_SEK)))
 
 FRAGE_PROMPT = (
     "Här är korta sammanfattningar av sidor som ett barn har läst i boken \"{bok}\" ({amne}). "
@@ -2823,15 +2851,76 @@ def _sid_lista(path: Path, b: dict, fran: int, till: int) -> list[dict]:
             nr = nr if nr is not None else senast
             senast = nr
             if nr is not None and fran <= nr <= till:
-                ut.append({"nyckel": f"{f}#{i}", "sidnr": sida.get("sidnr"), "sammanfattning": sida.get("sammanfattning")})
+                ut.append({"nyckel": f"{f}#{i}", "sidnr": sida.get("sidnr"), "sammanfattning": sida.get("sammanfattning"), "sek": _sid_sek(sida)})
     return ut
 
 
 def _framsteg(data: dict, u: dict) -> None:
     las = data.get("lasning", {})
-    lasta = sum(1 for x in u["sidor"] if las.get(u["bok"], {}).get(x["nyckel"], 0) >= LAS_MIN_SEK) if u.get("bok") else 0
+    lasta = sum(1 for x in u["sidor"] if las.get(u["bok"], {}).get(x["nyckel"], 0) >= x.get("sek", LAS_MIN_SEK)) if u.get("bok") else 0
     u["lasta"] = lasta
     u["allt_last"] = bool(u["sidor"]) and lasta == len(u["sidor"])
+
+
+async def _rakna_ord(hass: HomeAssistant, barn: str) -> None:
+    """Böcker inlästa innan AI:n räknade ord: räkna orden på sidorna i läxor som inte är klara, och korta lästiden."""
+    korande = hass.data[DOMAIN].setdefault("ord_korande", set())
+    if barn in korande:
+        return
+    korande.add(barn)
+    try:
+        path = _dir(hass, barn)
+        data = await hass.async_add_executor_job(_load, path)
+        saknas: dict[str, set[str]] = {}
+        for u in data.get("uppdrag", []):
+            if u.get("klart") or not u.get("bok"):
+                continue
+            for x in u.get("sidor", []):
+                if "sek" not in x:
+                    saknas.setdefault(u["bok"], set()).add(x["nyckel"].rsplit("#", 1)[0])
+        for bok_id, filer in saknas.items():
+            ebok_path = path / "filer" / _ebok_fil(bok_id)
+            for f in sorted(filer):
+                ebok = await hass.async_add_executor_job(_load_fil, ebok_path)
+                sidor = ebok.get("cache", {}).get(f, {}).get("sidor", [])
+                if not sidor or all("ord" in s for s in sidor):
+                    continue
+                try:
+                    svar = _parse_json(await _ai_las(hass, path / "filer" / f, ORD_PROMPT, "Skolan räkna ord")).get("sidor") or []
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.warning("E-bok: kunde inte räkna ord i %s: %s", f, err)
+                    await asyncio.sleep(10)
+                    continue
+                ebok = await hass.async_add_executor_job(_load_fil, ebok_path)
+                sidor = ebok.get("cache", {}).get(f, {}).get("sidor", [])
+                if len(svar) != len(sidor):
+                    _LOGGER.info("E-bok: %s gav %s sidor i ordräkningen men har %s, hoppar över", f, len(svar), len(sidor))
+                    for s in sidor:
+                        s.setdefault("ord", None)
+                else:
+                    for s, x in zip(sidor, svar):
+                        s["ord"] = _ord_int(x.get("ord")) if isinstance(x, dict) else None
+                await hass.async_add_executor_job(_save_fil, ebok_path, ebok)
+        if not saknas:
+            return
+        async with hass.data[DOMAIN]["locks"][barn]:
+            data = await hass.async_add_executor_job(_load, path)
+            for u in data.get("uppdrag", []):
+                if u.get("klart") or u.get("bok") not in saknas:
+                    continue
+                ebok = await hass.async_add_executor_job(_load_fil, path / "filer" / _ebok_fil(u["bok"]))
+                cache = ebok.get("cache", {})
+                for x in u.get("sidor", []):
+                    f, _, i = x["nyckel"].rpartition("#")
+                    try:
+                        x["sek"] = _sid_sek(cache[f]["sidor"][int(i)])
+                    except (KeyError, IndexError, ValueError):
+                        x["sek"] = LAS_MIN_SEK
+                _framsteg(data, u)
+            await hass.async_add_executor_job(_save, path, data)
+        _LOGGER.info("E-bok: lästid per sida uppdaterad för %s", barn)
+    finally:
+        korande.discard(barn)
 
 
 class UppdragView(HomeAssistantView):
@@ -3016,6 +3105,9 @@ class UppdragView(HomeAssistantView):
             except (ValueError, TypeError) as err:
                 return self.json_message(str(err) or "Fel.", 400)
             await hass.async_add_executor_job(_save, path, data)
+
+        if op != "las_tid" and any(not u.get("klart") and u.get("bok") and any("sek" not in x for x in u.get("sidor", [])) for u in data.get("uppdrag", [])):
+            hass.async_create_background_task(_rakna_ord(hass, barn), f"skolan_ord_{barn}")
 
         if ai_jobb is not None:
             fragor = await self._gor_fragor(hass, data, ai_jobb)

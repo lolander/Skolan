@@ -3360,7 +3360,7 @@ class SkolanPanel extends HTMLElement {
           ? `<div class="small">${esc(bok?.namn || "")}: ${esc(u.kapitel || "")} sidorna ${esc(u.fran)}–${esc(u.till)}</div>
              <div class="progress stor" style="margin:8px 0"><div style="width:${(u.lasta / u.sidor.length) * 100}%"></div></div>
              <div class="small">${u.lasta} av ${u.sidor.length} sidor lästa</div>
-             <div class="sid-prickar">${u.sidor.map((x) => `<span class="${(las[x.nyckel] || 0) >= 20 ? "last" : ""}" title="Sida ${esc(x.sidnr || "")}">${esc(x.sidnr || "·")}</span>`).join("")}</div>
+             <div class="sid-prickar">${u.sidor.map((x) => `<span class="${(las[x.nyckel] || 0) >= (x.sek || 20) ? "last" : ""}" title="Sida ${esc(x.sidnr || "")}">${esc(x.sidnr || "·")}</span>`).join("")}</div>
              ${!u.klart && !u.allt_last ? `<button class="primary stor-las" id="u-las" data-nyckel="${esc(forstaOlast?.nyckel || "")}">📖 ${u.lasta ? "Läs vidare" : "Börja läsa"}</button>` : ""}`
           : ""
       }
@@ -4446,6 +4446,7 @@ class SkolanPanel extends HTMLElement {
     } else if (aktuell && !aktuell.klart) {
       const sek = this._lasSek(b.id, nyckel);
       const iUppdrag = aktuell.sidor.some((x) => x.nyckel === nyckel);
+      const behov = aktuell.sidor.find((x) => x.nyckel === nyckel)?.sek || 20;
       banner = `<div class="las-banner">
         <div>${aktuell.typ === "prov" ? "📝" : "📖"} <b>${esc(aktuell.namn)}</b>: ${aktuell.lasta} av ${aktuell.sidor.length} sidor lästa</div>
         <div class="progress"><div style="width:${(aktuell.lasta / aktuell.sidor.length) * 100}%"></div></div>
@@ -4453,7 +4454,7 @@ class SkolanPanel extends HTMLElement {
           aktuell.allt_last
             ? `<button class="primary" id="till-uppdrag">✅ Alla sidor lästa! Gör kontrollfrågorna →</button>`
             : iUppdrag
-            ? `<div class="small">${sek >= 20 ? "✓ Den här sidan är läst" : "⏱ Läs sidan ordentligt, den räknas efter en stund"}</div>`
+            ? `<div class="small">${sek >= behov ? "✓ Den här sidan är läst" : "⏱ Läs sidan ordentligt, den räknas efter en stund"}</div>`
             : `<div class="small muted">Den här sidan ingår inte i läxan (sidorna ${esc(aktuell.fran)}–${esc(aktuell.till)}).</div>`
         }
       </div>`;
