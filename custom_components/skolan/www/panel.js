@@ -1546,7 +1546,7 @@ class SkolanPanel extends HTMLElement {
       let knapp;
       if (titta) knapp = pa ? `<span class="small">✅ På</span>` : har ? `<span class="small">Köpt</span>` : `<span class="small muted">${last ? "🔒 " + esc(s.djur_steg[x.steg]) + " · " : ""}${x.pris} ⭐</span>`;
       else if (pa) knapp = `<button class="mini" data-djur-av="${x.typ}">Ta av</button>`;
-      else if (har) knapp = `<button class="mini primary" data-djur-pa="${x.id}" data-typ="${x.typ}">Ta på</button>`;
+      else if (har) knapp = `<button class="mini primary" data-djur-pa="${x.id}" data-typ="${x.typ}" data-ikon="${esc(x.ikon || "")}">Ta på</button>`;
       else if (last) knapp = `<span class="small muted">🔒 ${esc(s.djur_steg[x.steg])}</span>`;
       else if (!x.kan_kopas) knapp = `<span class="small muted">Säsong slut</span>`;
       else knapp = `<button class="mini ${saldo >= x.pris ? "primary" : ""}" data-djur-kop="${x.id}" ${saldo >= x.pris ? "" : "disabled"}>${x.pris} ⭐</button>`;
@@ -5161,7 +5161,15 @@ class SkolanPanel extends HTMLElement {
       })
     );
     r.querySelector("#till-strid")?.addEventListener("click", () => this._strid(this._stridLage({ idle: true, titta: !!this._s.kan_valja })));
-    r.querySelectorAll("[data-djur-pa]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: b.dataset.typ, sak: b.dataset.djurPa })));
+    r.querySelectorAll("[data-djur-pa]").forEach((b) => b.addEventListener("click", async () => {
+      const ok = await this._act("djur_pa", { typ: b.dataset.typ, sak: b.dataset.djurPa });
+      if (ok && b.dataset.typ === "kompis") { // en liten ledtråd om kompisens hemliga boost, inga siffror
+        const d = this._s.meriter?.djur, ikon = b.dataset.ikon || "✨";
+        const rad = ["viskar något i örat på", "blinkar hemlighetsfullt mot", "ger en hemlig high five till", "delar ett hemligt mellanmål med"];
+        this._msg = { type: "ok", text: `${ikon} ${rad[Math.floor(Math.random() * rad.length)]} ${d?.namn || "ditt husdjur"}… ✨` };
+        this._render();
+      }
+    }));
     r.querySelectorAll("[data-djur-av]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: b.dataset.djurAv, sak: null })));
     r.querySelectorAll("[data-djur-byt]").forEach((b) =>
       b.addEventListener("click", async () => {

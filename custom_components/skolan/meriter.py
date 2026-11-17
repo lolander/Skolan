@@ -1628,9 +1628,26 @@ def djur_niva(data: dict) -> dict:
     return {"niva": n, "xp": xp, "fran": _xp_for(n), "till": nasta}
 
 
+# Kompisen som följer med husdjuret ger en hemlig boost. Den visas aldrig som siffror i butiken,
+# men syns i stridskraft och liv. Dyrare kompisar ger lite mer. {"kraft": extra skada, "liv": extra max-liv}
+KOMPIS_BOOST = {
+    "k_kyckling": {"liv": 4}, "k_mus": {"kraft": 0.02}, "k_groda": {"liv": 5}, "k_nyckelpiga": {"kraft": 0.03},
+    "k_snigel": {"liv": 7}, "k_fjaril": {"kraft": 0.04}, "k_papegoja": {"kraft": 0.03, "liv": 5},
+    "k_blackfisk": {"liv": 12}, "k_spoke": {"kraft": 0.05}, "k_robot": {"kraft": 0.05, "liv": 8},
+    "k_alien": {"kraft": 0.07, "liv": 6}, "k_drake": {"kraft": 0.10, "liv": 12}, "k_enhorning": {"kraft": 0.12, "liv": 20},
+    "ps_nalle": {"liv": 10}, "ps_valp": {"kraft": 0.04}, "ps_katt": {"kraft": 0.03, "liv": 4},
+    "b_zombie": {"liv": 15}, "b_spoke": {"kraft": 0.06},
+}
+
+
+def kompis_boost(data: dict) -> dict:
+    d = _m(data).get("djur") or {}
+    return KOMPIS_BOOST.get((d.get("pa") or {}).get("kompis") or "", {})
+
+
 def djur_kraft(data: dict) -> float:
-    """Skadefaktor: +2 % per nivå och lagbonus (+5 % per lagmedlem som pluggat idag)."""
-    return (1 + (djur_niva(data)["niva"] - 1) * KRAFT_PER_NIVA) * (1 + lag_bonus(data))
+    """Skadefaktor: +2 % per nivå, lagbonus (+5 % per lagmedlem som pluggat idag) och kompisens hemliga boost."""
+    return (1 + (djur_niva(data)["niva"] - 1) * KRAFT_PER_NIVA) * (1 + lag_bonus(data)) * (1 + kompis_boost(data).get("kraft", 0))
 
 
 def djur_cp(data: dict) -> int:
@@ -1643,7 +1660,7 @@ def djur_cp(data: dict) -> int:
 def djur_liv(data: dict) -> tuple[int, int]:
     """(liv kvar, max liv). Nya och gamla husdjur börjar med fullt liv."""
     k = _karta(data)
-    mx = LIV_MAX[min(_djur_steg(data), len(LIV_MAX) - 1)] + (djur_niva(data)["niva"] - 1) * LIV_PER_NIVA
+    mx = LIV_MAX[min(_djur_steg(data), len(LIV_MAX) - 1)] + (djur_niva(data)["niva"] - 1) * LIV_PER_NIVA + kompis_boost(data).get("liv", 0)
     liv = k.get("liv")
     return (mx if liv is None else max(0, min(mx, int(liv)))), mx
 
