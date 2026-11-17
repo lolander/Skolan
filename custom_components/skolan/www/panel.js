@@ -1746,6 +1746,28 @@ class SkolanPanel extends HTMLElement {
   }
 
   // ---------- skolan och läraren ----------
+  // En post i inkorgen från läraren: veckobrev, studiematerial eller provresultat.
+  _inkorgRad(x) {
+    const typ = x.typ || "veckobrev";
+    const fil = x.fil ? ` <button class="mini" data-open-fil="${esc(x.fil.namn)}">${x.fil.mime === "application/pdf" ? "📄" : "🖼️"} Öppna</button>` : "";
+    const bort = ` <button class="mini" data-ink-avvisa="${x.id}">🗑️</button>`;
+    if (typ === "veckobrev")
+      return `<li>📬 <b>${esc(x.titel)}</b>${x.vecka ? ` · v.${esc(x.vecka)}` : ""}${x.fil ? `<div class="small muted">Brevet är bifogat. Läxspelet läser det när du granskar.</div>` : ""}
+        <button class="mini primary" data-ink-granska="${x.id}">👀 Granska och lägg in</button>${fil}${bort}</li>`;
+    const amnen = this._s.data?.amnen || [];
+    const traff = amnen.find((a) => x.amne && a.namn.toLowerCase() === x.amne.toLowerCase()) || amnen.find((a) => x.amne && a.namn.toLowerCase().includes(x.amne.toLowerCase()));
+    const val = `<select class="ink-amne" data-ink-amne="${x.id}">${x.amne && !traff ? `<option value="ny:${esc(x.amne)}">➕ Nytt ämne: ${esc(x.amne)}</option>` : ""}
+      ${amnen.map((a) => `<option value="${a.id}" ${traff?.id === a.id ? "selected" : ""}>${esc(a.namn)}</option>`).join("")}
+      ${!x.amne ? `<option value="">Välj ämne…</option>` : ""}</select>`;
+    const r = x.resultat;
+    const res = r ? ("max" in r ? `${r.poang} av ${r.max} poäng` : `betyg ${esc(r.betyg)}`) : "";
+    return `<li>${typ === "prov" ? "📝" : "📎"} <b>${esc(x.titel)}</b>${x.amne ? ` · ${esc(x.amne)}` : ""}
+      ${typ === "prov" ? `<div>${res ? `Resultat: <b>${res}</b>` : "Rättat prov"}${r?.kommentar ? ` · ”${esc(r.kommentar)}”` : ""}</div>` : ""}
+      ${x.text ? `<div class="small muted">${esc(x.text)}</div>` : ""}
+      <div class="small">Spara i ${val}</div>
+      <button class="mini primary" data-ink-spara="${x.id}" data-ink-typ="${typ}">💾 ${typ === "prov" ? "Spara resultatet" : "Spara i ämnet"}</button>${fil}${bort}</li>`;
+  }
+
   async _skolaAct(body, ok) {
     if (this._busy) return null;
     this._busy = true;
@@ -1815,8 +1837,7 @@ class SkolanPanel extends HTMLElement {
         ${lar ? `<div class="small" style="margin-top:8px">🏫 Kopplad till <b>${esc(lar.namn || "läraren")}</b>${lar.klass ? `, ${esc(lar.klass)}` : ""} · senast synkad ${esc((lar.synkad || "").replace("T", " "))}</div><button class="mini" id="sk-koppla-bort">Koppla bort läraren</button>` : ""}
         <div class="small" style="margin-top:8px"><b>Klasslänk</b> (läraren behöver den för att synka; eleven skickar den när hen ansluter på lektionen)</div>
         ${k.lank ? `<div class="small muted" style="word-break:break-all">${esc(k.lank)}</div><button class="mini" id="sk-kopiera">📋 Kopiera</button>` : `<div class="small muted">${k.kan_nas ? "Slå på något ovan först." : "Home Assistant behöver gå att nå utifrån (t.ex. Nabu Casa)."}</div>`}</div>
-      ${k.inkorg?.length ? `<h3>📬 Veckobrev från läraren</h3><ul class="lista">${k.inkorg.map((x) => `<li><b>${esc(x.titel)}</b>${x.vecka ? ` · v.${esc(x.vecka)}` : ""}
-          <button class="mini primary" data-ink-granska="${x.id}">👀 Granska och lägg in</button> <button class="mini" data-ink-avvisa="${x.id}">🗑️</button></li>`).join("")}</ul>` : ""}
+      ${k.inkorg?.length ? `<h3>📬 Från läraren</h3><ul class="lista">${k.inkorg.map((x) => this._inkorgRad(x)).join("")}</ul>` : ""}
       <details class="card"><summary><b>📧 E-post (SMTP)</b> ${sm.har_losen ? "✅ inställd" : "– behövs för rapport via e-post"}</summary>
         <div class="small muted">Home Assistant har ingen e-posttjänst, så Läxspelet skickar själv. För Gmail: server smtp.gmail.com, port 587 och ett <b>applösenord</b> (inte ditt vanliga lösenord). Lösenordet sparas bara i din Home Assistant.</div>
         <label class="small">Server <input id="smtp-server" value="${esc(sm.server || "smtp.gmail.com")}"></label>
@@ -4939,7 +4960,14 @@ class SkolanPanel extends HTMLElement {
     on("#sk-test", () => this._skolaAct({ op: "mejl_test", till: $("#sk-test-till")?.value || "" }, "Testmejlet är skickat 📧"));
     on("#sk-koppla-bort", () => { if (confirm("Koppla bort läraren? Klasslänken byts ut och läraren behöver koppla in eleven igen.")) this._skolaAct({ op: "koppla_bort" }, "Läraren är bortkopplad."); });
     on("#sk-kopiera", () => navigator.clipboard?.writeText(this._s.skola?.lank || "").then(() => { this._msg = { type: "ok", text: "Klasslänken är kopierad 📋" }; this._render(); }));
-    r.querySelectorAll("[data-ink-avvisa]").forEach((b) => b.addEventListener("click", () => this._skolaAct({ op: "inkorg_avvisa", id: b.dataset.inkAvvisa }, "Veckobrevet är borttaget.")));
+    r.querySelectorAll("[data-ink-avvisa]").forEach((b) => b.addEventListener("click", () => confirm("Ta bort det här från inkorgen?") && this._skolaAct({ op: "inkorg_avvisa", id: b.dataset.inkAvvisa }, "Borttaget från inkorgen.")));
+    r.querySelectorAll("[data-ink-spara]").forEach((b) => b.addEventListener("click", async () => {
+      const v = r.querySelector(`[data-ink-amne="${b.dataset.inkSpara}"]`)?.value || "";
+      if (!v) { this._msg = { type: "error", text: "Välj ett ämne först." }; this._render(); return; }
+      const svar = await this._skolaAct({ op: b.dataset.inkTyp === "prov" ? "inkorg_prov" : "inkorg_material", id: b.dataset.inkSpara,
+        ...(v.startsWith("ny:") ? { nytt_amne: v.slice(3) } : { amne: v }) }, b.dataset.inkTyp === "prov" ? "Provresultatet är sparat 📝" : "Materialet ligger nu i ämnet 📎");
+      if (svar) await this._load(this._s.barn);
+    }));
     r.querySelectorAll("[data-ink-granska]").forEach((b) => b.addEventListener("click", async () => {
       const svar = await this._skolaAct({ op: "inkorg_forslag", id: b.dataset.inkGranska });
       if (!svar?.forslag) return;

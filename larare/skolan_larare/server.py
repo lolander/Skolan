@@ -36,7 +36,12 @@ FUNKTIONER = {
     "klasslag": "🏫 Klasslag med en gemensam boss",
     "mejl": "📧 Ta emot rapporter via e-post från föräldrarna",
     "grupper": "👥 Grupper och gruppuppgifter",
+    "statistik": "📈 Se statistik om hur eleverna pluggar",
+    "material": "📎 Skicka provresultat och studiematerial (PDF/foto)",
 }
+FIL_TYPER = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+MAX_FIL = 8 * 1024 * 1024  # samma gräns som i elevens Läxspelet
+MAX_FILER_PER_SYNK = 14 * 1024 * 1024  # base64, under elevens gräns
 KLASSBOSSAR = [("🐲", "Läxdraken"), ("🦖", "Glos-Rex"), ("🐙", "Kraken Glömska"), ("👹", "Jätten Slarv"),
                ("🤖", "Megaroboten"), ("🧊", "Isjätten"), ("🌋", "Lavamonstret"), ("👻", "Spökkungen")]
 KLASSBOSS_PER_ELEV = 120  # ⭐ per elev som är med (ungefär en vanlig veckas plugg)
@@ -115,6 +120,10 @@ class Klass:
         self.d.setdefault("extra", {})  # {vecka: poäng} klassens plugg i klassrummet
         self.d.setdefault("grupper", [])  # [{id, namn, medlemmar: [elev-id], uppgift, datum, skapad, aktiv, klara: {elev-id: tid}}]
         self.d.setdefault("historik", [])  # [{tid, typ, text}] allt som hänt, för lärarens rapport
+        # [{id, typ: material|prov, titel, amne, text, datum, max, fil, till: [elev-id] (tom = alla), resultat: {elev-id: {...}}, skapad}]
+        self.d.setdefault("material", [])
+        self.filer = mapp / "filer"
+        self.filer.mkdir(exist_ok=True)
         for k in FUNKTIONER:
             self.d["inst"].setdefault(k, False)
         self.spara()
@@ -150,19 +159,55 @@ class Klass:
         return {"namn": self.d["klass"] or "Klassen", "vecka": v, "ikon": ikon, "boss": namn, "hp": hp, "skada": min(skada, hp),
                 "antal": antal, "klar": skada >= hp, "extra": int(self.d["extra"].get(v, 0))}
 
+    def fil_data(self, fil: dict | None) -> dict | None:
+        if not fil:
+            return None
+        import base64
+
+        try:
+            return {"namn": fil.get("orig") or fil["namn"], "mime": fil["mime"], "data": base64.b64encode((self.filer / fil["namn"]).read_bytes()).decode()}
+        except OSError:
+            return None
+
+    @staticmethod
+    def prov_id(m: dict, eid: str) -> str:
+        """Ett nytt id när resultatet ändras, så att föräldern får det nya."""
+        return f"{m['id']}-{eid}-{(m.get('resultat') or {}).get(eid, {}).get('ver', 0)}"
+
+    def material_for(self, e: dict) -> list[dict]:
+        ut = []
+        for m in self.d["material"]:
+            if m["typ"] == "material" and (not m.get("till") or e["id"] in m["till"]):
+                ut.append({"id": m["id"], "typ": "material", "titel": m["titel"], "amne": m.get("amne", ""), "text": m.get("text", ""), "_fil": m.get("fil")})
+            elif m["typ"] == "prov" and e["id"] in (m.get("resultat") or {}):
+                r = {k: v for k, v in m["resultat"][e["id"]].items() if k != "ver"}
+                ut.append({"id": self.prov_id(m, e["id"]), "prov_id": m["id"], "typ": "prov", "titel": m["titel"], "amne": m.get("amne", ""), "text": m.get("text", ""),
+                           "datum": m.get("datum", ""), "resultat": {**r, **({"max": m["max"]} if m.get("max") and "poang" in r else {})}, "_fil": m.get("fil")})
+        return ut[-20:]
+
     def publik(self) -> dict:
         """Det läraren ser. Inga poäng per elev."""
         elever = []
         for e in self.d["elever"]:
             elever.append({"id": e["id"], "namn": e.get("namn") or "?", "senast": e.get("senast", ""), "fel": e.get("fel", ""),
                            "foralder": e.get("foralder") or {}, "rapport": e.get("rapport") if self.d["inst"].get("rapport") else None,
+                           "statistik": e.get("statistik") if self.d["inst"].get("statistik") else None,
                            "veckobrev_nya": e.get("veckobrev_nya", 0)})
+        mott = {e["id"]: set(e.get("mottagna") or []) for e in self.d["elever"]}
+        material = []
+        for m in self.d["material"][::-1]:
+            if m["typ"] == "prov":
+                fatt = [self.elev_namn(eid) for eid in (m.get("resultat") or {}) if self.prov_id(m, eid) in mott.get(eid, ())]
+            else:
+                fatt = [self.elev_namn(eid) for eid, s in mott.items() if m["id"] in s]
+            material.append({**m, "fatt": fatt})
         return {"version": VERSION, "klass": self.d["klass"], "larare": self.d["larare"], "inst": self.d["inst"], "funktioner": FUNKTIONER,
                 "elever": sorted(elever, key=lambda x: x["namn"].lower()), "veckobrev": self.d["veckobrev"][-10:][::-1],
                 "boss": self.boss() if self.d["inst"].get("klasslag") else None, "adress": f"{lan_ip()}:{self.port}", "url": self.url,
                 "grupper": [self.grupp_publik(g) for g in self.d["grupper"] if g.get("aktiv")],
                 "gamla_grupper": [self.grupp_publik(g) for g in self.d["grupper"] if not g.get("aktiv")][-30:][::-1],
-                "historik": self.d["historik"][-300:][::-1]}
+                "historik": self.d["historik"][-300:][::-1], "material": material,
+                "veckobrev_fatt": {b["id"]: [self.elev_namn(eid) for eid, s in mott.items() if b["id"] in s] for b in self.d["veckobrev"][-10:]}}
 
     async def synka(self, session: ClientSession, lank: str) -> dict:
         """Synka med en elevs Skolan. Returnerar elevens rad."""
@@ -173,11 +218,40 @@ class Klass:
         grupper = [{"id": g["id"], "namn": g["namn"], "uppgift": g["uppgift"], "datum": g.get("datum", ""),
                     "medlemmar": [self.elev_namn(x) for x in g["medlemmar"]]}
                    for g in self.d["grupper"] if g.get("aktiv") and e["id"] in g["medlemmar"]] if self.d["inst"].get("grupper") else []
-        brev = [b for b in self.d["veckobrev"] if b.get("vecka", "") >= vecka_nu()[:5]][-3:] if self.d["inst"].get("veckobrev") else []
+        # Filer skickas bara en gång (elevens Läxspelet svarar med vad som har kommit fram) och bara om föräldern har slagit på funktionen.
+        har = set(e.get("mottagna") or [])
+        budget = [MAX_FILER_PER_SYNK]
+
+        def med_fil(post: dict, fil: dict | None, funktion: str) -> dict | None:
+            post = {k: v for k, v in post.items() if k not in ("fil", "_fil")}
+            if not fil:
+                return post
+            if post["id"] in har or not (e.get("foralder") or {}).get(funktion):
+                return None
+            data = self.fil_data(fil)
+            if not data or len(data["data"]) > budget[0]:
+                return None  # för stort för den här synken, kommer nästa gång
+            budget[0] -= len(data["data"])
+            return {**post, "fil": data}
+
+        brev = []
+        if self.d["inst"].get("veckobrev"):
+            for b in [b for b in self.d["veckobrev"] if b.get("vecka", "") >= vecka_nu()[:5]][-3:]:
+                p = med_fil(b, b.get("fil"), "veckobrev")
+                if p:
+                    brev.append(p)
+        material = []
+        if self.d["inst"].get("material"):
+            for m in self.material_for(e):
+                if m["id"] not in har:
+                    p = med_fil(m, m.get("_fil"), "material")
+                    if p:
+                        material.append(p)
         body = {"v": 1, "larar_id": self.d["larar_id"], "klass": self.d["klass"], "larare": self.d["larare"], "url": self.url,
-                "inst": self.d["inst"], "veckobrev": brev, "klass_status": self.boss() if self.d["inst"].get("klasslag") else None, "grupper": grupper}
+                "inst": self.d["inst"], "veckobrev": brev, "material": material,
+                "klass_status": self.boss() if self.d["inst"].get("klasslag") else None, "grupper": grupper}
         try:
-            async with session.post(lank, json=body, timeout=ClientTimeout(total=20), allow_redirects=False) as r:
+            async with session.post(lank, json=body, timeout=ClientTimeout(total=120), allow_redirects=False) as r:
                 svar = json.loads(await r.content.read(65536) or b"{}")
                 if r.status == 404:
                     raise ValueError("Läxspelet hos eleven svarar inte på klasslänken (är skolfunktionerna på där?).")
@@ -204,6 +278,9 @@ class Klass:
             self.logga("rapport", f"Rapport om {e['namn']} ({r.get('fran', '')} – {r.get('till', '')}): " + " ".join(str(x) for x in r["rader"][:20]))
         e["rapport"] = {"fran": str(r.get("fran", ""))[:10], "till": str(r.get("till", ""))[:10],
                         "rader": [str(x)[:200] for x in (r.get("rader") or [])][:20]} if isinstance(r, dict) else None
+        e["statistik"] = svar["statistik"] if isinstance(svar.get("statistik"), dict) else None
+        if isinstance(svar.get("mottagna"), list):
+            e["mottagna"] = [str(x)[:60] for x in svar["mottagna"]][-300:]
         k = svar.get("klass")
         e["klass"] = {"vecka": str(k.get("vecka", ""))[:10], "poang": max(0, min(10**5, int(k.get("poang") or 0)))} if isinstance(k, dict) else None
         self.logga("synk", f"{e['namn']} synkade.")
@@ -217,7 +294,7 @@ def _bara_datorn(request: web.Request) -> None:
 
 
 def bygg_app(klass: Klass) -> web.Application:
-    app = web.Application(client_max_size=256 * 1024)
+    app = web.Application(client_max_size=MAX_FIL + 1024 * 1024)
     session_holder: dict = {}
     senast_ip: dict[str, float] = {}
 
@@ -257,6 +334,44 @@ def bygg_app(klass: Klass) -> web.Application:
         qrcode.make(klass.url + "/elev", image_factory=qrcode.image.svg.SvgPathImage, box_size=12).save(buf)
         return web.Response(body=buf.getvalue(), content_type="image/svg+xml")
 
+    def fil_info(f) -> dict | None:
+        """En fil som läraren har laddat upp med /api/fil."""
+        if not isinstance(f, dict) or not re.fullmatch(r"[a-f0-9]{24}\.(pdf|jpg|png|webp)", str(f.get("namn") or "")):
+            return None
+        p = klass.filer / f["namn"]
+        if not p.is_file():
+            return None
+        mime = next(k for k, v in FIL_TYPER.items() if v == p.suffix)
+        return {"namn": f["namn"], "mime": mime, "orig": str(f.get("orig") or "")[:80], "storlek": p.stat().st_size}
+
+    def ta_bort_fil(f) -> None:
+        if isinstance(f, dict) and re.fullmatch(r"[a-f0-9]{24}\.(pdf|jpg|png|webp)", str(f.get("namn") or "")):
+            (klass.filer / f["namn"]).unlink(missing_ok=True)
+
+    async def fil_upp(request):
+        _bara_datorn(request)
+        form = await request.post()
+        f = form.get("fil")
+        if f is None or not hasattr(f, "file"):
+            return web.json_response({"fel": "Ingen fil."}, status=400)
+        b = f.file.read(MAX_FIL + 1)
+        if len(b) > MAX_FIL:
+            return web.json_response({"fel": "Filen är för stor (max 8 MB)."}, status=400)
+        mime = "application/pdf" if b.startswith(b"%PDF") else "image/jpeg" if b[:3] == b"\xff\xd8\xff" else \
+            "image/png" if b[:8] == b"\x89PNG\r\n\x1a\n" else "image/webp" if b[8:12] == b"WEBP" else None
+        if not mime:
+            return web.json_response({"fel": "Bara PDF eller foto (JPG, PNG)."}, status=400)
+        namn = secrets.token_hex(12) + FIL_TYPER[mime]
+        (klass.filer / namn).write_bytes(b)
+        return web.json_response({"namn": namn, "mime": mime, "orig": str(f.filename or "")[:80], "storlek": len(b)})
+
+    async def fil_ner(request):
+        _bara_datorn(request)
+        namn = request.match_info["namn"]
+        if not re.fullmatch(r"[a-f0-9]{24}\.(pdf|jpg|png|webp)", namn) or not (klass.filer / namn).is_file():
+            raise web.HTTPNotFound
+        return web.FileResponse(klass.filer / namn)
+
     async def andra(request):
         _bara_datorn(request)
         body = await request.json()
@@ -272,11 +387,60 @@ def bygg_app(klass: Klass) -> web.Application:
             elif op == "veckobrev":
                 ai = body.get("ai") if isinstance(body.get("ai"), dict) else {}
                 d["veckobrev"].append({"id": secrets.token_urlsafe(8), "titel": str(body.get("titel") or "Veckobrev")[:80],
-                                       "vecka": str(body.get("vecka") or vecka_nu())[:10], "skapad": time.strftime("%Y-%m-%d %H:%M"), "ai": ai})
+                                       "vecka": str(body.get("vecka") or vecka_nu())[:10], "skapad": time.strftime("%Y-%m-%d %H:%M"), "ai": ai,
+                                       "fil": fil_info(body.get("fil"))})
                 d["veckobrev"] = d["veckobrev"][-30:]
                 klass.logga("veckobrev", f"Veckobrev {d['veckobrev'][-1]['titel']} (v.{d['veckobrev'][-1]['vecka']}).")
             elif op == "veckobrev_bort":
+                for b in [b for b in d["veckobrev"] if b["id"] == body.get("id")]:
+                    ta_bort_fil(b.get("fil"))
                 d["veckobrev"] = [b for b in d["veckobrev"] if b["id"] != body.get("id")]
+            elif op == "material_ny":
+                typ = "prov" if body.get("typ") == "prov" else "material"
+                fil = fil_info(body.get("fil"))
+                titel = str(body.get("titel") or "").strip()[:80]
+                if not titel:
+                    raise ValueError("Skriv en rubrik.")
+                if typ == "material" and not fil:
+                    raise ValueError("Välj en PDF eller ett foto.")
+                mx = body.get("max")
+                m = {"id": secrets.token_urlsafe(8), "typ": typ, "titel": titel, "amne": str(body.get("amne") or "").strip()[:40],
+                     "text": str(body.get("text") or "").strip()[:1000], "datum": str(body.get("datum") or "")[:10],
+                     "max": float(mx) if mx not in (None, "") and 0 < float(mx) <= 10000 else None, "fil": fil,
+                     "till": [x for x in (body.get("till") or []) if any(e["id"] == x for e in d["elever"])], "resultat": {},
+                     "skapad": time.strftime("%Y-%m-%d %H:%M")}
+                d["material"].append(m)
+                d["material"] = d["material"][-200:]
+                klass.logga("prov" if typ == "prov" else "material", f"{'Prov' if typ == 'prov' else 'Studiematerial'}: {titel}" + (f" ({m['amne']})" if m["amne"] else ""))
+            elif op == "material_bort":
+                m = next(x for x in d["material"] if x["id"] == body.get("id"))
+                ta_bort_fil(m.get("fil"))
+                d["material"].remove(m)
+            elif op == "prov_resultat":
+                m = next(x for x in d["material"] if x["id"] == body.get("id") and x["typ"] == "prov")
+                eid = str(body.get("elev") or "")
+                if not any(e["id"] == eid for e in d["elever"]):
+                    raise ValueError("Eleven finns inte.")
+                gammal = m["resultat"].get(eid) or {}
+                if body.get("rensa"):
+                    m["resultat"].pop(eid, None)
+                else:
+                    r = {"kommentar": str(body.get("kommentar") or "").strip()[:200]}
+                    betyg = str(body.get("betyg") or "").strip().upper()
+                    if body.get("poang") not in (None, ""):
+                        po = float(body["poang"])
+                        if not m.get("max") or not 0 <= po <= m["max"]:
+                            raise ValueError(f"Poängen måste vara mellan 0 och {m.get('max') or '?'}.")
+                        r["poang"] = po
+                    elif betyg in ("A", "B", "C", "D", "E", "F"):
+                        r["betyg"] = betyg
+                    else:
+                        raise ValueError("Skriv poäng eller ett betyg (A–F).")
+                    if {k: v for k, v in gammal.items() if k != "ver"} != r:
+                        r["ver"] = gammal.get("ver", -1) + 1
+                        m["resultat"][eid] = r
+                        klass.logga("prov", f"Provresultat {m['titel']}, {klass.elev_namn(eid)}: "
+                                    + (f"{r['poang']:g} av {m['max']:g}" if "poang" in r else f"betyg {r['betyg']}"))
             elif op == "grupp_ny":
                 med = [x for x in dict.fromkeys(body.get("medlemmar") or []) if any(e["id"] == x for e in d["elever"])]
                 if not med:
@@ -322,7 +486,7 @@ def bygg_app(klass: Klass) -> web.Application:
                         pass
             else:
                 raise ValueError("Okänd åtgärd.")
-        except (ValueError, TypeError, StopIteration) as err:
+        except (ValueError, TypeError, StopIteration, KeyError) as err:
             return web.json_response({"fel": str(err) or "Finns inte."}, status=400)
         klass.spara()
         return web.json_response(klass.publik())
@@ -361,6 +525,8 @@ def bygg_app(klass: Klass) -> web.Application:
     app.router.add_get("/api/lage", lage)
     app.router.add_get("/api/qr.svg", qr)
     app.router.add_post("/api/andra", andra)
+    app.router.add_post("/api/fil", fil_upp)
+    app.router.add_get("/api/fil/{namn}", fil_ner)
     app.router.add_post("/api/elev/koppla", elev_koppla)
     return app
 

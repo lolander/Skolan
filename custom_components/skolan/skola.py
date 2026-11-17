@@ -32,9 +32,14 @@ FUNKTIONER = {
     "klasslag": ("🏫", "Klasslag", "Klassen bekämpar en gemensam boss. Läraren ser bara klassens summa, aldrig ditt barns poäng."),
     "mejl": ("📧", "Rapport via e-post", "Läxspelet mejlar en kort rapport till läraren de dagar du väljer."),
     "grupper": ("👥", "Grupper och gruppuppgifter", "Läraren kan sätta ditt barn i tillfälliga grupper med en uppgift. Barnet ser gruppen och kan bocka av uppgiften."),
+    "statistik": ("📈", "Statistik till läraren", "Läraren ser hur ditt barn pluggar: dagar per vecka, förhör, prov och ämnen. Inga stjärnor, husdjur eller jämförelser."),
+    "material": ("📎", "Prov och studiematerial från läraren", "Läraren kan skicka provresultat och studiematerial (PDF eller foto). Det hamnar i din inkorg och du godkänner innan något läggs in."),
 }
 KLASSBOSS_BELONING = 30
 MAX_INKORG = 30
+MAX_FIL = 8 * 1024 * 1024  # en fil från läraren
+MAX_FILER_PER_SYNK = 15 * 1024 * 1024
+FIL_TYPER = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 
 
 def _fil(mapp: Path) -> Path:
@@ -54,7 +59,8 @@ def las(mapp: Path) -> dict:
     f.setdefault("mejl_till", "")
     f.setdefault("mejl_dagar", [4])  # 0 = måndag; fredag som standard
     s.setdefault("larare", {})  # {id, klass, namn, url, inst: {...}, synkad}
-    s.setdefault("inkorg", [])  # veckobrev från läraren
+    s.setdefault("inkorg", [])  # från läraren: veckobrev, studiematerial och provresultat ("typ")
+    s.setdefault("mottagna", [])  # id:n från läraren som redan har kommit fram, så att filer inte skickas igen
     s.setdefault("klass", None)  # klassens läge från lärarappen
     s.setdefault("mejl_skickat", "")
     s.setdefault("grupper", [])  # från läraren: [{id, namn, uppgift, datum, medlemmar: [namn], klar}]
@@ -63,6 +69,7 @@ def las(mapp: Path) -> dict:
 
 def spara(mapp: Path, s: dict) -> None:
     s["inkorg"] = s["inkorg"][-MAX_INKORG:]
+    s["mottagna"] = s.get("mottagna", [])[-300:]
     tmp = _fil(mapp).with_suffix(".tmp")
     tmp.write_text(json.dumps(s, ensure_ascii=False), "utf-8")
     tmp.replace(_fil(mapp))
@@ -151,6 +158,37 @@ def rapport(data: dict, namn: str, dagar: int = 7) -> dict:
     return {"namn": namn, "fran": fran, "till": idag.isoformat(), "rader": rader[:20]}
 
 
+def statistik(data: dict, veckor: int = 8) -> dict:
+    """Det läraren ser när statistiken är på: hur barnet pluggar, inga stjärnor eller husdjur."""
+    idag = dt_util.now().date()
+    start = idag - timedelta(days=idag.weekday() + 7 * (veckor - 1))
+    fran = start.isoformat()
+    dagar = set(meriter._m(data).get("ovningsdagar", []))
+    per_vecka = []
+    for i in range(veckor):
+        m = start + timedelta(days=7 * i)
+        v = "{}-W{:02d}".format(*m.isocalendar()[:2])
+        per_vecka.append({"vecka": v, "dagar": sum(1 for d in range(7) if (m + timedelta(days=d)).isoformat() in dagar)})
+    forhor = []
+    for f in data.get("forhor", []):
+        if (f.get("klart") or "")[:10] >= fran and f.get("status") == "klart":
+            forhor.append({"namn": _text(f.get("namn"), 60), "datum": (f.get("klart") or "")[:10], "n": len(f.get("fragor", [])),
+                           "ratt": sum(1 for x in f.get("svar", []) if x.get("ratt"))})
+    prov = []
+    for u in data.get("uppdrag", []):
+        r = u.get("resultat")
+        if u.get("typ") == "prov" and r and (r.get("tid") or "")[:10] >= fran:
+            prov.append({"namn": _text(u.get("namn"), 60), "amne": _text(u.get("amne_namn"), 40), "datum": (r.get("tid") or "")[:10],
+                         **({"poang": r["poang"], "max": r["max"]} if "max" in r else {"betyg": r.get("betyg", "")})})
+    amnen = []
+    for a in data.get("amnen", []):
+        d = {x for g in a.get("glosor", []) for x in g.get("ovat_dagar", []) if x >= fran}
+        if d:
+            amnen.append({"namn": _text(a.get("namn"), 40), "dagar": len(d)})
+    return {"fran": fran, "till": idag.isoformat(), "per_vecka": per_vecka, "forhor": forhor[-15:], "prov": prov[-10:],
+            "amnen": sorted(amnen, key=lambda x: -x["dagar"])[:10]}
+
+
 def rapport_text(r: dict) -> str:
     return "\n".join([f"Hej! Här är en kort rapport om {r['namn']} ({r['fran']} – {r['till']}).", ""]
                      + [f"• {x}" for x in r["rader"]]
@@ -233,6 +271,42 @@ def _rensa_brev(b: dict) -> dict | None:
                    + ([_text("Stavningsord: " + ", ".join(ord_), 300)] if glosor and ord_ else []), "note": _text(ai.get("note"), 300)}}
 
 
+def _larar_fil(f, budget: list) -> tuple[dict, bytes] | None:
+    """En fil från läraren (base64). Returnerar (info, innehåll) eller None om den inte går att ta emot."""
+    import base64
+    import binascii
+
+    if not isinstance(f, dict) or f.get("mime") not in FIL_TYPER or not isinstance(f.get("data"), str):
+        return None
+    if len(f["data"]) > MAX_FIL * 4 // 3 + 8 or len(f["data"]) > budget[0]:
+        return None
+    try:
+        b = base64.b64decode(f["data"], validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    ok = b.startswith(b"%PDF") if f["mime"] == "application/pdf" else b[:3] == b"\xff\xd8\xff" or b[:8] == b"\x89PNG\r\n\x1a\n" or b[8:12] == b"WEBP"
+    if not ok or len(b) > MAX_FIL:
+        return None
+    budget[0] -= len(f["data"])
+    namn = f"larare_{dt_util.now().strftime('%Y%m%d-%H%M%S')}_{secrets.token_hex(4)}{FIL_TYPER[f['mime']]}"
+    return {"namn": namn, "mime": f["mime"], "orig": _text(f.get("namn"), 80)}, b
+
+
+def _resultat(r) -> dict | None:
+    if not isinstance(r, dict):
+        return None
+    ut = {"kommentar": _text(r.get("kommentar"), 200)}
+    try:
+        if r.get("max") not in (None, ""):
+            mx, po = float(r["max"]), float(r.get("poang") or 0)
+            if 0 < mx <= 10000 and 0 <= po <= mx:
+                return {**ut, "poang": po, "max": mx}
+    except (TypeError, ValueError):
+        return None
+    betyg = _text(r.get("betyg"), 2).upper()
+    return {**ut, "betyg": betyg} if betyg in meriter.PROV_BETYG else None
+
+
 def ta_emot(s: dict, data: dict, barn_namn: str, body: dict) -> dict:
     """Lärarappen synkar. Returnerar svaret till läraren (bara det som är påslaget av båda)."""
     lid = _text(body.get("larar_id"), 40)
@@ -246,13 +320,47 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict) -> dict:
                    "url": _text(body.get("url"), 80) if re.fullmatch(r"https?://[\w.\-]+(:\d+)?", _text(body.get("url"), 80)) else "",
                    "inst": {k: bool(inst.get(k)) for k in FUNKTIONER}, "synkad": dt_util.now().isoformat(timespec="minutes")}
     nya = 0
+    filer: list[tuple[str, bytes]] = []
+    budget = [MAX_FILER_PER_SYNK * 4 // 3]
+    kanda = set(s.setdefault("mottagna", [])) | {x["id"] for x in s["inkorg"]}
+    nu = dt_util.now().isoformat(timespec="minutes")
+
+    def in_korg(post: dict, fil) -> bool:
+        """Lägg posten i inkorgen. En bifogad fil som inte kom fram (för stor eller fel sort) gör att posten väntar till nästa synk."""
+        nonlocal nya
+        if fil is not None:
+            f = _larar_fil(fil, budget)
+            if not f:
+                return False
+            post["fil"] = f[0]
+            filer.append((f[0]["namn"], f[1]))
+        s["inkorg"].append({**post, "tid": nu, "status": "ny"})
+        s["mottagna"].append(post["id"])
+        kanda.add(post["id"])
+        nya += 1
+        return True
+
     if aktiv(s, "veckobrev"):
-        kanda = {x["id"] for x in s["inkorg"]}
         for b in (body.get("veckobrev") or [])[:10]:
             r = _rensa_brev(b)
             if r and r["id"] not in kanda:
-                s["inkorg"].append({**r, "tid": dt_util.now().isoformat(timespec="minutes"), "status": "ny"})
-                nya += 1
+                in_korg({**r, "typ": "veckobrev"}, b.get("fil"))
+    if aktiv(s, "material"):
+        for m in (body.get("material") or [])[:10]:
+            if not isinstance(m, dict) or not re.fullmatch(r"[A-Za-z0-9_\-]{4,40}", str(m.get("id") or "")) or m["id"] in kanda:
+                continue
+            post = {"id": m["id"], "titel": _text(m.get("titel"), 80) or "Från läraren", "amne": _text(m.get("amne"), 40), "text": _text(m.get("text"), 1000)}
+            if m.get("typ") == "prov":
+                res = _resultat(m.get("resultat"))
+                if res is None and m.get("fil") is None:
+                    continue
+                pid = _text(m.get("prov_id"), 40)
+                if in_korg({**post, "typ": "prov", "prov_id": pid, "datum": _text(m.get("datum"), 10), "resultat": res}, m.get("fil")) and pid:
+                    for x in s["inkorg"][:-1]:  # ett ändrat resultat ersätter det som inte är godkänt än
+                        if x.get("prov_id") == pid and x["status"] == "ny":
+                            x["status"] = "ersatt"
+            elif m.get("fil") is not None:
+                in_korg({**post, "typ": "material"}, m["fil"])
     if aktiv(s, "klasslag") and isinstance(body.get("klass_status"), dict):
         k = body["klass_status"]
         try:
@@ -274,7 +382,9 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict) -> dict:
     return {"v": 1, "namn": namn, "foralder": {k: bool(s["foralder"].get(k)) for k in FUNKTIONER}, "nya_veckobrev": nya,
             "rapport": rapport(data, namn) if aktiv(s, "rapport") else None,
             "klass": {"vecka": vecka, "poang": meriter._vecko_poang(data).get(vecka, 0)} if aktiv(s, "klasslag") else None,
-            "grupp_klara": [g["id"] for g in s["grupper"] if g.get("klar")] if aktiv(s, "grupper") else []}
+            "grupp_klara": [g["id"] for g in s["grupper"] if g.get("klar")] if aktiv(s, "grupper") else [],
+            "statistik": statistik(data) if aktiv(s, "statistik") else None,
+            "mottagna": s["mottagna"][-100:], "_filer": filer}
 
 
 def klassboss_belona(data: dict, s: dict) -> bool:

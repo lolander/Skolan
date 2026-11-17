@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.42.0"
+VERSION = "1.43.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -3492,8 +3492,25 @@ class SkolaView(HomeAssistantView):
                 b = next((x for x in s["inkorg"] if x["id"] == body.get("id")), None)
                 if not b:
                     raise ValueError("Veckobrevet finns inte.")
+                ai = b["ai"]
+                if b.get("fil") and not b.get("fil_last"):  # läraren bifogade brevet: AI:n läser det och fyller i det läraren inte skrev
+                    try:
+                        las = _parse_json(await _ai_las(hass, mapp / "filer" / b["fil"]["namn"], VECKOBREV_PROMPT, "Läs veckobrev från läraren"))
+                    except Exception as err:  # noqa: BLE001
+                        _LOGGER.warning("Lärarens veckobrev kunde inte läsas: %s", err)
+                        raise ValueError("AI:n kunde inte läsa det bifogade brevet. Försök igen om en stund.") from err
+                    if isinstance(las, dict):
+                        ai = {**las, **{k: v for k, v in ai.items() if v not in (None, "", [], False)}}
+                    async with _vlock(hass, f"skola:{barn}"):
+                        s = await hass.async_add_executor_job(skola.las, mapp)
+                        b = next((x for x in s["inkorg"] if x["id"] == body.get("id")), None)
+                        if b:
+                            b["ai"], b["fil_last"] = ai, True
+                            await hass.async_add_executor_job(skola.spara, mapp, s)
                 data = await hass.async_add_executor_job(_load, mapp)
-                return self.json({"forslag": await hass.async_add_executor_job(_forslag_veckobrev, mapp, data, b["ai"])})
+                return self.json({"forslag": await hass.async_add_executor_job(_forslag_veckobrev, mapp, data, ai)})
+            elif op in ("inkorg_material", "inkorg_prov"):
+                await _inkorg_spara(hass, barn, mapp, op, body)
             else:
                 async with _vlock(hass, f"skola:{barn}"):
                     s = await hass.async_add_executor_job(skola.las, mapp)
@@ -3505,12 +3522,56 @@ class SkolaView(HomeAssistantView):
                         b = next((x for x in s["inkorg"] if x["id"] == body.get("id")), None)
                         if b:
                             b["status"] = "sparad" if op == "inkorg_klar" else "avvisad"
+                            if b.get("fil") and (op == "inkorg_avvisa" or b.get("typ", "veckobrev") == "veckobrev"):
+                                await hass.async_add_executor_job((mapp / "filer" / Path(b["fil"]["namn"]).name).unlink, True)
                     else:
                         raise ValueError("Okänd åtgärd.")
                     await hass.async_add_executor_job(skola.spara, mapp, s)
         except ValueError as err:
             return self.json_message(str(err), 400)
         return self.json(await _skola_status(hass, barn, True))
+
+
+async def _inkorg_spara(hass: HomeAssistant, barn: str, mapp: Path, op: str, body: dict) -> None:
+    """Föräldern godkänner studiematerial eller ett provresultat från läraren och väljer ämne."""
+    async with hass.data[DOMAIN]["locks"][barn]:
+        async with _vlock(hass, f"skola:{barn}"):
+            s = await hass.async_add_executor_job(skola.las, mapp)
+            b = next((x for x in s["inkorg"] if x["id"] == body.get("id") and x["status"] == "ny"), None)
+            if not b or b.get("typ") != ("material" if op == "inkorg_material" else "prov"):
+                raise ValueError("Det finns inte längre i inkorgen.")
+            data = await hass.async_add_executor_job(_load, mapp)
+            amnen = data.setdefault("amnen", [])
+            if body.get("nytt_amne"):
+                namn = _name(body.get("nytt_amne"))
+                a = next((x for x in amnen if x["namn"].lower() == namn.lower()), None)
+                if not a:
+                    a = {"id": _new_id(), "namn": namn, "farg": FARGER[len(amnen) % len(FARGER)], "bocker": [], "glosor": [], "delar": ["bocker"]}
+                    amnen.append(a)
+            else:
+                a = _find(amnen, body.get("amne"))
+            fil = (b.get("fil") or {}).get("namn")
+            if fil:  # filen blir en bok i ämnet, så att den syns och kan läsas som de andra böckerna
+                a.setdefault("bocker", []).append({"id": _new_id(), "namn": _name(("📝 " if op == "inkorg_prov" else "📎 ") + b["titel"]), "sidor": [fil]})
+                _sla_pa_del(a, "bocker")
+            if op == "inkorg_prov" and b.get("resultat"):
+                lista = data.setdefault("uppdrag", [])
+                u = next((x for x in lista if b.get("prov_id") and x.get("larar_prov") == b["prov_id"]), None) or \
+                    next((x for x in lista if x.get("typ") == "prov" and x.get("amne") == a["id"] and not x.get("resultat")
+                          and _liknar(x["namn"], b["titel"]) > 0.6), None)
+                if not u:
+                    u = {"id": _new_id(), "typ": "prov", "namn": _name(b["titel"]), "amne": a["id"], "amne_namn": a["namn"], "bok": None,
+                         "fran": None, "till": None, "kapitel": "", "sidor": [], "glosor": [], "lasta": 0, "allt_last": False, "klart": dt_util.now().isoformat(timespec="minutes"),
+                         "datum": b.get("datum") or dt_util.now().date().isoformat(), "skapad": dt_util.now().isoformat(timespec="minutes"),
+                         "av_id": "larare", "av_namn": (s.get("larare") or {}).get("namn") or "Läraren"}
+                    lista.append(u)
+                    del lista[:-200]
+                u["larar_prov"] = b.get("prov_id") or ""
+                meriter.prov_resultat(data, u, {**b["resultat"], "av": (s.get("larare") or {}).get("namn") or "Läraren",
+                                                "tid": dt_util.now().isoformat(timespec="minutes")})
+            b["status"] = "sparad"
+            await hass.async_add_executor_job(_save, mapp, data)
+            await hass.async_add_executor_job(skola.spara, mapp, s)
 
 
 class KlassView(HomeAssistantView):
@@ -3534,7 +3595,7 @@ class KlassView(HomeAssistantView):
         if not hitta:
             raise web.HTTPNotFound
         try:
-            body = json.loads(await request.content.read(65536))
+            body = json.loads(await request.content.read(skola.MAX_FILER_PER_SYNK * 2))  # veckobrev, material och prov kan ha filer
             if not isinstance(body, dict):
                 raise ValueError
         except ValueError:
@@ -3554,6 +3615,8 @@ class KlassView(HomeAssistantView):
                     return self.json({"fel": str(err)}, status_code=400)
                 if skola.klassboss_belona(data, s):
                     await hass.async_add_executor_job(_save, mapp, data)
+                for namn, innehall in svar.pop("_filer"):
+                    await hass.async_add_executor_job((mapp / "filer" / namn).write_bytes, innehall)
                 await hass.async_add_executor_job(skola.spara, mapp, s)
         svar["skolan"] = VERSION
         return self.json(svar)
