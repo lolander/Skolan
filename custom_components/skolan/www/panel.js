@@ -495,6 +495,43 @@ const STRID_CSS = `
 @keyframes sSeger { 0% { opacity:0; transform:scale(.3); } 100% { opacity:1; transform:scale(1); } }
 `;
 
+// Evolution: storleken (Stor, Jätte, Legend) och formen (efter barnets vanor) syns på husdjuret.
+const EVO_FARG = { blixt: "#ffeb3b", visdom: "#b388ff", prick: "#ff5252", flit: "#69f0ae", boss: "#ff7043" };
+function evoBak(steg, form) {
+  const f = form?.id, farg = EVO_FARG[f] || "#fff59d";
+  let s = "";
+  if (steg >= 3) { // aura som pulserar, starkare ju större
+    const op = { 3: 0.35, 4: 0.55, 5: 0.8 }[Math.min(5, steg)];
+    s += `<defs><radialGradient id="evo-aura-${f || "x"}"><stop offset="0" stop-color="${farg}" stop-opacity=".9"/><stop offset="1" stop-color="${farg}" stop-opacity="0"/></radialGradient></defs>
+      <circle cx="100" cy="125" r="${76 + steg * 4}" fill="url(#evo-aura-${f || "x"})" opacity="${op}"><animate attributeName="opacity" values="${op};${op * 0.5};${op}" dur="2.6s" repeatCount="indefinite"/></circle>`;
+  }
+  if (steg >= 5) { // legend: vingar
+    const v = (sp) => `<path transform="${sp ? "translate(200 0) scale(-1 1)" : ""}" d="M72 128 C40 92 6 96 10 122 C22 116 26 128 18 138 C32 132 38 142 30 152 C46 146 56 150 66 148 Z" fill="#fffde7" stroke="#ffd54f" stroke-width="3"><animateTransform attributeName="transform" type="rotate" values="0 72 128;-8 72 128;0 72 128" dur="1.8s" repeatCount="indefinite" additive="sum"/></path>`;
+    s += v(false) + v(true);
+  }
+  if (f === "boss") s += `<path d="M66 116 Q100 104 134 116 L150 184 Q125 174 100 182 Q75 174 50 184 Z" fill="#c62828" stroke="#8e0000" stroke-width="2"/><path d="M66 116 Q100 104 134 116 L132 126 Q100 116 68 126 Z" fill="#8e0000"/>`;
+  if (f === "flit") s += `<g opacity=".75"><ellipse cx="60" cy="116" rx="30" ry="14" transform="rotate(-32 60 116)" fill="#e0f7fa" stroke="#4dd0e1" stroke-width="2"><animateTransform attributeName="transform" type="rotate" values="-32 60 116;-44 60 116;-32 60 116" dur=".35s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="140" cy="116" rx="30" ry="14" transform="rotate(32 140 116)" fill="#e0f7fa" stroke="#4dd0e1" stroke-width="2"><animateTransform attributeName="transform" type="rotate" values="32 140 116;44 140 116;32 140 116" dur=".35s" repeatCount="indefinite"/></ellipse></g>`;
+  if (f === "blixt") s += `<g stroke="#ffd600" stroke-width="5" fill="none" stroke-linejoin="round"><polyline points="30,60 44,92 32,96 48,132"/><polyline points="170,60 156,92 168,96 152,132"/>
+    <animate attributeName="opacity" values="1;.2;1;1;.4;1" dur="1.4s" repeatCount="indefinite"/></g>`;
+  if (f === "prick") s += `<g opacity=".35"><circle cx="100" cy="128" r="74" fill="none" stroke="#ff5252" stroke-width="6"/><circle cx="100" cy="128" r="54" fill="none" stroke="#fff" stroke-width="6"/></g>`;
+  return s;
+}
+function evoFram(form, cx, cy, r, hatt) {
+  const f = form?.id, ox = r * 0.36, oy = cy - r * 0.05;
+  let s = "";
+  const gr = Math.max(9, r * 0.24); // glasögonens storlek (minst så att de syns på små ansikten)
+  if (f === "visdom") s += `<g fill="rgba(255,255,255,.18)" stroke="#4e342e" stroke-width="3"><circle cx="${cx - ox}" cy="${oy}" r="${gr}"/><circle cx="${cx + ox}" cy="${oy}" r="${gr}"/></g>${2 * ox > 2 * gr ? `<path d="M${cx - ox + gr} ${oy} h${2 * ox - 2 * gr}" stroke="#4e342e" stroke-width="3"/>` : ""}`;
+  if (f === "prick") s += `<path d="M${cx - r * 0.95} ${cy - r * 0.42} Q${cx} ${cy - r * 0.62} ${cx + r * 0.95} ${cy - r * 0.42} L${cx + r * 0.92} ${cy - r * 0.26} Q${cx} ${cy - r * 0.46} ${cx - r * 0.92} ${cy - r * 0.26} Z" fill="#e53935"/><circle cx="${cx + r * 0.7}" cy="${cy - r * 0.4}" r="7" fill="#fff" stroke="#e53935" stroke-width="3"/><circle cx="${cx + r * 0.7}" cy="${cy - r * 0.4}" r="2.5" fill="#e53935"/>`;
+  if (f === "blixt") {
+    s += `<path d="M${cx - r * 0.75} ${cy + r * 0.12} l6 -4 l-2 6 l6 -3" stroke="#ffd600" stroke-width="3" fill="none"/><path d="M${cx + r * 0.6} ${cy + r * 0.12} l6 -4 l-2 6 l6 -3" stroke="#ffd600" stroke-width="3" fill="none"/>`;
+    if (!hatt) s += `<path d="M${cx - 4} ${cy - r + 2} l12 -26 l-3 15 l11 -3 l-17 30 l3 -15 z" fill="#ffeb3b" stroke="#f9a825" stroke-width="2"/>`;
+  }
+  if (f === "flit") s += `<text x="${cx - r - 2}" y="${cy - r * 0.6}" font-size="18">✨<animate attributeName="opacity" values="1;.2;1" dur="1.2s" repeatCount="indefinite"/></text><text x="${cx + r - 8}" y="${cy - r * 0.9}" font-size="14">✨<animate attributeName="opacity" values=".2;1;.2" dur="1.2s" repeatCount="indefinite"/></text>`;
+  if (f === "boss") s += `<circle cx="100" cy="120" r="6" fill="#ffd54f" stroke="#ff8f00" stroke-width="2"/>`;
+  return s;
+}
+
 function ritaDjur(art, humor, steg, x = {}) {
   const u = DJUR_UTSEENDE[art] || DJUR_UTSEENDE["🐶"];
   const K = u.kropp, M = u.mage, linje = "#3e2723";
@@ -529,6 +566,7 @@ function ritaDjur(art, humor, steg, x = {}) {
   };
   if (x.form) ut += `<circle cx="28" cy="28" r="20" fill="rgba(255,255,255,.75)" stroke="#ffd54f" stroke-width="3"/><text x="28" y="36" font-size="22" text-anchor="middle">${x.form.ikon}</text>`;
   ut += `<g class="kropp ${x.variant?.anim ? "variant-anim" : ""}" style="transform-origin:100px 185px;transform:scale(${skala});${x.variant ? `filter:${x.variant.filter};` : ""}">`;
+  if (steg > 0) ut += evoBak(steg, x.form);
   if (steg === 0) {
     // ägget, med sprickor och ett litet ansikte
     ut += `<path d="M100 60 C140 60 152 120 150 145 C148 175 125 185 100 185 C75 185 52 175 50 145 C48 120 60 60 100 60 Z" fill="#fff8e1" stroke="#d7ccc8" stroke-width="3"/>`;
@@ -541,7 +579,7 @@ function ritaDjur(art, humor, steg, x = {}) {
   if (u.form) {
     // larvigt husdjur: egen form, samma ansikten och saker
     const [cx, cy, r] = u.ansikte;
-    ut += u.form() + ansikte(cx, cy, r);
+    ut += u.form() + ansikte(cx, cy, r) + evoFram(x.form, cx, cy, r, x.hatt);
     if (x.hatt && PA_OGONEN.has(x.hatt.id)) ut += `<text x="${cx}" y="${cy + 14}" font-size="${r + 6}" text-anchor="middle">${x.hatt.ikon}</text>`;
     else if (x.hatt) ut += `<text x="${cx + 4}" y="${u.topp + 6}" font-size="50" text-anchor="middle" transform="rotate(-10 ${cx} ${u.topp})">${x.hatt.ikon}</text>`;
     else if (x.krona) ut += `<text x="${cx}" y="${u.topp + 4}" font-size="46" text-anchor="middle">👑</text>`;
@@ -590,6 +628,7 @@ function ritaDjur(art, humor, steg, x = {}) {
   if (u.grisnos) ut += `<ellipse cx="${hx}" cy="${hy + 8}" rx="13" ry="9" fill="${u.grisnos}" stroke="#ec407a" stroke-width="2"/><ellipse cx="${hx - 5}" cy="${hy + 8}" rx="2.5" ry="4" fill="#ad1457"/><ellipse cx="${hx + 5}" cy="${hy + 8}" rx="2.5" ry="4" fill="#ad1457"/>`;
   if (u.nabb) ut += `<path d="M${hx - 8} ${hy + 6} L${hx + 8} ${hy + 6} L${hx} ${hy + 16} Z" fill="${u.nabb}"/>`;
   if (u.morrhar) ut += `<path d="M${hx - 22} ${hy + 10} h-18 M${hx - 22} ${hy + 16} l-16 5 M${hx + 22} ${hy + 10} h18 M${hx + 22} ${hy + 16} l16 5" stroke="${linje}" stroke-width="2" opacity=".6"/>`;
+  ut += evoFram(x.form, hx, hy, hr, x.hatt);
   // saker: på ögonen eller på huvudet, som en del av bilden
   if (x.hatt && PA_OGONEN.has(x.hatt.id)) ut += `<text x="${hx}" y="${hy + 14}" font-size="46" text-anchor="middle">${x.hatt.ikon}</text>`;
   else if (x.hatt) ut += `<text x="${hx + 4}" y="${hy - hr + 16}" font-size="50" text-anchor="middle" transform="rotate(-10 ${hx} ${hy - hr})">${x.hatt.ikon}</text>`;
@@ -2522,7 +2561,7 @@ class SkolanPanel extends HTMLElement {
         ${o.skold ? `<div class="skold-ikon hj">${skoldIk(o.skold)}</div>` : ""}${o.motSkold ? `<div class="skold-ikon fi">${skoldIk(o.motSkold)}</div>` : ""}
         ${!o.idle && skyddText(o.deSkydd, o.deTillbaka) ? `<div class="skyddtext fi">${skyddText(o.deSkydd, o.deTillbaka)}</div>` : ""}
         ${motFas && !o.miss && skyddText(o.skydd, o.tillbaka) ? `<div class="skyddtext hj">${skyddText(o.skydd, o.tillbaka)}</div>` : ""}
-        <div class="hjalte"><div class="kropp">${o.djur ? ritaDjur(o.djur.art, ko ? "hungrig" : "glad", Math.max(1, o.djur.steg), {}) : "🐾"}</div>
+        <div class="hjalte"><div class="kropp">${o.djur ? ritaDjur(o.djur.art, ko ? "hungrig" : "glad", Math.max(1, o.djur.steg), { form: o.djur.form }) : "🐾"}</div>
           ${motFas && o.motAt && !o.miss ? `<div class="mot-fx">${Array.from({ length: 9 }, (_, i) => `<i style="--v:${i * 40}deg;--d:${(i * 0.04).toFixed(2)}s">${o.motAt.id === "a_meteor" ? "☄️" : o.motAt.ikon}</i>`).join("")}</div>` : ""}
           ${motFas ? `<div class="tal motal">${o.miss ? "<span>MISS!</span>" : String(o.mot).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("")}</div>` : ""}</div>
         ${motFas ? `<div class="motnamn">${o.motAt ? `${esc(o.mon?.namn || "")} använder ${o.motAt.ikon} ${esc(o.motAt.namn)}!` : `${o.mon?.ikon || "👾"} ${esc(o.mon?.boss ? o.mon.namn : "Monstret")} slår tillbaka!`}</div>` : ""}
@@ -3881,7 +3920,7 @@ class SkolanPanel extends HTMLElement {
         <p class="small muted">Lägg undan telefonen eller ha bara läxan öppen. Två fokuspass om dagen ger ⭐.</p></div>`;
     }
     const slut = new Date(f.start).getTime() + f.min * 60000;
-    return `<div class="card center fokus-pagar"><div class="fokus-djur sover">${d ? ritaDjur(d.art, "nojd", Math.max(1, d.steg), {}) : ""}<span class="zzz">💤</span></div>
+    return `<div class="card center fokus-pagar"><div class="fokus-djur sover">${d ? ritaDjur(d.art, "nojd", Math.max(1, d.steg), { form: d.form }) : ""}<span class="zzz">💤</span></div>
       <div class="fokus-tid" id="fokus-tid" data-slut="${slut}">--:--</div>
       <p class="small">${d ? esc(d.namn) : "Husdjuret"} sover. Plugga på så länge! 📚</p>
       <button class="primary" id="fokus-klar" style="display:none">🎉 Klar! Väck ${d ? esc(d.namn) : "husdjuret"}</button>
@@ -3976,7 +4015,7 @@ class SkolanPanel extends HTMLElement {
     const scen = `<div class="gs-scen ${kombo ? "kombo" : ""} ${ny && sen?.ratt && kombo ? "skak" : ""}" style="--varld:${k.monster.varld?.farg || "#5c6bc0"}">
       ${ny && sen?.ratt && sen.skada ? `<div class="gs-skott">${skott}</div><div class="gs-siffra ${kombo ? "stor" : ""}">−${sen.skada}</div>` : ""}
       ${ny && sen && !sen.ratt ? `<div class="gs-blixt"></div>` : ""}
-      <div class="gs-sida"><div class="gs-figur ${ny && sen && !sen.ratt ? "traffad" : ""} ${ny && sen?.ratt ? "skjuter" : ""}">${ritaDjur(d.art, sen && !sen.ratt ? "ledsen" : "glad", Math.max(1, d.steg), {})}</div>${bar(gs.liv, gs.liv_max, "liv")}<div class="small">❤️ ${gs.liv}/${gs.liv_max}</div></div>
+      <div class="gs-sida"><div class="gs-figur ${ny && sen && !sen.ratt ? "traffad" : ""} ${ny && sen?.ratt ? "skjuter" : ""}">${ritaDjur(d.art, sen && !sen.ratt ? "ledsen" : "glad", Math.max(1, d.steg), { form: d.form })}</div>${bar(gs.liv, gs.liv_max, "liv")}<div class="small">❤️ ${gs.liv}/${gs.liv_max}</div></div>
       <div class="gs-mitt">${sen ? (sen.ratt ? `<div class="gs-traff">${kombo ? "🔥 KOMBO" : "TRÄFF!"}${sen.trott ? "<small>Monstret är trött på glosor idag</small>" : ""}</div>` : `<div class="gs-miss">💥 −${sen.mot} ❤️</div>`) : "⚔️"}</div>
       <div class="gs-sida"><div class="gs-figur mon ${ny && sen?.ratt ? "traff" : ""} ${ny && sen && !sen.ratt ? "anfall" : ""}">${mon.ikon}</div>${bar(gs.kvar, gs.hp, "boss-hp")}<div class="small">${mon.boss ? "👑 " : ""}${esc(mon.namn)} · ${gs.kvar}/${gs.hp}</div></div></div>
       <div class="gs-kombo">${gs.kombo ? `🔥 ${gs.kombo} i rad${gs.kombo >= GS.kombo ? " · dubbel skada!" : ` · ${GS.kombo - gs.kombo} till kombo`}` : "&nbsp;"}</div>`;
