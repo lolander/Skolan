@@ -1714,7 +1714,7 @@ class SkolanPanel extends HTMLElement {
       const mina = (k.attacker || []).filter((x) => x.har);
       attacker = mina.length
         ? `<div class="attack-rad"><span class="energi" title="Energi">⚡ ${k.energi}</span>${mina.map((x) => {
-            const slut = x.id === "a_super" && k.super_anvand;
+            const slut = x.slut;
             const kan = !slut && !ko && k.energi >= x.energi && !this._busy;
             return `<button class="attack-knapp ${x.svag ? "svag" : ""}" data-attack="${x.id}" ${kan ? "" : "disabled"} title="${esc(x.namn)}: ${esc(x.info)}">
               <span class="ai">${x.ikon}</span><b>${x.nu}</b><small>${slut ? "använd" : x.energi + "⚡"}</small></button>`;
@@ -2275,7 +2275,7 @@ class SkolanPanel extends HTMLElement {
     const ko = k.liv <= 0, fel = this._msg?.type === "error" ? this._msg.text : "";
     const vecka = k.super_anvand;
     const at = (k.attacker || []).filter((x) => x.har).map((x) => {
-      const kan = !o.titta && !ko && k.energi >= x.energi && !(x.id === "a_super" && vecka);
+      const kan = !o.titta && !ko && k.energi >= x.energi && !x.slut;
       return `<button data-s-attack="${x.id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${x.nu}</small></button>`;
     }).join("");
     const dr = (k.drycker || []).filter((x) => x.antal).map((x) => {

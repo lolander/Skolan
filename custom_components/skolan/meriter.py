@@ -1522,10 +1522,13 @@ def karta_status(data: dict) -> dict:
     m = _m(data)
     agda = m.get("attacker", [])
     lista = []
+    vecka_nu = "{}-W{:02d}".format(*dt_util.now().date().isocalendar()[:2])
+    idag_nu = dt_util.now().date().isoformat()
     for at in ATTACKER:
         skada, svag = _attack_varde(data, at, info)
         niva = attack_niva(data, at["id"]) if at["id"] in agda else 1
-        lista.append({**at, "har": at["id"] in agda, "nu": skada, "svag": svag, "lvl": niva, "lvl_max": ATTACK_NIVA_MAX,
+        slut = (at["id"] == "a_super" and k.get("super") == vecka_nu) or (at.get("per_dag") and k.get("per_dag", {}).get(at["id"]) == idag_nu)
+        lista.append({**at, "har": at["id"] in agda, "nu": skada, "svag": svag, "slut": bool(slut), "lvl": niva, "lvl_max": ATTACK_NIVA_MAX,
                       "lvl_pris": attack_uppgradera_pris(at, niva) if at["id"] in agda else None,
                       "skada_lvl": attack_skada(at, niva),
                       "skada_nasta": attack_skada(at, niva + 1) if niva < ATTACK_NIVA_MAX else None})
@@ -1594,6 +1597,21 @@ ATTACKER = [
      "info": "Stark attack."},
     {"id": "a_super", "ikon": "💥", "namn": "Superattack", "typ": "kraft", "pris": 400, "steg": 2, "energi": 3, "skada": 30,
      "info": "Jättestark, men bara en gång per vecka."},
+    # ---- fler attacker: bonusen hänger ihop med pluggandet ----
+    {"id": "a_istapp", "ikon": "🧊", "namn": "Istapp", "typ": "is", "pris": 80, "steg": 0, "energi": 1, "skada": 3,
+     "info": "+3 skada om du har övat glosor idag."},
+    {"id": "a_strale", "ikon": "💧", "namn": "Vattenstråle", "typ": "vatten", "pris": 100, "steg": 0, "energi": 1, "skada": 3,
+     "info": "+1 skada per förhör du har gjort den här veckan (högst +6)."},
+    {"id": "a_bok", "ikon": "📚", "namn": "Bokstorm", "typ": "kraft", "pris": 180, "steg": 1, "energi": 2, "skada": 5,
+     "info": "+1 skada per 10 ⭐ du har tjänat idag (högst +10)."},
+    {"id": "a_blomma", "ikon": "🌸", "namn": "Blomsterstorm", "typ": "natur", "pris": 220, "steg": 1, "energi": 2, "skada": 7, "laka": 4,
+     "info": "Läker 4 ❤️ på ditt husdjur varje gång."},
+    {"id": "a_aska", "ikon": "🌩️", "namn": "Åskknall", "typ": "blixt", "pris": 300, "steg": 2, "energi": 2, "skada": 9,
+     "info": "+2 skada per läxa du har klarat i tid den här veckan (högst +10)."},
+    {"id": "a_lava", "ikon": "🌋", "namn": "Lavaregn", "typ": "eld", "pris": 350, "steg": 2, "energi": 2, "skada": 11,
+     "info": "+50 % skada mot världsbossar."},
+    {"id": "a_regnbage", "ikon": "🌈", "namn": "Regnbågsstråle", "typ": "kraft", "pris": 650, "steg": 3, "energi": 3, "skada": 16, "per_dag": True,
+     "info": "Alla monster är svaga mot den (dubbel skada)! En gång per dag."},
 ]
 # Uppgradera en köpt attack: ungefär +20 % av grundskadan per nivå (minst +1), och varje nivå kostar mer än den förra.
 ATTACK_NIVA_MAX = 5
@@ -1912,7 +1930,20 @@ def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
         skada *= 2
     elif at["id"] == "a_vag":
         skada += min(9, _streak(m["ovningsdagar"]))
-    svag = mon.get("svag") == at["typ"]
+    elif at["id"] == "a_istapp" and any(idag in g.get("ovat_dagar", []) for a in data.get("amnen", []) for g in a.get("glosor", [])):
+        skada += 3
+    elif at["id"] in ("a_strale", "a_aska"):
+        d0 = dt_util.now().date()
+        mandag = d0 - timedelta(days=d0.weekday())
+        if at["id"] == "a_strale":
+            skada += min(6, sum(1 for f in data.get("forhor", []) if f.get("status") == "klart" and (f.get("klart") or "")[:10] >= mandag.isoformat()))
+        else:
+            skada += min(10, 2 * int(_andel_vecka(data, mandag, d0)[2]))
+    elif at["id"] == "a_bok":
+        skada += min(10, _dag_poang(data, idag) // 10)
+    elif at["id"] == "a_lava" and mon.get("boss"):
+        skada *= 1.5
+    svag = mon.get("svag") == at["typ"] or bool(at.get("per_dag") and mon.get("svag"))  # regnbågen: alla monster är svaga
     return round(skada * djur_kraft(data)) * (SVAG_GANGER if svag else 1), svag
 
 
@@ -1963,6 +1994,9 @@ def attack(data: dict, at_id: str) -> dict:
     vecka = "{}-W{:02d}".format(*dt_util.now().date().isocalendar()[:2])
     if at_id == "a_super" and k.get("super") == vecka:
         raise ValueError("Superattacken går bara att använda en gång per vecka.")
+    idag = dt_util.now().date().isoformat()
+    if at.get("per_dag") and k.get("per_dag", {}).get(at_id) == idag:
+        raise ValueError(f"{at['namn']} går bara att använda en gång per dag.")
     if k.get("energi", 0) < at["energi"]:
         raise ValueError(f"Du behöver {at['energi']} ⚡ energi. Plugga mer så laddas den!")
     liv_fore, liv_max = djur_liv(data)
@@ -1975,6 +2009,8 @@ def attack(data: dict, at_id: str) -> dict:
     k["energi"] -= at["energi"]
     if at_id == "a_super":
         k["super"] = vecka
+    if at.get("per_dag"):
+        k.setdefault("per_dag", {})[at_id] = idag
     k["senaste"] = {"id": at_id, "skada": skada, "svag": svag, "niva": n, "tid": dt_util.now().isoformat(timespec="seconds")}
     _rakna(data, "attacker")
     _karta_skada(data, skada)
@@ -1983,6 +2019,7 @@ def attack(data: dict, at_id: str) -> dict:
     miss = not klar and random.random() < MISS_CHANS
     sk = skold(data)
     laka = sk.get("laka", 0) if sk else 0
+    laka += at.get("laka", 0)  # blomsterstormen läker också
     if laka:  # lövskölden läker lite när husdjuret attackerar
         liv_fore = min(liv_max, liv_fore + laka)
     skydd = {"skada": 0, "skydd": "", "tillbaka": 0}
