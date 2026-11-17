@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.61.0"
+VERSION = json.loads((Path(__file__).parent / "manifest.json").read_text("utf-8"))["version"]  # alltid samma som manifestet
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -424,13 +424,15 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     else:
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ateruppta)
 
+    # Ny fil = ny adress och nytt elementnamn, så ingen webbläsare visar en gammal app ur cachen.
+    panel_v = f"{VERSION}-{int((Path(__file__).parent / 'www' / 'panel.js').stat().st_mtime)}"
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path="skolan",
-        webcomponent_name=f"skolan-panel-{VERSION.replace('.', '-')}",  # nytt namn per version = appen laddar alltid den nya
+        webcomponent_name=f"skolan-panel-{panel_v.replace('.', '-')}",  # nytt namn per version = appen laddar alltid den nya
         sidebar_title="Läxspelet",
         sidebar_icon="mdi:school",
-        module_url=f"{STATIC_URL}/panel.js?v={VERSION}",
+        module_url=f"{STATIC_URL}/panel.js?v={panel_v}",
         require_admin=False,
         config={},
     )
