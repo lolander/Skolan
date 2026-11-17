@@ -278,3 +278,49 @@ def prat(data: dict) -> str:
     if not lista or random.random() < 0.25:
         lista.append(random.choice(FAKTA + PEPP[:5]))
     return random.choice(lista)
+
+
+# ---------- hejarop från föräldrarna ----------
+HEJA_BOOST = (0, 5, 10, 20)  # ⭐ en förälder kan skicka med
+
+
+def hejarop_ny(data: dict, text: str, boost: int, nar: str, varde: str, av: str) -> None:
+    text = re.sub(r"\s+", " ", str(text or "")).strip()[:300]
+    if not text:
+        raise ValueError("Skriv något till barnet.")
+    if nar not in ("nu", "datum", "svit"):
+        nar = "nu"
+    if nar == "datum" and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(varde or "")):
+        raise ValueError("Välj ett datum.")
+    if nar == "svit":
+        try:
+            varde = max(2, min(100, int(varde)))
+        except (TypeError, ValueError) as err:
+            raise ValueError("Skriv hur många dagar i rad.") from err
+    lista = data.setdefault("hejarop", [])
+    lista.append({"id": __import__("uuid").uuid4().hex[:10], "text": text, "boost": boost if boost in HEJA_BOOST else 0,
+                  "nar": nar, "varde": varde if nar != "nu" else None, "av": str(av or "")[:40],
+                  "skapad": dt_util.now().isoformat(timespec="minutes"), "last": None})
+    del lista[:-50]
+
+
+def _heja_redo(data: dict, h: dict) -> bool:
+    if h["nar"] == "datum":
+        return dt_util.now().date().isoformat() >= h["varde"]
+    if h["nar"] == "svit":
+        return meriter._streak(meriter._m(data).get("ovningsdagar", [])) >= int(h["varde"])
+    return True
+
+
+def hejarop_synliga(data: dict) -> list[dict]:
+    """Det barnet får se: bara lappar som har "kommit fram" och inte är lästa än."""
+    return [{k: h[k] for k in ("id", "text", "boost", "av")} for h in data.get("hejarop", []) if not h.get("last") and _heja_redo(data, h)]
+
+
+def hejarop_las(data: dict, hid: str) -> None:
+    h = next((x for x in data.get("hejarop", []) if x["id"] == hid and not x.get("last") and _heja_redo(data, x)), None)
+    if not h:
+        raise ValueError("Lappen finns inte.")
+    h["last"] = dt_util.now().isoformat(timespec="minutes")
+    if h.get("boost"):
+        meriter.ge(data, int(h["boost"]), f"💌 Hejarop från {h.get('av') or 'mamma eller pappa'}", f"heja:{h['id']}", "💌")

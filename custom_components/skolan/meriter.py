@@ -627,6 +627,10 @@ def lagt_in(data: dict, amne_id: str, typ: str, glosor: dict | None = None) -> N
     kolla_medaljer(data)
 
 
+REPETERA_DAGAR = 10  # så länge sedan listan övades för att den ska räknas som repetition
+P_REPETERA = 10
+
+
 def ovat(data: dict, g: dict, ratt: int, av: int, dag: str | None = None, hela: bool = True) -> None:
     """hela = False när barnet bara övade på några ord (svåra ord). Då räknas sviten men inga övningsmeriter,
     annars lönar det sig att göra fel med flit och sedan öva på ett enda ord."""
@@ -635,6 +639,10 @@ def ovat(data: dict, g: dict, ratt: int, av: int, dag: str | None = None, hela: 
     idag = date.fromisoformat(dag) if dag else dt_util.now().date()
     dag = idag.isoformat()
     ovade = g.setdefault("ovat_dagar", [])
+    fore = [x for x in ovade if x < dag]
+    if hela and fore and (idag - date.fromisoformat(fore[-1])).days >= REPETERA_DAGAR:
+        # gamla glosor glöms: att repetera en lista man inte har övat på länge ger extra
+        ge(data, P_REPETERA, f"🔁 Repeterade {g['namn']}", f"rep:{g['id']}:{dag}", "🔁")
     if dag not in ovade:
         ovade.append(dag)
         ovade.sort()
@@ -1352,7 +1360,7 @@ BOSS_MAL_BAS = 100  # svit, dagens utmaning m.m. en vanlig vecka
 BOSS_LAXA = {"glosor": 90, "bok": 45}  # ungefär vad en läxa i schemat ger en vecka man gör den ordentligt
 BOSS_LAXA_ANNAN = 50
 BOSS_ATTACK_TILLAGG = 1.15  # attackerna ger extra skada, så monstren har lite mer liv
-EJ_SKADA = ("🎟️", "👾", "🗺️", "🏳️")  # belöningar gör ingen skada och ger ingen pass-XP
+EJ_SKADA = ("🎟️", "👾", "🗺️", "🏳️", "💌", "🧩", "🎁", "🃏", "🤝", "🎂")  # gåvor och bonusar gör ingen skada  # belöningar gör ingen skada och ger ingen pass-XP
 P_NIVA_STJARNA = 5  # meriter per stjärna när en nivå klaras
 P_VARLDSBOSS = 50
 ENERGI_MAX = 15

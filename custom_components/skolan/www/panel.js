@@ -186,7 +186,8 @@ const las_upp_forhor = (hass, barn, forhor, i, sprak) => {
 };
 
 // Ordpar som har både ord och översättning (krävs för Glosrekord)
-const GS = { kombo: 5 }; // glosstrid: så många rätt i rad ger dubbel skada
+const GS = { kombo: 5 };
+const REPETERA = { dagar: 10, p: 10 }; // samma som REPETERA_DAGAR och P_REPETERA i meriter.py // glosstrid: så många rätt i rad ger dubbel skada
 const spelbaraPar = (g) => (g?.par || []).filter((p) => p.length > 1 && String(p[0]).trim() && String(p[1]).trim());
 
 // ---------- husdjuret som bild (SVG) ----------
@@ -2921,6 +2922,7 @@ class SkolanPanel extends HTMLElement {
       const butik = s.butik?.beloningar || [];
       foralder = `
         ${s.skola ? `<button class="row foralder-knapp" id="open-skola" style="margin-top:4px"><span>🏫 <b>Skolan och läraren</b>${s.skola.inkorg?.length ? ` <span class="badge">📬 ${s.skola.inkorg.length}</span>` : ""}<br><span class="muted small">Välj vad läraren får, veckobrev från läraren, rapport via e-post och klasslag</span></span><span>›</span></button>` : ""}
+        ${this._hejaropForalder()}
         <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
         <h3 style="margin-top:4px">📅 Läxschema för ${esc(s.namn)}</h3>
         <p class="muted small">När läxan brukar komma. Lägger ${esc(s.namn)} in den samma dag eller dagen efter blir det +${p.i_tid} ⭐. Glosor får förhörsdagen ifylld automatiskt. ${esc(s.namn)} får en påminnelse kl. 17.15 den dagen läxan brukar komma.</p>
@@ -3668,6 +3670,44 @@ class SkolanPanel extends HTMLElement {
     }
   }
 
+  // Listor som inte har övats på länge: repetera för extra ⭐ (gamla glosor glöms annars).
+  _repeteraKort() {
+    if (this._s.kan_valja) return "";
+    const idag = new Date(), dagar = (iso) => Math.floor((idag - new Date(iso + "T12:00")) / 86400000);
+    const lista = (this._s.data.amnen || []).flatMap((a) => a.glosor.filter((g) => (g.ovat_dagar || []).length && spelbaraPar(g).length)
+      .map((g) => ({ a, g, sen: dagar(g.ovat_dagar[g.ovat_dagar.length - 1]) }))).filter((x) => x.sen >= REPETERA.dagar).sort((x, y) => y.sen - x.sen).slice(0, 3);
+    if (!lista.length) return "";
+    return `<div class="card repetera-kort"><b>🔁 Dags att repetera!</b> <span class="small">+${REPETERA.p} ⭐ extra per lista</span>
+      <div class="small muted">Det du inte har övat på länge börjar glömmas. Ett varv räcker!</div>
+      ${lista.map(({ a, g, sen }) => `<button class="row" data-rep="${a.id}|${g.id}"><span><b>${esc(g.namn)}</b><br><span class="muted small">${esc(a.namn)} · övade för ${sen} dagar sedan</span></span><span>▶</span></button>`).join("")}</div>`;
+  }
+
+  // Lappar från mamma eller pappa som har kommit fram.
+  _hejaropKort() {
+    if (this._s.kan_valja) return "";
+    return (this._s.data.hejarop || []).map((h) => `<div class="card heja-kort">
+      <div class="heja-ikon">💌</div>
+      <div class="heja-text"><div class="small">Från ${esc(h.av || "mamma eller pappa")}</div><div class="heja-lapp">${esc(h.text)}</div>
+      <button class="primary" data-heja-las="${h.id}">❤️ Tack!${h.boost ? ` (+${h.boost} ⭐)` : ""}</button></div></div>`).join("");
+  }
+
+  // Föräldern skickar hejarop: direkt, ett visst datum eller när barnet når en svit.
+  _hejaropForalder() {
+    const s = this._s, lista = (s.data.hejarop || []).slice().reverse();
+    const status = (h) => h.last ? `✅ läst ${esc(h.last.replace("T", " "))}` : h.nar === "datum" ? `📅 kommer ${esc(h.varde)}` : h.nar === "svit" ? `🔥 kommer vid ${h.varde} dagar i rad` : "⏳ visas nästa gång";
+    return `<h3>💌 Hejarop till ${esc(s.namn)}</h3>
+      <p class="small muted">En lapp som dyker upp hos ${esc(s.namn)}. Skicka med ⭐ om du vill.</p>
+      <div class="card"><textarea id="heja-text" rows="2" maxlength="300" placeholder="t.ex. Heja dig på provet imorgon! ❤️"></textarea>
+        <div class="heja-val">
+          <label class="small">När <select id="heja-nar"><option value="nu">Nästa gång appen öppnas</option><option value="datum">Ett visst datum</option><option value="svit">När ${esc(s.namn)} pluggat X dagar i rad</option></select></label>
+          <input id="heja-varde" style="display:none">
+          <label class="small">Bonus <select id="heja-boost"><option value="0">Ingen</option><option value="5">+5 ⭐</option><option value="10">+10 ⭐</option><option value="20">+20 ⭐</option></select></label>
+        </div>
+        <button class="primary" id="heja-skicka">💌 Skicka</button></div>
+      ${lista.length ? `<div class="list">${lista.slice(0, 8).map((h) => `<div class="row static"><span>${esc(h.text)}<br><span class="muted small">${status(h)}${h.boost ? ` · +${h.boost} ⭐` : ""}</span></span>
+        <button class="mini" data-heja-bort="${h.id}">🗑️</button></div>`).join("")}</div>` : ""}`;
+  }
+
   // Dagens hälsning, veckans händelse och dagens gåta (svaret kommer i morgon).
   _dagensKort() {
     const g = this._s.dagens, h = this._s.handelse;
@@ -3774,7 +3814,9 @@ class SkolanPanel extends HTMLElement {
     const amnen = this._s.data.amnen || [];
     return `
       ${this._s.kan_valja ? `<button class="row foralder-knapp" id="open-foralder"><span>⚙️ <b>Föräldrar</b><br><span class="muted small">Läxschema, bonus och belöningsbutik för ${esc(this._s.namn)}</span></span><span>›</span></button>` : ""}
+      ${this._hejaropKort()}
       ${this._dagensKort()}
+      ${this._repeteraKort()}
       ${this._forhorLista()}
       ${this._djurKort()}
       ${this._utmaningKort()}
@@ -5152,6 +5194,30 @@ class SkolanPanel extends HTMLElement {
     on("#sk-test", () => this._skolaAct({ op: "mejl_test", till: $("#sk-test-till")?.value || "" }, "Testmejlet är skickat 📧"));
     on("#sk-koppla-bort", () => { if (confirm("Koppla bort läraren? Klasslänken byts ut och läraren behöver koppla in eleven igen.")) this._skolaAct({ op: "koppla_bort" }, "Läraren är bortkopplad."); });
     on("#sk-kopiera", () => navigator.clipboard?.writeText(this._s.skola?.lank || "").then(() => { this._msg = { type: "ok", text: "Klasslänken är kopierad 📋" }; this._render(); }));
+    r.querySelectorAll("[data-rep]").forEach((b) => b.addEventListener("click", () => { const [am, gl] = b.dataset.rep.split("|"); this._go({ name: "glosor", amne: am, glosor: gl }); }));
+    r.querySelectorAll("[data-heja-las]").forEach((b) => b.addEventListener("click", async () => {
+      if (await this._act("hejarop_las", { id: b.dataset.hejaLas })) { this._msg = { type: "ok", text: "💌 Lappen är sparad i hjärtat ❤️" }; await this._load(this._s.barn); }
+      this._render();
+    }));
+    const hejaNar = $("#heja-nar"), hejaVarde = $("#heja-varde");
+    hejaNar?.addEventListener("change", () => {
+      hejaVarde.style.display = hejaNar.value === "nu" ? "none" : "";
+      hejaVarde.type = hejaNar.value === "datum" ? "date" : "number";
+      hejaVarde.placeholder = hejaNar.value === "svit" ? "dagar, t.ex. 5" : "";
+      hejaVarde.value = "";
+    });
+    on("#heja-skicka", async () => {
+      const text = $("#heja-text")?.value.trim();
+      if (!text) return;
+      if (await this._act("hejarop_ny", { text, nar: hejaNar.value, varde: hejaVarde.value, boost: Number($("#heja-boost").value) })) {
+        this._msg = { type: "ok", text: "💌 Hejaropet är skickat!" }; await this._load(this._s.barn);
+      }
+      this._render();
+    });
+    r.querySelectorAll("[data-heja-bort]").forEach((b) => b.addEventListener("click", async () => {
+      if (confirm("Ta bort hejaropet?") && await this._act("hejarop_bort", { id: b.dataset.hejaBort })) await this._load(this._s.barn);
+      this._render();
+    }));
     on("#gata-gissa", async () => {
       const v = $("#gata-svar")?.value.trim();
       if (!v) return;
@@ -6105,6 +6171,12 @@ const CSS = `
   .sak-ikon { position:relative; }
   .bastis-hjarta { position:absolute; top:-6px; right:-10px; font-size:16px; animation:bastis 1.6s ease-in-out infinite; }
   @keyframes bastis { 0%,100% { transform:scale(1); } 50% { transform:scale(1.25); } }
+  .repetera-kort { border-left:4px solid #7e57c2; }
+  .heja-kort { display:flex; gap:12px; align-items:flex-start; background:linear-gradient(135deg,#fce4ec,#f8bbd0); color:#4a148c; animation:gs-pop .6s; }
+  .heja-ikon { font-size:40px; animation:bastis 1.6s ease-in-out infinite; }
+  .heja-text { flex:1; }
+  .heja-lapp { font-size:17px; font-weight:600; margin:4px 0 8px; font-family:"Comic Sans MS","Chalkboard SE",cursive; }
+  .heja-val { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin:6px 0; }
   .dagens-kort { background:linear-gradient(135deg,#fff8e1,#e1f5fe); color:#263238; }
   .dagens-halsning { font-size:15px; font-weight:600; margin-bottom:8px; }
   .handelse { font-size:13px; padding:6px 10px; border-radius:10px; background:rgba(255,152,0,.18); margin-bottom:8px; }

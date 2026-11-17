@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.51.0"
+VERSION = "1.52.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -939,6 +939,7 @@ class ActionView(HomeAssistantView):
         barn = _barn_for(hass, request, body.get("barn"))
         foralder = _ar_foralder(hass, request)
         body["_barn"] = not foralder  # meriter bara när barnet själv gör något
+        body["_av"] = request["hass_user"].name if foralder else ""
         op = str(body.get("op") or "")
         if op in FORALDER_OPS and not foralder:
             raise web.HTTPForbidden
@@ -1045,6 +1046,7 @@ def _ebok_fil(bok_id: str) -> str:
 FORALDER_OPS = {
     "schema_spara", "bonus", "los_in", "butik_lagg_till", "butik_ta_bort",
     "manuell_uppdrag", "manuell_schema", "manuell_forhor", "manuell_ovning", "manuell_plugg", "angra_ovning",
+    "hejarop_ny", "hejarop_bort",
 }
 
 
@@ -1066,6 +1068,16 @@ def _apply(data: dict, body: dict) -> list[str]:
     if op in ("ova_tips", "ova_forsok"):
         if body.get("_barn"):  # föräldrar som provar övningen betalar inget
             meriter.kop_tips(data, "forsok" if op == "ova_forsok" else "tips")
+        return []
+    if op == "hejarop_ny":
+        dagens.hejarop_ny(data, body.get("text"), int(body.get("boost") or 0), str(body.get("nar") or "nu"), body.get("varde"), body.get("_av") or "")
+        return []
+    if op == "hejarop_bort":
+        data["hejarop"] = [h for h in data.get("hejarop", []) if h["id"] != body.get("id")]
+        return []
+    if op == "hejarop_las":
+        if body.get("_barn"):
+            dagens.hejarop_las(data, str(body.get("id") or ""))
         return []
     if op in ("gata_gissa", "gata_svar"):  # dagens gåta (bara barnet själv)
         if not body.get("_barn"):
@@ -2342,6 +2354,8 @@ def _ut(data: dict, foralder: bool) -> dict:
         ]
     if "meriter" in data:
         data["meriter"] = {k: v for k, v in data["meriter"].items() if k != "nycklar"}
+    if not foralder:  # hejarop som inte har kommit fram än är en överraskning
+        data["hejarop"] = dagens.hejarop_synliga(data)
     return data
 
 
