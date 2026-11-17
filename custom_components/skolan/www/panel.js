@@ -2926,6 +2926,53 @@ class SkolanPanel extends HTMLElement {
       ${foralder}`;
   }
 
+  // Veckans topplista: tydlig ledare, poängstaplar och en tabell där syskonen kan jämföra mer än poängen.
+  _topplista() {
+    const s = this._s, lista = s.topplista || [];
+    if (!lista.length) return "";
+    const max = Math.max(100, ...lista.map((t) => t.vecka.poang));
+    const forsta = lista[0], andra = lista[1];
+    const jamnt = andra && andra.vecka.poang === forsta.vecka.poang;
+    const ledare = forsta.vecka.poang === 0 ? `<div class="tl-ledare tom">🏁 Veckan har precis börjat. Bli först!</div>`
+      : `<div class="tl-ledare"><div class="tl-krona">🥇</div><div><b>${esc(forsta.namn)}</b> ${forsta.id === s.barn ? "(du)" : ""} leder veckan
+          <div class="small">${forsta.vecka.poang} veckopoäng${andra ? (jamnt ? ` · lika med ${esc(andra.namn)}, avgjort på ${forsta.vecka.klara !== andra.vecka.klara ? "läxor i tid" : "veckans ⭐"}` : ` · ${forsta.vecka.poang - andra.vecka.poang} före ${esc(andra.namn)}`) : ""}</div></div></div>`;
+    const staplar = lista.map((t, i) => `<div class="tl-rad ${t.id === s.barn ? "jag" : ""}">
+        <div class="tl-namn">${["🥇", "🥈", "🥉"][i] || `${i + 1}.`} <b>${esc(t.namn)}</b>${t.titel ? ` <span class="titel-bricka">${esc(t.titel)}</span>` : ""}</div>
+        <div class="tl-bar"><div style="width:${Math.max(2, (t.vecka.poang / max) * 100)}%"></div><span>${t.vecka.poang}</span></div></div>`).join("");
+    // [rubrik, värde för barnet, text att visa, högst är bäst]
+    const rader = [
+      ["Den här veckan"],
+      ["🏆 Veckopoäng", (t) => t.vecka.poang, (t) => t.vecka.poang + (t.vecka.bonus ? ` <span class="small">(+${t.vecka.bonus})</span>` : "")],
+      ["✅ Läxor i tid", (t) => t.vecka.andel ?? -1, (t) => t.vecka.antal ? `${t.vecka.klara}/${t.vecka.antal}` : "–"],
+      ["📈 Insats mot förr", (t) => t.vecka.forbattring ?? -1, (t) => t.vecka.forbattring !== null ? `${t.vecka.forbattring}` : "–"],
+      ["⭐ Stjärnor", (t) => t.vecka.denna, (t) => t.vecka.denna],
+      ["📅 Dagar pluggat", (t) => t.jamfor?.dagar ?? 0, (t) => `${t.jamfor?.dagar ?? 0}/${t.jamfor?.dagar_av ?? 7}`],
+      ["📋 Förhör", (t) => t.jamfor?.forhor ?? 0, (t) => t.jamfor?.forhor ?? 0],
+      ["🎯 Rätt på förhör", (t) => t.jamfor?.forhor_ratt ?? -1, (t) => t.jamfor?.forhor_ratt != null ? `${t.jamfor.forhor_ratt} %` : "–"],
+      ["📝 Glosövningar", (t) => t.jamfor?.glosor ?? 0, (t) => t.jamfor?.glosor ?? 0],
+      ["Totalt"],
+      ["🧭 Nivå", (t) => t.niva?.niva ?? 0, (t) => t.niva?.niva ?? "–"],
+      ["🌟 Stjärnor totalt", (t) => t.intjanat ?? 0, (t) => t.intjanat ?? 0],
+      ["🔥 Dagar i rad", (t) => t.streak ?? 0, (t) => t.streak ?? 0],
+      ["🏅 Bästa svit", (t) => t.jamfor?.basta_streak ?? 0, (t) => t.jamfor?.basta_streak ?? 0],
+      ["⚡ Glosrekord", (t) => t.jamfor?.rekord ?? 0, (t) => t.jamfor?.rekord ?? 0],
+      ["🎖️ Medaljer", (t) => t.jamfor?.medaljer ?? 0, (t) => t.jamfor?.medaljer ?? 0],
+      ["🗺️ Kartnivå", (t) => t.karta?.niva ?? 0, (t) => t.karta?.niva ?? "–"],
+      ["🐾 Husdjursnivå", (t) => t.karta?.djur_niva ?? 0, (t) => t.karta?.djur_niva ?? "–"],
+    ];
+    const tabell = `<div class="tl-tabell-wrap"><table class="tl-tabell"><tr><th></th>${lista.map((t) => `<th class="${t.id === s.barn ? "jag" : ""}">${esc(t.namn)}</th>`).join("")}</tr>
+      ${rader.map(([rub, varde, visa]) => {
+        if (!varde) return `<tr class="tl-grupp"><td colspan="${lista.length + 1}">${rub}</td></tr>`;
+        const v = lista.map(varde), basta = Math.max(...v), unik = v.filter((x) => x === basta).length === 1;
+        return `<tr><td>${rub}</td>${lista.map((t, i) => `<td class="${t.id === s.barn ? "jag" : ""} ${v[i] === basta && basta > 0 && unik ? "basta" : ""}">${visa(t)}${v[i] === basta && basta > 0 && unik ? " 👑" : ""}</td>`).join("")}</tr>`;
+      }).join("")}</table></div>`;
+    return `<h3>🏆 Veckans topplista</h3>${ledare}<div class="tl-staplar">${staplar}</div>
+      <h3>📊 Jämför</h3>${tabell}
+      <details class="small muted tl-info"><summary>Hur räknas veckopoängen?</summary>
+        <p>Veckopoäng = hur stor del av dina egna läxor du klarat i tid + din insats jämfört med dina senaste 4 veckor. Har du alla läxor i tid vecka efter vecka får du full insats och +5 bonus för varje perfekt vecka i rad (max +20). Så har alla samma chans.</p>
+        <p>Har två lika många poäng vinner den som har klarat flest läxor i tid, och sedan den som har fått flest ⭐ den här veckan. 👑 visar vem som är bäst på varje rad.</p></details>`;
+  }
+
   _meriterInnehall(m, n, logg, p) {
     const s = this._s;
     return `
@@ -2936,23 +2983,7 @@ class SkolanPanel extends HTMLElement {
         <div class="muted small">${m.intjanat} meriter totalt · ${n.kvar} till nästa nivå${m.streak ? ` · 🔥 ${m.streak} dagar i rad` : ""}</div>
       </div>
 
-      <h3>🏆 Veckans topplista</h3>
-      <div class="list">
-        ${s.topplista
-          .map((t, i) => {
-            const w = t.vecka;
-            const delar = [
-              w.andel !== null ? `✅ ${w.klara}/${w.antal} läxor i tid` : null,
-              w.forbattring !== null ? `📈 ${w.denna} ⭐ (snitt ${w.forra})` : null,
-              w.bonus ? `🔥 ${w.perfekta + 1} perfekta veckor i rad +${w.bonus}` : null,
-            ].filter(Boolean).join(" · ");
-            return `<div class="row static topp ${t.id === s.barn ? "jag" : ""}">
-              <span>${["🥇", "🥈", "🥉"][i] || ""} <b>${esc(t.namn)}</b>${t.titel ? ` <span class="titel-bricka">${esc(t.titel)}</span>` : ""}${t.karta ? ` <span class="small">🗺️ ${t.karta.niva}</span>` : ""}<br><span class="muted small">${delar || "Inget gjort än den här veckan"}</span></span>
-              <span class="topp-p"><b>${w.poang}</b><span class="muted small">poäng</span></span></div>`;
-          })
-          .join("")}
-      </div>
-      <p class="muted small">Veckopoäng = hur stor del av dina egna läxor du klarat i tid + din insats jämfört med dina senaste 4 veckor. Har du alla läxor i tid vecka efter vecka får du full insats och +5 bonus för varje perfekt vecka i rad (max +20). Så har alla samma chans. Har två lika många poäng vinner den som har klarat flest läxor i tid, och sedan den som har fått flest ⭐ den här veckan.</p>
+      ${this._topplista()}
 
       <h3>🏅 Medaljer</h3>
       <div class="medaljer">
@@ -5869,6 +5900,24 @@ const CSS = `
   .glod-eld .kropp { filter:drop-shadow(0 0 8px #ff5722) drop-shadow(0 0 18px #ffab00); }
   .glod-skugga .kropp { filter:drop-shadow(6px 6px 0 rgba(0,0,0,.55)); }
   .glod-snurr .kropp { animation:snurra 4s linear infinite; } @keyframes snurra { to { transform:rotate(360deg); } }
+  .tl-ledare { display:flex; gap:12px; align-items:center; padding:12px 14px; border-radius:14px; background:linear-gradient(135deg,#fff8e1,#ffe082); color:#4e342e; margin-bottom:10px; }
+  .tl-ledare.tom { justify-content:center; }
+  .tl-krona { font-size:34px; }
+  .tl-staplar { display:flex; flex-direction:column; gap:8px; margin-bottom:6px; }
+  .tl-rad { padding:6px 8px; border-radius:10px; }
+  .tl-rad.jag { background:var(--secondary-background-color, rgba(0,0,0,.04)); }
+  .tl-namn { margin-bottom:4px; }
+  .tl-bar { position:relative; height:22px; background:var(--divider-color, #e0e0e0); border-radius:11px; overflow:hidden; }
+  .tl-bar div { height:100%; background:linear-gradient(90deg,#ffb300,#ff7043); border-radius:11px; }
+  .tl-bar span { position:absolute; right:8px; top:2px; font-weight:700; font-size:13px; }
+  .tl-tabell-wrap { overflow-x:auto; }
+  .tl-tabell { width:100%; border-collapse:collapse; font-size:14px; }
+  .tl-tabell th, .tl-tabell td { padding:6px 8px; text-align:center; border-bottom:1px solid var(--divider-color, #e0e0e0); }
+  .tl-tabell td:first-child { text-align:left; white-space:nowrap; }
+  .tl-tabell th.jag, .tl-tabell td.jag { background:var(--secondary-background-color, rgba(0,0,0,.04)); }
+  .tl-tabell td.basta { font-weight:700; color:#e65100; }
+  .tl-grupp td { font-weight:700; text-align:left !important; padding-top:12px; border-bottom:2px solid var(--divider-color, #e0e0e0); }
+  .tl-info { margin-top:8px; }
   .glod-guld .kropp { filter:drop-shadow(0 0 6px #ffd700) drop-shadow(0 0 16px #ffb300) saturate(1.3); }
   .glod-ljus .kropp { filter:drop-shadow(0 0 10px #ffd54f) drop-shadow(0 0 22px #ffb300); }
   .djur-figur.eff { position:relative; }

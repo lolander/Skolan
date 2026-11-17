@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.43.1"
+VERSION = "1.44.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -843,7 +843,7 @@ class StateView(HomeAssistantView):
             for b in conf["barn"]:
                 d = data if b["id"] == barn else _load(_dir(hass, b["id"]))
                 ut.append({"id": b["id"], "namn": b["namn"], **meriter.sammanfattning(d), "vecka": meriter.veckoresultat(d),
-                           "titel": meriter.titel(d), "karta": meriter.karta_kort(d)})
+                           "titel": meriter.titel(d), "karta": meriter.karta_kort(d), "jamfor": meriter.jamfor(d)})
             return sorted(ut, key=lambda x: meriter.topp_nyckel(x["vecka"]), reverse=True)
 
         topplista = await hass.async_add_executor_job(_topp)

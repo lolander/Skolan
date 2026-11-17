@@ -1048,6 +1048,28 @@ def veckoresultat(data: dict) -> dict:
 
 
 
+def jamfor(data: dict) -> dict:
+    """Siffror som syskonen kan jämföra på topplistan: den här veckan och totalt."""
+    m = _m(data)
+    idag = dt_util.now().date()
+    mandag = (idag - timedelta(days=idag.weekday())).isoformat()
+    fh = [f for f in data.get("forhor", []) if f.get("status") == "klart" and (f.get("klart") or "")[:10] >= mandag]
+    n = sum(len(f.get("fragor", [])) for f in fh)
+    ratt = sum(1 for f in fh for x in f.get("svar", []) if x.get("ratt"))
+    r = m.get("raknare", {})
+    return {
+        "dagar": sum(1 for d in m["ovningsdagar"] if d >= mandag),
+        "dagar_av": idag.weekday() + 1,
+        "forhor": len(fh),
+        "forhor_ratt": round(100 * ratt / n) if n else None,
+        "glosor": sum(1 for a in data.get("amnen", []) for g in a.get("glosor", []) for d in g.get("ovat_dagar", []) if d >= mandag),
+        "medaljer": len(m.get("medaljer", {})),
+        "basta_streak": max(r.get("basta_streak", 0), _streak(m["ovningsdagar"])),
+        "ovningar": r.get("ovningar", 0),
+        "rekord": r.get("rekord_max", 0),
+    }
+
+
 def topp_nyckel(v: dict) -> tuple:
     """Ordningen på topplistan. Vid lika veckopoäng avgör läxor klara i tid och sedan veckans stjärnor."""
     return (v["poang"], v["klara"], v["denna"])
