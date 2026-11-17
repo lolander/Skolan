@@ -891,7 +891,7 @@ class StateView(HomeAssistantView):
                 "hogtider": meriter.aktiva_hogtider(),
                 "nasta_hogtid": meriter.nasta_hogtid(),
                 "djur_steg": [n for _g, n in meriter.DJUR_STEG],
-                "byt_djur_pris": meriter.P_BYT_DJUR,
+                "nytt_djur_pris": meriter.P_NYTT_DJUR,
                 "medaljlista": [
                     {"id": m[0], "ikon": m[1], "namn": m[2], "beskrivning": m[3]} for m in meriter.MEDALJER
                 ],
@@ -1286,7 +1286,7 @@ def _apply(data: dict, body: dict) -> list[str]:
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
         if op == "djur":
-            meriter.djur_valj(data, str(body.get("art") or ""), str(body.get("namn") or ""))
+            meriter.djur_valj(data, str(body.get("art") or ""), str(body.get("namn") or ""), str(body.get("id") or "") or None)
         elif op == "djur_kop":
             meriter.djur_kop(data, str(body.get("sak") or ""))
         elif op == "djur_paket":

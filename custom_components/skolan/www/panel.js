@@ -1795,10 +1795,21 @@ class SkolanPanel extends HTMLElement {
       <div class="small muted center">Samling: ${antalAgt} saker (${antalAlla} vanliga + säsongssaker)</div>
       ${paketHtml}${sasong}${nasta}${attackHtml}
       ${typer.map(([typ, rubrik]) => `<h3>${rubrik}</h3>${typ === "kompis" ? this._kompisRetas(d) : ""}<div class="sak-rutnat">${vanliga(typ).map(kort).join("")}</div>`).join("")}
-      ${titta ? "" : `<h3>🔄 Byt djur · ${d.gratis_byte !== false ? "🎁 Gratis en gång!" : `${s.byt_djur_pris} ⭐`}</h3>
-      ${(d.agda_djur || []).filter((a) => a !== d.art).length ? `<div class="small">Dina paketdjur (gratis att byta till):</div><div class="djur-val">${d.agda_djur.filter((a) => a !== d.art).map((a) => `<button data-djur-paketdjur="${a}" class="rit-val">${ritaDjur(a, "glad", Math.max(1, d.steg))}</button>`).join("")}</div>` : ""}
-      <div class="djur-val">${(s.djurlista || []).filter((a) => a !== d.art).map((a) => `<button data-djur-byt="${a}" class="rit-val" ${d.gratis_byte !== false || saldo >= s.byt_djur_pris ? "" : "disabled"}>${ritaDjur(a, "glad", Math.max(1, d.steg))}</button>`).join("")}</div>
-      <div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
+      ${titta ? "" : (() => {
+        const mina = d.mina || [], har = new Set(mina.map((h) => h.art));
+        const paket = (d.agda_djur || []).filter((a) => !har.has(a)), nya = (s.djurlista || []).filter((a) => !har.has(a));
+        const pris = s.nytt_djur_pris;
+        return `<h3>🐾 Mina husdjur</h3>
+        <div class="small muted">Varje husdjur växer och utvecklas av det du gör medan just det är med dig. Byt gratis mellan dina djur.</div>
+        <div class="mina-djur">${mina.map((h) => `<div class="mitt-djur ${h.aktiv ? "aktiv" : ""}"><div class="rit-val">${ritaDjur(h.art, "glad", h.steg, { form: h.form })}</div>
+          <div class="small"><b>${esc(h.namn)}</b><br>${h.form ? `${h.form.ikon} ${esc(h.form.namn)}` : esc(h.steg_namn)}</div>
+          ${h.aktiv ? `<div class="small"><b>✅ Med dig nu</b></div>` : `<button class="mini primary" data-djur-till="${h.id}">🔄 Byt</button>`}</div>`).join("")}</div>
+        ${paket.length ? `<h3>📦 Dina paketdjur</h3><div class="small muted">Redan betalda. De börjar som ägg.</div><div class="djur-val">${paket.map((a) => `<button data-djur-nytt="${a}" data-gratis="1" class="rit-val">${ritaDjur(a, "glad", 2)}</button>`).join("")}</div>` : ""}
+        <h3>🥚 Skaffa ett nytt husdjur · ${pris} ⭐</h3>
+        <div class="small muted">Det nya djuret börjar som ett ägg och följer med dig direkt. Dina andra djur finns kvar.</div>
+        <div class="djur-val">${nya.map((a) => `<button data-djur-nytt="${a}" class="rit-val" ${saldo >= pris ? "" : "disabled"}>${ritaDjur(a, "glad", 2)}</button>`).join("")}</div>`;
+      })()}
+      ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
   }
 
   // ---------- läxpasset ----------
@@ -2902,6 +2913,7 @@ class SkolanPanel extends HTMLElement {
         `Husdjuret äter när du gör något i Läxspelet. Gör du inget på ett par dagar blir det <b>hungrigt</b> och ledset.`,
         `🛍️ I <b>Husdjursbutiken</b> kan du köpa hattar, bakgrunder och effekter för dina stjärnor. Djuret växer ändå, för storleken räknas på alla meriter du har tjänat.`,
         `🎉 Inför högtider (jul, påsk, Halloween, sommarlov med flera) finns specialsaker i 2 veckor. Det du köper får du behålla för alltid.`,
+        `🐾 Du kan ha <b>flera husdjur</b>. Ett nytt kostar 100 ⭐ och börjar som ett ägg. Byt gratis mellan dina djur i butiken. Bara djuret som är med dig växer, får XP och utvecklas av det du gör.`,
       ])}
 
       ${kort("🎯", "Dagens utmaning", [
@@ -5818,13 +5830,19 @@ class SkolanPanel extends HTMLElement {
       }
     }));
     r.querySelectorAll("[data-djur-av]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: b.dataset.djurAv, sak: null })));
-    r.querySelectorAll("[data-djur-byt]").forEach((b) =>
-      b.addEventListener("click", async () => {
-        const gratis = this._s.meriter?.djur?.gratis_byte !== false;
-        if (!confirm(`Byta till ${b.dataset.djurByt}${gratis ? " gratis (bara en gång)" : ` för ${this._s.byt_djur_pris} ⭐`}? Sakerna du köpt följer med.`)) return;
-        await this._act("djur", { art: b.dataset.djurByt, namn: "" });
-      })
-    );
+    r.querySelectorAll("[data-djur-till]").forEach((b) => b.addEventListener("click", async () => {
+      const h = (this._s.meriter?.djur?.mina || []).find((x) => x.id === b.dataset.djurTill);
+      if (h && await this._act("djur", { id: h.id, art: h.art, namn: "" })) this._msg = { type: "ok", text: `${h.art} ${h.namn} är med dig nu! Allt du gör nu hjälper ${h.namn} att växa.` };
+      this._render();
+    }));
+    r.querySelectorAll("[data-djur-nytt]").forEach((b) => b.addEventListener("click", async () => {
+      const art = b.dataset.djurNytt, gratis = b.dataset.gratis === "1";
+      if (!confirm(`Skaffa ${art}${gratis ? "" : ` för ${this._s.nytt_djur_pris} ⭐`}? Det börjar som ett ägg. Dina andra djur finns kvar.`)) return;
+      const namn = this._ask("Vad ska ditt nya husdjur heta?", "");
+      if (namn === null) return;
+      if (await this._act("djur", { art, namn: namn || "" })) this._fx({ text: "🥚 NYTT HUSDJUR!", sub: `${art} ${namn || ""}`, emojis: ["🥚", art, "✨", "💖"], antal: 28, farg: "#ffb300" });
+      this._render();
+    }));
     r.querySelectorAll("[data-paket]").forEach((b) =>
       b.addEventListener("click", async () => {
         const p = (this._s.paket || []).find((x) => x.id === b.dataset.paket);
@@ -5833,7 +5851,6 @@ class SkolanPanel extends HTMLElement {
         this._render();
       })
     );
-    r.querySelectorAll("[data-djur-paketdjur]").forEach((b) => b.addEventListener("click", () => this._act("djur", { art: b.dataset.djurPaketdjur, namn: "" })));
     on("#djur-dop", async () => {
       const d = this._s.meriter?.djur;
       const namn = this._ask("Vad ska husdjuret heta?", d?.namn || "");
@@ -6582,6 +6599,10 @@ const CSS = `
   .lar-rad.barn .lar-bubbla { background:#e3f2fd; color:#0d47a1; border-bottom-right-radius:4px; }
   .lar-bubbla.tanker { animation:andas 1s ease-in-out infinite; }
   .lar-input { display:flex; flex-direction:column; gap:6px; }
+  .mina-djur { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; margin:8px 0; }
+  .mitt-djur { text-align:center; border:2px solid var(--divider-color); border-radius:12px; padding:6px; }
+  .mitt-djur.aktiv { border-color:#43a047; background:rgba(67,160,71,.08); }
+  .mitt-djur .rit-val { width:90px; height:90px; margin:0 auto; border:none; background:none; }
   .fraga-forslag { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
   .fraga-forslag .mini { border-radius:14px; }
   .lar-beloning { font-size:28px; font-weight:800; color:#2e7d32; animation:gs-pop .6s; }

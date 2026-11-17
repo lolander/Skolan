@@ -83,7 +83,61 @@ def _m(data: dict) -> dict:
     m.setdefault("medaljer", {})
     m.setdefault("raknare", {})
     m.setdefault("ovningsdagar", [])
+    d = m.get("djur")
+    if d and "husdjur" not in d:
+        # Förr hade barnet ett enda husdjur som växte av allt barnet gjort. Det blir det första djuret i stallet.
+        pid = f"h{len(m['logg'])}{random.randint(100, 999)}"
+        d["husdjur"] = [{"id": pid, "art": d.get("art"), "namn": d.get("namn") or "Kompis", "tillvaxt": m.get("intjanat", 0),
+                         "raknare": {x: m["raknare"].get(x, 0) for x in FORM_RAKNARE}, "skapad": dt_util.now().isoformat(timespec="minutes")}]
+        d["aktiv"] = pid
     return m
+
+
+# ---------- flera husdjur: varje djur växer och utvecklas för sig ----------
+P_NYTT_DJUR = 100  # varje nytt husdjur kostar (det allra första är gratis)
+FORM_RAKNARE = ("rekord_max", "las_klara", "full_pott", "ovningar", "bossar")
+
+
+def _aktivt(data: dict) -> dict | None:
+    """Det aktiva husdjurets egna uppgifter (tillväxt, räknare för utvecklingen)."""
+    d = _m(data).get("djur")
+    if not d:
+        return None
+    return next((h for h in d.get("husdjur", []) if h["id"] == d.get("aktiv")), None)
+
+
+def _djur_rakna(data: dict, namn: str, n: int = 0, varde: int | None = None) -> None:
+    h = _aktivt(data)
+    if not h or namn not in FORM_RAKNARE:
+        return
+    r = h.setdefault("raknare", {})
+    r[namn] = max(r.get(namn, 0), varde) if varde is not None else max(0, r.get(namn, 0) + n)
+
+
+def _byt_till(data: dict, h: dict) -> None:
+    """Gör h till det aktiva husdjuret. Liv och XP sparas hos djuret man lämnar."""
+    m = _m(data)
+    d = m["djur"]
+    k = _karta(data)
+    gammal = _aktivt(data)
+    if gammal and gammal is not h:
+        gammal["xp"] = k.get("djur_xp", 0)
+        gammal["liv"] = k.get("liv")
+        gammal["liv_rest"] = k.get("liv_rest", 0)
+    k["djur_xp"] = h.get("xp", 0)
+    k["liv"] = h.get("liv")
+    k["liv_rest"] = h.get("liv_rest", 0)
+    d["aktiv"] = h["id"]
+    d["art"] = h["art"]
+    d["namn"] = h["namn"]
+
+
+def _nytt_djur(data: dict, art: str, namn: str) -> dict:
+    d = _m(data)["djur"]
+    h = {"id": f"h{random.randint(10**6, 10**7)}", "art": art, "namn": namn or "Kompis", "tillvaxt": 0, "raknare": {},
+         "xp": 0, "liv": None, "skapad": dt_util.now().isoformat(timespec="minutes")}
+    d.setdefault("husdjur", []).append(h)
+    return h
 
 
 def ge(data: dict, poang: int, orsak: str, nyckel: str | None = None, ikon: str = "⭐") -> bool:
@@ -98,6 +152,9 @@ def ge(data: dict, poang: int, orsak: str, nyckel: str | None = None, ikon: str 
     del m["logg"][:-500]
     if poang > 0:
         m["intjanat"] = m.get("intjanat", 0) + int(poang)
+        h = _aktivt(data)
+        if h:
+            h["tillvaxt"] = h.get("tillvaxt", 0) + int(poang)
         if ikon not in EJ_SKADA:  # belöningar (pass, nivåer, bossar) ger inte pass-XP eller skada
             _pass_xp(m, int(poang))
             _karta_energi(data, int(poang))
@@ -112,6 +169,7 @@ def ge(data: dict, poang: int, orsak: str, nyckel: str | None = None, ikon: str 
 def _rakna(data: dict, namn: str, n: int = 1) -> None:
     r = _m(data)["raknare"]
     r[namn] = r.get(namn, 0) + n
+    _djur_rakna(data, namn, n)
 
 
 def _streak(dagar: list[str], slut: date | None = None) -> int:
@@ -446,7 +504,8 @@ def kop_paket(data: dict, paket_id: str) -> None:
         agda = d.setdefault("agda_djur", [])
         if p["djur"] not in agda:
             agda.append(p["djur"])
-        d["art"] = p["djur"]
+        h = next((x for x in d.get("husdjur", []) if x["art"] == p["djur"]), None) or _nytt_djur(data, p["djur"], d.get("namn") or "Kompis")
+        _byt_till(data, h)
 DJUR_STEG = [(0, "Ägg"), (30, "Bebis"), (150, "Liten"), (400, "Stor"), (800, "Jätte"), (1500, "Legend")]
 
 
@@ -556,6 +615,7 @@ def rekord(data: dict, g: dict, poang: int) -> bool:
         aktiv(data, dag)
     r = _m(data)["raknare"]
     r["rekord_max"] = max(r.get("rekord_max", 0), poang)
+    _djur_rakna(data, "rekord_max", varde=poang)
     kolla_medaljer(data)
     return nytt
 
@@ -568,7 +628,7 @@ def djur(data: dict) -> dict | None:
     d = m.get("djur")
     if not d:
         return None
-    intj = m.get("intjanat", 0)
+    intj = _djur_tillvaxt(data)
     steg = max(i for i, (grans, _n) in enumerate(DJUR_STEG) if intj >= grans)
     nasta = DJUR_STEG[steg + 1][0] if steg + 1 < len(DJUR_STEG) else None
     dagar = sorted(m["ovningsdagar"])
@@ -576,7 +636,7 @@ def djur(data: dict) -> dict | None:
     sedan = (idag - date.fromisoformat(dagar[-1])).days if dagar else 99
     humor = "glad" if sedan == 0 else "nojd" if sedan == 1 else "hungrig" if sedan == 2 else "ledsen"
     return {**d, "steg": steg, "steg_namn": DJUR_STEG[steg][1], "nasta": nasta, "intjanat": intj,
-            "humor": humor, "sedan": sedan, "form": djur_form(data, steg), "bastis": _kompis_bastis(d)}
+            "humor": humor, "sedan": sedan, "form": djur_form(data, steg), "bastis": _kompis_bastis(d), "mina": husdjur_lista(data)}
 
 
 def kolla_medaljer(data: dict) -> None:
@@ -733,10 +793,14 @@ def angra_ovning(data: dict, g: dict, dag: str) -> int:
             summa += p
     r = m["raknare"]
     r["ovningar"] = max(0, r.get("ovningar", 0) - 1)
+    _djur_rakna(data, "ovningar", -1)
     if summa:
         m["logg"].append({"tid": dt_util.now().isoformat(timespec="minutes"), "p": -summa,
                           "orsak": f"Borttagen övning på {g['namn']} ({dag})", "ikon": "↩️"})
         m["intjanat"] = max(0, m.get("intjanat", 0) - summa)
+        h = _aktivt(data)
+        if h:
+            h["tillvaxt"] = max(0, h.get("tillvaxt", 0) - summa)
         m["saldo"] = m.get("saldo", 0) - summa
     return summa
 
@@ -1153,40 +1217,66 @@ def hogl_ok(data: dict, u: dict, datum: str) -> None:
     kolla_medaljer(data)
 
 
+def _djur_tillvaxt(data: dict) -> int:
+    h = _aktivt(data)
+    return h.get("tillvaxt", 0) if h else _m(data).get("intjanat", 0)
+
+
 def _djur_steg(data: dict) -> int:
-    intj = _m(data).get("intjanat", 0)
+    intj = _djur_tillvaxt(data)
     return max(i for i, (grans, _n) in enumerate(DJUR_STEG) if intj >= grans)
 
 
-def djur_valj(data: dict, art: str, namn: str) -> None:
-    """Välj, döp om eller byt djur. Första djuret är gratis, att byta art kostar."""
+def djur_valj(data: dict, art: str, namn: str, hid: str | None = None) -> None:
+    """Välj första djuret (gratis), döp om, byt till ett eget djur (gratis) eller skaffa ett nytt (kostar)."""
     m = _m(data)
     d = m.get("djur")
-    if art in PAKET_DJUR:
-        if not d or art not in d.get("agda_djur", []):
-            raise ValueError("Det djuret finns bara i ett paket.")
-        d["art"] = art  # paketdjur man äger byter man till gratis
-        if (namn or "").strip():
-            d["namn"] = namn.strip()[:20]
-        return
-    if art not in DJUR:
-        raise ValueError("Okänt djur.")
     namn = (namn or "").strip()[:20]
     if not d:
-        m["djur"] = {"art": art, "namn": namn or "Kompis", "agt": [], "pa": {}, "gratis_byte": False}
+        if art not in DJUR:
+            raise ValueError("Okänt djur.")
+        m["djur"] = {"art": art, "namn": namn or "Kompis", "agt": [], "pa": {}, "husdjur": []}
+        h = _nytt_djur(data, art, namn or "Kompis")
+        m["djur"]["aktiv"] = h["id"]
         return
-    if art != d["art"] and d.get("gratis_byte", True):
-        # djur som fanns innan de 40 husdjuren kom får byta en gång gratis
-        d["gratis_byte"] = False
-        d["art"] = art
-        ge(data, 0, f"🔄 Bytte till {art} (gratis)", None, "🎁")
-    elif art != d["art"]:
-        if m.get("saldo", 0) < P_BYT_DJUR:
-            raise ValueError(f"Du behöver {P_BYT_DJUR} ⭐ för att byta djur.")
-        ge(data, -P_BYT_DJUR, f"🔄 Bytte till {art}", None, "🛍️")
-        d["art"] = art
-    if namn:
-        d["namn"] = namn
+    egna = d.setdefault("husdjur", [])
+    h = next((x for x in egna if x["id"] == hid), None) if hid else None
+    if hid and not h:
+        raise ValueError("Det husdjuret har du inte.")
+    if not h and art == d.get("art"):
+        h = _aktivt(data)
+    if h:
+        if namn and h["id"] == d.get("aktiv"):
+            h["namn"] = d["namn"] = namn
+        elif h["id"] != d.get("aktiv"):
+            if namn:
+                h["namn"] = namn
+            _byt_till(data, h)
+        return
+    # ett nytt husdjur
+    if any(x["art"] == art for x in egna):
+        raise ValueError("Det djuret har du redan. Byt till det i stället.")
+    if art in PAKET_DJUR:
+        if art not in d.get("agda_djur", []):
+            raise ValueError("Det djuret finns bara i ett paket.")
+    elif art not in DJUR:
+        raise ValueError("Okänt djur.")
+    else:
+        if m.get("saldo", 0) < P_NYTT_DJUR:
+            raise ValueError(f"Ett nytt husdjur kostar {P_NYTT_DJUR} ⭐ (du har {m.get('saldo', 0)}).")
+        ge(data, -P_NYTT_DJUR, f"🥚 Skaffade ett nytt husdjur {art}", None, "🛍️")
+    _byt_till(data, _nytt_djur(data, art, namn or "Kompis"))
+
+
+def husdjur_lista(data: dict) -> list[dict]:
+    d = _m(data).get("djur") or {}
+    ut = []
+    for h in d.get("husdjur", []):
+        t = h.get("tillvaxt", 0)
+        steg = max(i for i, (grans, _n) in enumerate(DJUR_STEG) if t >= grans)
+        ut.append({"id": h["id"], "art": h["art"], "namn": h["namn"], "steg": steg, "steg_namn": DJUR_STEG[steg][1],
+                   "form": _form_av(h.get("raknare", {}), steg), "aktiv": h["id"] == d.get("aktiv")})
+    return ut
 
 
 def djur_kop(data: dict, sak_id: str) -> None:
@@ -1723,13 +1813,13 @@ def _djur_xp(data: dict, poang: int) -> None:
     """Husdjuret växer av allt barnet pluggar. Första gången räknas allt som redan tjänats in."""
     k = _karta(data)
     if "djur_xp" not in k:
-        k["djur_xp"] = _m(data).get("intjanat", 0)
+        k["djur_xp"] = _djur_tillvaxt(data)
     else:
         k["djur_xp"] += int(poang)
 
 
 def djur_niva(data: dict) -> dict:
-    xp = _karta(data).get("djur_xp", _m(data).get("intjanat", 0))
+    xp = _karta(data).get("djur_xp", _djur_tillvaxt(data))
     n = 1
     while n < DJUR_NIVA_MAX and xp >= _xp_for(n + 1):
         n += 1
@@ -2635,10 +2725,15 @@ def _former(data: dict) -> list[tuple]:
 
 def djur_form(data: dict, steg: int) -> dict | None:
     """Djuret utvecklas efter vanor (från storleken Liten). Den vana där barnet kommit längst vinner."""
+    h = _aktivt(data)
+    return _form_av(h.get("raknare", {}) if h else _m(data)["raknare"], steg)
+
+
+def _form_av(r: dict, steg: int) -> dict | None:
+    """Varje husdjur utvecklas efter vad barnet har gjort medan just det djuret var med."""
     if steg < 2:
         return None
-    r = _m(data)["raknare"]
-    upplasta = sorted(_former(data), key=lambda f: -(r.get(f[4], 0) / f[5]))
+    upplasta = sorted([f for f in FORMER if r.get(f[4], 0) >= f[5]], key=lambda f: -(r.get(f[4], 0) / f[5]))
     if not upplasta:
         return None
     f = upplasta[0]
