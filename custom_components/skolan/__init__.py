@@ -2180,33 +2180,34 @@ EBOK_PROMPT = (
 )
 
 
-async def _ai_las(hass: HomeAssistant, src: Path, prompt: str, task_name: str) -> str:
-    """Kopiera filen till en tillfällig mediafil, låt AI:n läsa den och radera kopian."""
+async def _ai_las(hass: HomeAssistant, src: Path | list[Path], prompt: str, task_name: str) -> str:
+    """Kopiera filen (eller filerna, t.ex. flera skärmdumpar av samma brev) till tillfälliga mediafiler,
+    låt AI:n läsa dem i samma fråga och radera kopiorna."""
     conf = hass.data[DOMAIN]["conf"]
     entity = conf.get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
     if not entity:
         raise RuntimeError("Ingen AI-uppgift finns i Home Assistant.")
-    mime = mimetypes.guess_type(src.name)[0] or "image/jpeg"
-    name = f"{uuid.uuid4().hex}{src.suffix.lower()}"
-    tmp = hass.data[DOMAIN]["tmp"] / name
-    await hass.async_add_executor_job(shutil.copyfile, src, tmp)
+    kallor = src if isinstance(src, list) else [src]
+    bilagor, tmps = [], []
+    for k in kallor:
+        name = f"{uuid.uuid4().hex}{k.suffix.lower()}"
+        tmp = hass.data[DOMAIN]["tmp"] / name
+        await hass.async_add_executor_job(shutil.copyfile, k, tmp)
+        tmps.append(tmp)
+        bilagor.append({"media_content_id": f"media-source://media_source/local/{TMP_SUBDIR}/{name}",
+                        "media_content_type": mimetypes.guess_type(k.name)[0] or "image/jpeg"})
+    if len(kallor) > 1:
+        prompt = f"Du får {len(kallor)} bilder/filer som hör ihop (t.ex. flera skärmdumpar eller sidor av samma dokument). Läs dem tillsammans som ETT dokument. " + prompt
     try:
         resp = await hass.services.async_call(
             "ai_task",
             "generate_data",
-            {
-                "task_name": task_name,
-                "entity_id": entity,
-                "instructions": prompt,
-                "attachments": [
-                    {"media_content_id": f"media-source://media_source/local/{TMP_SUBDIR}/{name}", "media_content_type": mime}
-                ],
-            },
+            {"task_name": task_name, "entity_id": entity, "instructions": prompt, "attachments": bilagor},
             blocking=True,
             return_response=True,
         )
     finally:
-        await hass.async_add_executor_job(lambda: tmp.unlink(missing_ok=True))
+        await hass.async_add_executor_job(lambda: [t.unlink(missing_ok=True) for t in tmps])
     text = (resp or {}).get("data")
     return text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
 
@@ -3413,6 +3414,33 @@ def _lektioner_spara(data: dict, body: dict) -> None:
     data["lektioner"] = sorted(ut, key=lambda x: (x["dag"], x["start"]))
 
 
+MAX_FOTON = 6
+
+
+async def _ta_emot_filer(hass: HomeAssistant, form, prefix: str) -> list[Path]:
+    """Spara alla uppladdade filer (fältet "file", en eller flera) tillfälligt. Kastar ValueError vid fel."""
+    falt = [f for f in form.getall("file", []) if hasattr(f, "file")][:MAX_FOTON]
+    if not falt:
+        raise ValueError("Ingen bild skickades.")
+    ut = []
+    try:
+        for field in falt:
+            mime = _mime(field)
+            if not _ok_file(mime):
+                raise ValueError("Bara bilder och PDF:er.")
+            content = await hass.async_add_executor_job(field.file.read)
+            if len(content) > MAX_BYTES:
+                raise ValueError("En fil är för stor (max 20 MB).")
+            ext = (Path(field.filename or "").suffix or mimetypes.guess_extension(mime) or ".jpg").lower()[:6]
+            src = hass.data[DOMAIN]["base"] / f".{prefix}_{uuid.uuid4().hex}{ext}"
+            await hass.async_add_executor_job(src.write_bytes, content)
+            ut.append(src)
+    except ValueError:
+        await hass.async_add_executor_job(lambda: [p.unlink(missing_ok=True) for p in ut])
+        raise
+    return ut
+
+
 class SchemaSidaView(HomeAssistantView):
     """Den digitala kopian av schemat som egen sida: sök och skriv ut. Öppnas via en signerad länk."""
 
@@ -3441,18 +3469,10 @@ class LektionView(HomeAssistantView):
             raise web.HTTPForbidden
         form = await request.post()
         barn = _barn_for(hass, request, form.get("barn"))
-        field = form.get("file")
-        if field is None or not hasattr(field, "file"):
-            return self.json_message("Ingen bild skickades.", 400)
-        mime = _mime(field)
-        if not _ok_file(mime):
-            return self.json_message("Bara bilder och PDF:er.", 400)
-        content = await hass.async_add_executor_job(field.file.read)
-        if len(content) > MAX_BYTES:
-            return self.json_message("Filen är för stor (max 20 MB).", 400)
-        ext = (Path(field.filename or "").suffix or mimetypes.guess_extension(mime) or ".jpg").lower()[:6]
-        src = hass.data[DOMAIN]["base"] / f".schema_{uuid.uuid4().hex}{ext}"
-        await hass.async_add_executor_job(src.write_bytes, content)
+        try:
+            src = await _ta_emot_filer(hass, form, "schema")
+        except ValueError as err:
+            return self.json_message(str(err), 400)
         try:
             for forsok in range(3):
                 try:
@@ -3464,7 +3484,7 @@ class LektionView(HomeAssistantView):
                         return self.json_message(f"AI:n kunde inte läsa schemat: {err}", 502)
                     await asyncio.sleep(5)
         finally:
-            await hass.async_add_executor_job(lambda: src.unlink(missing_ok=True))
+            await hass.async_add_executor_job(lambda: [p.unlink(missing_ok=True) for p in src])
         try:
             ai = _parse_json(text)
         except (ValueError, json.JSONDecodeError):
@@ -3488,18 +3508,10 @@ class VeckobrevView(HomeAssistantView):
             raise web.HTTPForbidden
         form = await request.post()
         barn = _barn_for(hass, request, form.get("barn"))
-        field = form.get("file")
-        if field is None or not hasattr(field, "file"):
-            return self.json_message("Ingen fil skickades.", 400)
-        mime = _mime(field)
-        if not _ok_file(mime):
-            return self.json_message("Bara bilder och PDF:er.", 400)
-        content = await hass.async_add_executor_job(field.file.read)
-        if len(content) > MAX_BYTES:
-            return self.json_message("Filen är för stor (max 20 MB).", 400)
-        ext = (Path(field.filename or "").suffix or mimetypes.guess_extension(mime) or ".jpg").lower()[:6]
-        src = hass.data[DOMAIN]["base"] / f".veckobrev_{uuid.uuid4().hex}{ext}"
-        await hass.async_add_executor_job(src.write_bytes, content)
+        try:
+            src = await _ta_emot_filer(hass, form, "veckobrev")
+        except ValueError as err:
+            return self.json_message(str(err), 400)
         try:
             for forsok in range(3):
                 try:
@@ -3511,7 +3523,7 @@ class VeckobrevView(HomeAssistantView):
                         return self.json_message(f"AI:n kunde inte läsa brevet: {err}", 502)
                     await asyncio.sleep(5)
         finally:
-            await hass.async_add_executor_job(lambda: src.unlink(missing_ok=True))
+            await hass.async_add_executor_job(lambda: [p.unlink(missing_ok=True) for p in src])
         try:
             ai = _parse_json(text)
         except (ValueError, json.JSONDecodeError):

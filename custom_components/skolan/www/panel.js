@@ -3806,7 +3806,7 @@ class SkolanPanel extends HTMLElement {
     const v = this._view;
     const amnen = s.data.amnen || [];
     const opt = (lista, val) => lista.map(([k, t]) => `<option value="${esc(k)}" ${String(val ?? "") === String(k) ? "selected" : ""}>${esc(t)}</option>`).join("");
-    const ladda = `<label class="primary upload">📷 ${v.f ? "Fota ett nytt brev" : "Fota veckobrevet"}<input type="file" id="vb-foto" accept="image/*,application/pdf" hidden></label>`;
+    const ladda = this._fotoVal("vb-foto", v.f ? "Fota ett nytt brev" : "Fota veckobrevet", "Är brevet flera bilder eller skärmdumpar? Välj alla på en gång, eller lägg till en i taget, och tryck sedan Läs brevet.", "Läs brevet");
     if (!v.f) {
       return `${ladda}<p class="muted small">AI:n läser brevet och föreslår veckans läxor åt ${esc(s.namn)}: högläsning varje dag, läxboken och veckans ord. Du ser förslaget och kan ändra innan något sparas.</p>`;
     }
@@ -3866,14 +3866,25 @@ class SkolanPanel extends HTMLElement {
     return html;
   }
 
-  async _veckobrevLas(file) {
+
+  // Välj en eller flera bilder (t.ex. två skärmdumpar av samma brev) innan AI:n läser dem tillsammans.
+  _fotoVal(id, titel, nyText, lasText) {
+    const filer = this._fotoFiler?.[id] || [];
+    const val = `<label class="${filer.length ? "ghost" : "primary"} upload">📷 ${filer.length ? "＋ Lägg till en bild till" : titel}<input type="file" id="${id}" accept="image/*,application/pdf" multiple hidden></label>`;
+    if (!filer.length) return `${val}<div class="small muted">${nyText}</div>`;
+    return `<div class="foto-val"><b>${filer.length} ${filer.length === 1 ? "bild vald" : "bilder valda"}</b>
+      <ul class="lista">${filer.map((f, i) => `<li>${f.type === "application/pdf" ? "📄" : "🖼️"} ${esc(f.name || `Bild ${i + 1}`)} <button class="mini" data-foto-bort="${id}:${i}">✕</button></li>`).join("")}</ul>
+      <div class="actions">${val}<button class="primary" data-foto-las="${id}" ${this._busy ? "disabled" : ""}>🤖 ${lasText}</button></div></div>`;
+  }
+
+  async _veckobrevLas(filer) {
     this._busy = true;
     this._msg = { type: "info", text: "AI:n läser veckobrevet… (tar några sekunder)" };
     this._render();
     try {
       const fd = new FormData();
       fd.append("barn", this._s.barn);
-      fd.append("file", file, file.name);
+      (Array.isArray(filer) ? filer : [filer]).forEach((f) => fd.append("file", f, f.name));
       const res = await this._hass.fetchWithAuth("/api/skolan/veckobrev", { method: "POST", body: fd });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || res.statusText);
@@ -4023,7 +4034,7 @@ class SkolanPanel extends HTMLElement {
   // Lektionsschemat som ett digitalt schema: tidsaxel, dagens kolumn, nu-linje, sök och redigering.
   _lektionView() {
     const v = this._view, s = this._s;
-    const ladda = `<label class="primary upload">📷 ${s.lektioner?.length || v.f ? "Fota schemat igen" : "Fota schemat"}<input type="file" id="ls-foto" accept="image/*,application/pdf" hidden></label>`;
+    const ladda = this._fotoVal("ls-foto", s.lektioner?.length || v.f ? "Fota schemat igen" : "Fota schemat", "Är schemat flera bilder eller skärmdumpar? Välj alla, eller lägg till en i taget, och tryck sedan Läs schemat.", "Läs schemat");
     if (v.f) {
       const f = v.f;
       return `<p class="small">Så här läste AI:n schemat. Tryck på en lektion för att rätta den, och tryck sedan Spara. Nya ämnen skapas bara om de är ibockade.</p>
@@ -4147,14 +4158,14 @@ class SkolanPanel extends HTMLElement {
     this._render();
   }
 
-  async _lektionLas(file) {
+  async _lektionLas(filer) {
     this._busy = true;
     this._msg = { type: "info", text: "AI:n läser schemat… (tar några sekunder)" };
     this._render();
     try {
       const fd = new FormData();
       fd.append("barn", this._s.barn);
-      fd.append("file", file, file.name);
+      (Array.isArray(filer) ? filer : [filer]).forEach((f) => fd.append("file", f, f.name));
       const res = await this._hass.fetchWithAuth("/api/skolan/lektionsschema", { method: "POST", body: fd });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || res.statusText);
@@ -5772,10 +5783,24 @@ class SkolanPanel extends HTMLElement {
     // veckobrev
     on("#open-info", () => this._go({ name: "info", fran: { name: this._view.name } }));
     on("#open-veckobrev", () => this._go({ name: "veckobrev" }));
-    $("#vb-foto")?.addEventListener("change", (e) => {
-      const file = e.target.files?.[0];
-      if (file) this._veckobrevLas(file);
-    });
+    ["vb-foto", "ls-foto"].forEach((id) => $(`#${id}`)?.addEventListener("change", (e) => {
+      const nya = [...(e.target.files || [])];
+      if (!nya.length) return;
+      this._fotoFiler = this._fotoFiler || {};
+      this._fotoFiler[id] = [...(this._fotoFiler[id] || []), ...nya].slice(0, 6);
+      this._render();
+    }));
+    r.querySelectorAll("[data-foto-bort]").forEach((b) => b.addEventListener("click", () => {
+      const [id, i] = b.dataset.fotoBort.split(":");
+      this._fotoFiler[id].splice(Number(i), 1);
+      this._render();
+    }));
+    r.querySelectorAll("[data-foto-las]").forEach((b) => b.addEventListener("click", async () => {
+      const id = b.dataset.fotoLas, filer = this._fotoFiler?.[id] || [];
+      if (!filer.length) return;
+      if (id === "vb-foto") await this._veckobrevLas(filer); else await this._lektionLas(filer);
+      if (this._msg?.type !== "error") { delete this._fotoFiler[id]; this._render(); }
+    }));
     const vbSync = () => {
       if (v.name !== "veckobrev" || !v.f) return;
       r.querySelectorAll("[data-vb]").forEach((el) => {
@@ -5912,7 +5937,6 @@ class SkolanPanel extends HTMLElement {
     on("#open-lektioner", () => this._go({ name: "lektioner" }));
     on("#material-ja", () => this._go({ name: "amne", amne: r.querySelector("#material-ja").dataset.amne }));
     on("#material-sen", async () => { if (await this._act("laxfraga_svar", { material: r.querySelector("#material-sen").dataset.amne })) { await this._load(this._s.barn); this._render(); } });
-    $("#ls-foto")?.addEventListener("change", (e) => { const file = e.target.files?.[0]; if (file) this._lektionLas(file); });
     if (v.name === "lektioner") {
       const sok = $("#ls-sok");
       if (sok) { sok.addEventListener("input", () => this._schemaSok(sok.value)); if (v.sok) this._schemaSok(v.sok); }
@@ -7065,6 +7089,8 @@ const CSS = `
   .trofe-rad { display:flex; flex-wrap:wrap; gap:8px; }
   .trofe { display:flex; flex-direction:column; align-items:center; font-size:28px; background:linear-gradient(135deg,#fff8e1,#ffe082); border-radius:12px; padding:6px 10px; color:#4a2c00; }
   .vantar.ok { background:#e8f5e9; color:#1b5e20; }
+  .foto-val { background:var(--secondary-background-color,#f5f5f5); border-radius:12px; padding:10px 12px; margin:8px 0; }
+  .foto-val .lista li { display:flex; justify-content:space-between; align-items:center; gap:8px; }
   .ls-sok input { width:100%; box-sizing:border-box; padding:10px 12px; border-radius:12px; border:1px solid var(--divider-color,#ccc); font-size:16px; background:var(--card-background-color,#fff); color:inherit; }
   #ls-traffar { margin:6px 0; }
   .ls-idag { margin:10px 0; }
