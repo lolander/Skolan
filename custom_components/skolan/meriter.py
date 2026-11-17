@@ -1571,6 +1571,7 @@ def karta_status(data: dict) -> dict:
              for i in range(fran, n + 6)]
     _, laxor, prov = boss_arbete(data)
     return {"niva": n, "hp": k["hp"], "skada": min(k["skada"], k["hp"]), "monster": info, "dagar": niva_dagar(n),
+            "mon_attacker": [{x: a[x] for x in ("id", "ikon", "namn", "typ")} for a in monster_attacker(n, _djur_steg(data))],
             "liv": djur_liv(data)[0], "liv_max": djur_liv(data)[1], "p_liv": P_LIV,
             "drycker": [{**x, "antal": k.get("drycker", {}).get(x["id"], 0)} for x in DRYCKER], "dryck_max": DRYCK_MAX,
             "energi": k.get("energi", 0), "energi_max": ENERGI_MAX, "p_energi": _p_energi(),
@@ -1980,6 +1981,29 @@ def skold_status(data: dict) -> dict:
             "skoldar": [{**x, "har": x["id"] in agda} for x in SKOLDAR]}
 
 
+# Monster med egna attacker: först när kartan har blivit svårare OCH husdjuret är starkt nog.
+MON_ATTACK_NIVA = 11  # från värld 2
+MON_ATTACK_STEG = 2  # husdjuret har blivit "Liten"
+MON_ATTACK_CHANS, BOSS_ATTACK_CHANS = 0.35, 0.6
+
+
+def monster_attacker(n: int, steg: int) -> list[dict]:
+    """Attackerna ett monster på nivå n kan använda. Fler och starkare ju längre fram och ju starkare husdjuret är."""
+    if n < MON_ATTACK_NIVA or steg < MON_ATTACK_STEG:
+        return []
+    tak = 120 + (n - MON_ATTACK_NIVA) * 12  # dyrare attacker blir möjliga längre fram
+    return [x for x in ATTACKER if not x.get("per_dag") and x["id"] != "a_super" and x["steg"] <= steg - 1 and x["pris"] <= tak]
+
+
+def _monster_val(n: int, mon: dict, steg: int) -> dict | None:
+    """Väljer om monstret använder en attack, och vilken. Världens egen typ är vanligast."""
+    pool = monster_attacker(n, steg)
+    if not pool or random.random() > (BOSS_ATTACK_CHANS if mon.get("boss") else MON_ATTACK_CHANS):
+        return None
+    vikt = [3 if x["typ"] == mon.get("slag") else 1 for x in pool]
+    return random.choices(pool, weights=vikt)[0]
+
+
 def _motattack(n: int, mon: dict) -> int:
     """Hur hårt monstret slår tillbaka. Starkare längre fram och på bossnivåer."""
     bas = (3 + min(15, n // 6)) * (1.8 if mon.get("boss") else 1)
@@ -2276,8 +2300,21 @@ def attack(data: dict, at_id: str) -> dict:
     if laka:  # lövskölden läker lite när husdjuret attackerar
         liv_fore = min(liv_max, liv_fore + laka)
     skydd = {"skada": 0, "skydd": "", "tillbaka": 0}
+    mot_at, mot_lak, mot_met = None, 0, 0
+    if not klar:
+        mot_at = _monster_val(n, mon, _djur_steg(data))
     if not klar and not miss:
-        skydd = _skydda(sk, mon.get("slag", "kraft"), _motattack(n, mon), k.get("bubbla") != n)
+        slag, typ = _motattack(n, mon), mon.get("slag", "kraft")
+        if mot_at:  # monstret använder en riktig attack: starkare attacker slår hårdare
+            typ = mot_at["typ"]
+            slag = max(1, round(slag * max(0.9, min(2.0, mot_at["skada"] / 5))))
+            if mot_at["id"] == "a_meteor":
+                mot_met = random.randint(METEOR_MIN, METEOR_MAX)
+                slag = max(1, round(slag * mot_met / METEOR_SNITT))
+            if mot_at.get("laka"):  # blomsterstorm: monstret läker sig
+                mot_lak = min(k["skada"], mot_at["laka"] * 2)
+                k["skada"] -= mot_lak
+        skydd = _skydda(sk, typ, slag, k.get("bubbla") != n)
         if skydd["skydd"] == "bubbla":
             k["bubbla"] = n
     mot = skydd["skada"]
@@ -2286,7 +2323,8 @@ def attack(data: dict, at_id: str) -> dict:
         _karta_skada(data, skydd["tillbaka"])
     klar2 = k["niva"] > n
     k["senaste"].update({"klar": klar or klar2, "mot": mot, "miss": miss, "liv_fore": liv_fore, "liv": k["liv"], "liv_max": liv_max,
-                         "skydd": skydd["skydd"], "tillbaka": skydd["tillbaka"], "skold": sk["id"] if sk else "", "laka": laka})
+                         "skydd": skydd["skydd"], "tillbaka": skydd["tillbaka"], "skold": sk["id"] if sk else "", "laka": laka,
+                         "mot_at": {x: mot_at[x] for x in ("id", "ikon", "namn", "typ")} if mot_at else None, "mot_lak": mot_lak, "mot_meteorer": mot_met})
     k["repriser"] = (k.get("repriser", []) + [{"id": at_id, "niva": n, "hp": hp_fore, "kvar": kvar_fore, "skada": skada,
                                                "svag": svag, "klar": klar or klar2, "tid": k["senaste"]["tid"], "mot": mot,
                                                "miss": miss, "liv_fore": liv_fore, "liv_max": liv_max,

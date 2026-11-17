@@ -347,6 +347,10 @@ const DJUR_UTSEENDE = {
 const PA_OGONEN = new Set(["solglas", "sol_hatt2", "dykmask"]);
 
 const STRID_CSS = `
+#skolan-strid .mot-fx { position:absolute; inset:0; pointer-events:none; }
+#skolan-strid .mot-fx i { position:absolute; left:50%; top:50%; font-size:30px; font-style:normal; opacity:0; animation:motFx calc(.8s*var(--f,1)) ease-out calc((3s + var(--d))*var(--f,1)) forwards; }
+@keyframes motFx { 0% { opacity:0; transform:translate(-50%,-50%) rotate(var(--v)) translateY(-150px) scale(1.4); } 30% { opacity:1; } 60% { opacity:1; transform:translate(-50%,-50%) rotate(var(--v)) translateY(0) scale(1); } 100% { opacity:0; transform:translate(-50%,-50%) rotate(var(--v)) translateY(40px) scale(.4); } }
+#skolan-strid .motlak { position:absolute; left:22%; top:28%; font:900 22px system-ui; color:#a5d6a7; text-shadow:2px 2px 0 #000; opacity:0; animation:sNamn calc(1.4s*var(--f,1)) ease-out calc(2.8s*var(--f,1)) forwards; }
 #skolan-strid .meteor { position:absolute; left:50%; top:50%; font-size:var(--s); opacity:0; z-index:3; filter:drop-shadow(0 0 10px #ff6d00) drop-shadow(0 0 22px #ffab00);
   animation:mFall calc(.75s*var(--f,1)) cubic-bezier(.55,0,1,.45) calc(var(--d)*var(--f,1)) forwards; }
 #skolan-strid .meteor.liten { filter:drop-shadow(0 0 6px #ff9100); }
@@ -1814,6 +1818,7 @@ class SkolanPanel extends HTMLElement {
         ${VARLD_BERATTELSE[mon.varld.id] ? `<div class="varld-berattelse">📖 ${esc(VARLD_BERATTELSE[mon.varld.id][mon.boss ? 1 : 0])}</div>` : ""}
         <div class="progress boss-hp"><div style="width:${Math.round((kvar / k.hp) * 100)}%"></div></div>
         <div class="small">❤️ ${kvar} av ${k.hp} liv · 🎯 svag mot <b>${k.typer[mon.svag]}</b></div>
+        ${(k.mon_attacker || []).length ? `<div class="small mon-kan">⚠️ Monstren här kan slå tillbaka med ${k.mon_attacker.map((x) => `<span title="${esc(x.namn)}">${x.ikon}</span>`).join(" ")}</div>` : ""}
         <div class="small muted">Varje merit du tjänar gör skada.${mon.boss && mon.sak ? ` Besegra bossen för ${mon.sak.ikon} ${esc(mon.sak.namn)}!` : ""}${sen ? ` Senast: nivå ${sen.niva} ${"⭐".repeat(sen.stjarnor)}` : ""}</div>
         ${livRad}
         ${d ? `<button class="mini primary strid-knapp" id="till-strid">${barn ? "⚔️ Till strid" : "👀 Se striden"}</button>` : ""}${d && barn ? ` <button class="mini primary strid-knapp" id="glosstrid-val">📝 Glosstrid</button>` : ""}
@@ -2334,7 +2339,7 @@ class SkolanPanel extends HTMLElement {
     const laddat = this._load();
     this._strid({ at: x, djur, ...fore, skada: sen.skada ?? x.nu, svag: sen.svag ?? x.svag, klar: !!sen.klar,
       mot: sen.mot || 0, miss: !!sen.miss, livFore: sen.liv_fore, livMax: sen.liv_max, live: true, fortsatt, laddat,
-      skydd: sen.skydd, tillbaka: sen.tillbaka, skold: sen.skold, meteorer: sen.meteorer });
+      skydd: sen.skydd, tillbaka: sen.tillbaka, skold: sen.skold, meteorer: sen.meteorer, motAt: sen.mot_at, motLak: sen.mot_lak });
     await laddat;
     return true;
   }
@@ -2518,8 +2523,10 @@ class SkolanPanel extends HTMLElement {
         ${!o.idle && skyddText(o.deSkydd, o.deTillbaka) ? `<div class="skyddtext fi">${skyddText(o.deSkydd, o.deTillbaka)}</div>` : ""}
         ${motFas && !o.miss && skyddText(o.skydd, o.tillbaka) ? `<div class="skyddtext hj">${skyddText(o.skydd, o.tillbaka)}</div>` : ""}
         <div class="hjalte"><div class="kropp">${o.djur ? ritaDjur(o.djur.art, ko ? "hungrig" : "glad", Math.max(1, o.djur.steg), {}) : "🐾"}</div>
+          ${motFas && o.motAt && !o.miss ? `<div class="mot-fx">${Array.from({ length: 9 }, (_, i) => `<i style="--v:${i * 40}deg;--d:${(i * 0.04).toFixed(2)}s">${o.motAt.id === "a_meteor" ? "☄️" : o.motAt.ikon}</i>`).join("")}</div>` : ""}
           ${motFas ? `<div class="tal motal">${o.miss ? "<span>MISS!</span>" : String(o.mot).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("")}</div>` : ""}</div>
         ${motFas ? `<div class="motnamn">${o.motAt ? `${esc(o.mon?.namn || "")} använder ${o.motAt.ikon} ${esc(o.motAt.namn)}!` : `${o.mon?.ikon || "👾"} ${esc(o.mon?.boss ? o.mon.namn : "Monstret")} slår tillbaka!`}</div>` : ""}
+        ${motFas && o.motLak ? `<div class="motlak">🌸 +${o.motLak} ❤️</div>` : ""}
         ${ko ? `<div class="kotext">😵 ${esc(o.djur?.namn || "Husdjuret")} orkar inte mer<small>${o.arena ? "Förlust · +2 🏆 · bra kämpat!" : "Plugga för att få tillbaka liv ❤️"}</small></div>` : ""}
         <div class="segertext">${o.arena ? "VINST!" : "SEGER!"}<small>${o.arena ? "+10 🏆 · +15 XP" : "Nivå klar 🎉"}</small></div>
         <div class="meny">
