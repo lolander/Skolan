@@ -115,7 +115,7 @@ def _djur_rakna(data: dict, namn: str, n: int = 0, varde: int | None = None) -> 
 
 
 # Det som hör till varje husdjur och sparas hos djuret när man byter: attacker (med nivåer), försvarsträning och kompisar.
-PER_DJUR = {"attacker": list, "attack_niva": dict, "traning": int}
+PER_DJUR = {"attacker": list, "attack_niva": dict, "traning": int, "uppsattning": list}
 
 
 def _ar_kompis(sak_id: str) -> bool:
@@ -1692,7 +1692,9 @@ def karta_status(data: dict) -> dict:
             "energi_pris": ENERGI_PRIS, "energi_kop_kvar": ENERGI_KOP_DAG - _energi_kopt(k), "attacker": lista, "typer": TYPER,
             "super_anvand": k.get("super") == vecka, "senaste": k.get("senaste"), "karta": karta,
             "stjarnor_tot": sum(k["stjarnor"].values()), "klara": k.get("klara", [])[-3:], "laxor": laxor, "prov": prov,
-            "forsvar": skold_status(data), "def_halv": DEF_HALV, "slag": info.get("slag", "kraft")}
+            "forsvar": skold_status(data), "def_halv": DEF_HALV, "slag": info.get("slag", "kraft"),
+            "uppsattning": uppsattning(data), "uppsattning_max": UPPSATTNING_MAX, "boss_las": k.get("boss_las") == n,
+            "ladd": ({**_laddning(k, n), "max": LADD_MAX} if info.get("boss") else None)}
 
 
 def karta_kort(data: dict) -> dict:
@@ -1762,6 +1764,21 @@ ATTACKER = [
      "info": "3–6 meteorer slår ner från rymden! Varje meteor gör skada."},
     {"id": "a_regnbage", "ikon": "🌈", "namn": "Regnbågsstråle", "typ": "kraft", "pris": 650, "steg": 3, "energi": 3, "skada": 16, "per_dag": True,
      "info": "Alla monster är svaga mot den (dubbel skada)! En gång per dag."},
+    # ---- laddattacker: kostar ingen ⚡ men måste laddas upp med bra träffar. Bara i arenan och mot världsbossar. ----
+    {"id": "l_snabb", "ikon": "🌀", "namn": "Snabbladdning", "typ": "kraft", "pris": 200, "steg": 1, "energi": 0, "skada": 18, "ladd": 60, "ganger": 2,
+     "info": "Laddas snabbt och kan användas 2 gånger per strid, men är inte så stark."},
+    {"id": "l_stjarna", "ikon": "🌟", "namn": "Stjärnsmäll", "typ": "kraft", "pris": 300, "steg": 1, "energi": 0, "skada": 30, "ladd": 100, "ganger": 2,
+     "info": "Laddattack som kan användas 2 gånger per strid."},
+    {"id": "l_fenix", "ikon": "☀️", "namn": "Solbrand", "typ": "eld", "pris": 380, "steg": 2, "energi": 0, "skada": 42, "ladd": 100, "ganger": 1,
+     "info": "Jättestark eld-laddattack. En gång per strid."},
+    {"id": "l_tsunami", "ikon": "🌊", "namn": "Tsunami", "typ": "vatten", "pris": 380, "steg": 2, "energi": 0, "skada": 42, "ladd": 100, "ganger": 1,
+     "info": "Jättestark vatten-laddattack. En gång per strid."},
+    {"id": "l_aska", "ikon": "🌩️", "namn": "Superåska", "typ": "blixt", "pris": 380, "steg": 2, "energi": 0, "skada": 42, "ladd": 100, "ganger": 1,
+     "info": "Jättestark blixt-laddattack. En gång per strid."},
+    {"id": "l_urskog", "ikon": "🌳", "namn": "Urskogens vrede", "typ": "natur", "pris": 380, "steg": 2, "energi": 0, "skada": 42, "ladd": 100, "ganger": 1,
+     "info": "Jättestark natur-laddattack. En gång per strid."},
+    {"id": "l_istid", "ikon": "🧊", "namn": "Istiden", "typ": "is", "pris": 380, "steg": 2, "energi": 0, "skada": 42, "ladd": 100, "ganger": 1,
+     "info": "Jättestark is-laddattack. En gång per strid."},
 ]
 METEOR_MIN, METEOR_MAX = 3, 6
 METEOR_SNITT = (METEOR_MIN + METEOR_MAX) / 2
@@ -1895,7 +1912,7 @@ def djur_kraft(data: dict) -> float:
 def djur_cp(data: dict) -> int:
     """Stridskraft att jämföra med: liv + bästa attack + försvar, gånger kraften."""
     agda = _m(data).get("attacker", [])
-    basta = max([attack_skada(x, attack_niva(data, x["id"])) for x in ATTACKER if x["id"] in agda] or [KNUFF["skada"]])
+    basta = max([attack_skada(x, attack_niva(data, x["id"])) for x in ATTACKER if x["id"] in agda and not x.get("ladd")] or [KNUFF["skada"]])
     return round((djur_liv(data)[1] + basta * 6 + djur_def(data) * 3) * djur_kraft(data))
 
 
@@ -2106,7 +2123,7 @@ def monster_attacker(n: int, steg: int) -> list[dict]:
     if n < MON_ATTACK_NIVA or steg < MON_ATTACK_STEG:
         return []
     tak = 120 + (n - MON_ATTACK_NIVA) * 12  # dyrare attacker blir möjliga längre fram
-    return [x for x in ATTACKER if not x.get("per_dag") and x["id"] != "a_super" and x["steg"] <= steg - 1 and x["pris"] <= tak]
+    return [x for x in ATTACKER if not x.get("per_dag") and not x.get("ladd") and x["id"] != "a_super" and x["steg"] <= steg - 1 and x["pris"] <= tak]
 
 
 def _monster_val(n: int, mon: dict, steg: int) -> dict | None:
@@ -2148,6 +2165,58 @@ def passform(art: str | None, at_typ: str) -> float:
     return PASSFORM_BRA if at_typ == el["bra"] else PASSFORM_DALIG if at_typ == el["dalig"] else 1.0
 
 
+# I arenan: varje element är svagt mot en attacktyp. Träffar man motståndarens svaghet blir det en superträff.
+ELEMENT_SVAG_MOT = {"eld": "vatten", "vatten": "blixt", "blixt": "natur", "natur": "eld", "is": "kraft", "kraft": "is"}
+ARENA_SUPER = 1.5
+
+# Stridsuppsättning: i arenan och mot världsbossar får husdjuret bara ta med 4 attacker.
+UPPSATTNING_MAX = 4
+
+# Laddattack: fylls av bra träffar. Svår att få ihop och högst 2 gånger per strid.
+LADD_MAX = 100
+LADD_BOSS, LADD_ARENA = 1.5, 1.2  # laddattackens kraft mot världsbossar, och i arenan (i stället för ARENA_GANGER)
+LADD_SUPER, LADD_TRAFF, LADD_TRAFFAD = 35, 15, 12  # superträff/svag punkt, vanlig träff, när man själv blir träffad
+
+
+def _laddning(k: dict, n: int) -> dict:
+    """Laddmätaren mot världsbossen på nivå n (nollställs för varje ny boss)."""
+    lad = k.get("ladd")
+    if not isinstance(lad, dict) or lad.get("niva") != n:
+        lad = k["ladd"] = {"niva": n, "p": 0, "anv": {}}
+    return lad
+
+
+def uppsattning(data: dict) -> list[str]:
+    """Attackerna husdjuret tar med i arenan och mot bossar. Har man inte valt tas de 4 starkaste."""
+    m = _m(data)
+    agda = m.get("attacker", [])
+    u = [x for x in m.get("uppsattning", []) if x in agda][:UPPSATTNING_MAX]
+    if u:
+        return u
+    starkast = sorted((x for x in ATTACKER if x["id"] in agda and not x.get("ladd")), key=lambda x: -attack_skada(x, attack_niva(data, x["id"])))
+    return [x["id"] for x in starkast[:UPPSATTNING_MAX]]
+
+
+def uppsattning_vaxla(data: dict, at_id: str) -> list[str]:
+    m = _m(data)
+    if at_id not in m.get("attacker", []):
+        raise ValueError("Den attacken har ditt husdjur inte.")
+    k = _karta(data)
+    if k.get("boss_las") == k["niva"]:
+        raise ValueError("Bosstriden har börjat. Uppsättningen är låst tills bossen är besegrad.")
+    u = uppsattning(data)
+    if at_id in u:
+        if len(u) == 1:
+            raise ValueError("Minst en attack måste vara med.")
+        u.remove(at_id)
+    else:
+        if len(u) >= UPPSATTNING_MAX:
+            raise ValueError(f"Bara {UPPSATTNING_MAX} attacker får plats. Ta bort en först.")
+        u.append(at_id)
+    m["uppsattning"] = u
+    return u
+
+
 def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
     """Hur mycket skada attacken gör just nu, och om monstret är svagt mot den."""
     m = _m(data)
@@ -2178,6 +2247,8 @@ def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
     if h.get("typ") == at["typ"] or (h["id"] == "boss" and mon.get("boss")):
         skada *= 1.5
     skada *= passform((m.get("djur") or {}).get("art"), at["typ"])
+    if at.get("ladd"):
+        skada *= LADD_BOSS  # laddattacker slår extra hårt mot bossen
     svag = mon.get("svag") == at["typ"] or bool(at.get("per_dag") and mon.get("svag"))  # regnbågen: alla monster är svaga
     return round(skada * djur_kraft(data)) * (SVAG_GANGER if svag else 1), svag
 
@@ -2195,8 +2266,12 @@ def attack_kop(data: dict, at_id: str) -> None:
         raise ValueError(f"{d['namn']} måste bli {DJUR_STEG[at['steg']][1]} först.")
     if m.get("saldo", 0) < at["pris"]:
         raise ValueError(f"Du behöver {at['pris']} ⭐ (du har {m.get('saldo', 0)}).")
+    u = uppsattning(data)
     ge(data, -at["pris"], f"⚔️ {d['namn']} lärde sig {at['namn']} {at['ikon']}", None, "🛍️")
     agda.append(at_id)
+    k = _karta(data)
+    if len(u) < UPPSATTNING_MAX and k.get("boss_las") != k["niva"]:  # finns det plats tas den nya attacken med direkt
+        m["uppsattning"] = u + [at_id]
 
 
 # ---------- samlarkort: ett album per värld (9 monster + bossen) ----------
@@ -2416,6 +2491,20 @@ def attack(data: dict, at_id: str) -> dict:
         raise ValueError(f"{m['djur']['namn']} är utmattad 😵 Plugga så får hen tillbaka liv!")
     n = k["niva"]
     mon = niva_info(n)
+    lad = _laddning(k, n) if mon.get("boss") else None
+    if at.get("ladd") and not mon.get("boss"):
+        raise ValueError("Laddattacker fungerar bara mot världsbossar och i arenan.")
+    if mon.get("boss"):
+        if at_id not in uppsattning(data):
+            raise ValueError("Mot världsbossen får du bara använda attackerna i din stridsuppsättning (4 platser).")
+        if at.get("ladd"):
+            if lad["anv"].get(at_id, 0) >= at["ganger"]:
+                raise ValueError(f"{at['namn']} går bara att använda {at['ganger']} gång{'er' if at['ganger'] > 1 else ''} per bosstrid.")
+            if lad["p"] < at["ladd"]:
+                raise ValueError(f"Laddmätaren är på {lad['p']} av {at['ladd']}. Träffa bossens svaga punkt så laddas den snabbare!")
+            lad["p"] -= at["ladd"]
+            lad["anv"][at_id] = lad["anv"].get(at_id, 0) + 1
+        k["boss_las"] = n  # uppsättningen är låst tills bossen är besegrad
     skada, svag = _attack_varde(data, at, mon)
     meteorer = 0
     if at_id == "a_meteor":  # slumpa hur många meteorer som slår ner
@@ -2458,6 +2547,8 @@ def attack(data: dict, at_id: str) -> dict:
             k["bubbla"] = n
     mot = skydd["skada"]
     k["liv"] = max(0, liv_fore - mot)
+    if lad is not None and not at.get("ladd"):  # bra träffar laddar laddattacken
+        lad["p"] = min(LADD_MAX, lad["p"] + (LADD_SUPER if svag else LADD_TRAFF) + (LADD_TRAFFAD if mot > 0 else 0))
     if skydd["tillbaka"]:  # taggar eller spegel skadar monstret
         _karta_skada(data, skydd["tillbaka"])
     klar2 = k["niva"] > n
@@ -2480,7 +2571,7 @@ ARENA_VINST, ARENA_FORLUST = 10, 2  # arenapoäng 🏆
 ARENA_XP_VINST, ARENA_XP_FORLUST = 15, 5
 # Arenaversion för strider mellan vänner i olika hem. Höj den när regler, drag eller skada ändras
 # så att en strid mot en annan version skulle bli fel. Båda hemmen måste ha samma version för att strida.
-ARENA_VER = 5  # 2: sköldar och försvar, 3: försvarsträning, 4: kompisboost och uppgraderade attacker, 5: husdjurets element
+ARENA_VER = 6  # 2: sköldar och försvar, 3: försvarsträning, 4: kompisboost och uppgraderade attacker, 5: husdjurets element, 6: uppsättning och laddattacker
 
 # Försvarsträning: när någon annan utmanar ditt husdjur styr datorn det. Tränar du det slåss det
 # smartare och tar i mer (bara när det försvarar sig, inte när du själv anfaller).
@@ -2531,9 +2622,10 @@ def _kampe(data: dict, agare: str) -> dict:
     agda = _m(data).get("attacker", [])
     kraft = djur_kraft(data)
     drag = {"knuff": round(KNUFF["skada"] * kraft * ARENA_GANGER)}
+    med = uppsattning(data)
     for at in ATTACKER:
-        if at["id"] in agda:
-            drag[at["id"]] = _attack_varde(data, at, {})[0] * ARENA_GANGER
+        if at["id"] in agda and at["id"] in med:
+            drag[at["id"]] = round(_attack_varde(data, at, {})[0] / LADD_BOSS * LADD_ARENA) if at.get("ladd") else _attack_varde(data, at, {})[0] * ARENA_GANGER
     mx = djur_liv(data)[1]
     sk = skold(data)
     return {"agare": agare, "namn": d.get("namn", "?"), "art": d.get("art"), "steg": _djur_steg(data),
@@ -2608,11 +2700,19 @@ def _slag(kampe: dict, at_id: str, mal: dict) -> dict:
     ls = SKOLD.get(kampe.get("skold") or "")
     if ls and ls.get("laka"):
         kampe["liv"] = min(kampe["max"], kampe["liv"] + ls["laka"])
-    if random.random() < ARENA_MISS:
-        return {"skada": 0, "miss": True, "skydd": "", "tillbaka": 0}
+    info = _drag_info(at_id)
+    if info.get("ladd"):  # laddattacken använder mätaren
+        kampe["ladd"] = max(0, kampe.get("ladd", 0) - info["ladd"])
+        anv = kampe.setdefault("ladd_anv", {})
+        anv[at_id] = anv.get(at_id, 0) + 1
+    if random.random() < ARENA_MISS and not info.get("ladd"):
+        return {"skada": 0, "miss": True, "skydd": "", "tillbaka": 0, "super": False}
     ra = max(1, round(kampe["drag"][at_id] * random.uniform(0.85, 1.15)))
+    sup = ELEMENT_SVAG_MOT.get(DJUR_ELEMENT.get(mal.get("art") or "", "kraft")) == info["typ"] and at_id != "knuff"
+    if sup:
+        ra = round(ra * ARENA_SUPER)
     s = SKOLD.get(mal.get("skold") or "")
-    sk = _skydda(s, _drag_info(at_id)["typ"], ra, not mal.get("bubbla_anv"))
+    sk = _skydda(s, info["typ"], ra, not mal.get("bubbla_anv"))
     if sk["skydd"] == "bubbla":
         mal["bubbla_anv"] = True
     mal["liv"] = max(0, mal["liv"] - sk["skada"])
@@ -2620,19 +2720,36 @@ def _slag(kampe: dict, at_id: str, mal: dict) -> dict:
         kampe["liv"] = max(0, kampe["liv"] - sk["tillbaka"])
     if s and s.get("magnet") and sk["skada"] > 0:
         mal["ap"] = min(ARENA_AP_MAX, mal["ap"] + s["magnet"])
-    return {"skada": sk["skada"], "miss": False, "skydd": sk["skydd"], "tillbaka": sk["tillbaka"]}
+    if sk["skada"] > 0:  # bra träffar laddar laddattacken, och den som blir träffad laddar lite
+        if not info.get("ladd"):
+            kampe["ladd"] = min(LADD_MAX, kampe.get("ladd", 0) + (LADD_SUPER if sup else LADD_TRAFF))
+        mal["ladd"] = min(LADD_MAX, mal.get("ladd", 0) + LADD_TRAFFAD)
+    return {"skada": sk["skada"], "miss": False, "skydd": sk["skydd"], "tillbaka": sk["tillbaka"], "super": sup}
+
+
+def _kan_drag(kampe: dict, at_id: str) -> bool:
+    info = _drag_info(at_id)
+    if info["energi"] > kampe["ap"]:
+        return False
+    if info.get("ladd"):
+        return kampe.get("ladd", 0) >= info["ladd"] and kampe.get("ladd_anv", {}).get(at_id, 0) < info["ganger"]
+    return True
 
 
 def _ai_val(de: dict, mal: dict | None = None) -> str:
     """Datorns val av drag. Tränade husdjur väljer smartare."""
     t = max(0, min(len(TRANING) - 1, int(de.get("traning", 0) or 0)))
-    kan = [a for a in de["drag"] if _drag_info(a)["energi"] <= de["ap"]]
+    kan = [a for a in de["drag"] if _kan_drag(de, a)]
+    laddat = [a for a in kan if _drag_info(a).get("ladd")]
+    if laddat:  # en laddad attack används direkt
+        return max(laddat, key=lambda a: de["drag"][a])
+    kan = [a for a in kan if not _drag_info(a).get("ladd")] or ["knuff"]
     if mal and t >= 2:  # kan den slå ut motståndaren nu tar den det billigaste draget som räcker
         racker = [a for a in kan if de["drag"][a] >= mal["liv"]]
         if racker:
             return min(racker, key=lambda a: _drag_info(a)["energi"])
     if t >= 4:  # sparar energi till sitt starkaste drag om det går nästa tur
-        basta = max(de["drag"], key=lambda a: de["drag"][a])
+        basta = max((a for a in de["drag"] if not _drag_info(a).get("ladd")), key=lambda a: de["drag"][a])
         if basta not in kan and de["ap"] + ARENA_AP_TUR >= _drag_info(basta)["energi"]:
             return "knuff"
     if random.random() < 0.7 + 0.06 * t:
@@ -2648,19 +2765,24 @@ def arena_drag(data: dict, at_id: str) -> dict:
     jag, de = a["jag"], a["de"]
     if at_id not in jag["drag"]:
         raise ValueError("Det draget kan ditt husdjur inte.")
-    kostar = _drag_info(at_id)["energi"]
+    info = _drag_info(at_id)
+    kostar = info["energi"]
     if kostar > jag["ap"]:
         raise ValueError(f"Du behöver {kostar} ⚡ i striden. Använd Knuff 🐾 och vänta en tur.")
+    if info.get("ladd") and not _kan_drag(jag, at_id):
+        if jag.get("ladd_anv", {}).get(at_id, 0) >= info["ganger"]:
+            raise ValueError(f"{info['namn']} är redan använd i den här striden.")
+        raise ValueError(f"Laddmätaren är på {jag.get('ladd', 0)} av {info['ladd']}. Träffa motståndarens svaga punkt så laddas den snabbare!")
     tur = {"at": at_id, "jag_fore": jag["liv"], "de_fore": de["liv"]}
     jag["ap"] -= kostar
     x = _slag(jag, at_id, de)
-    tur.update({"skada": x["skada"], "miss": x["miss"], "skydd": x["skydd"], "tillbaka": x["tillbaka"]})
+    tur.update({"skada": x["skada"], "miss": x["miss"], "skydd": x["skydd"], "tillbaka": x["tillbaka"], "super": x.get("super")})
     if de["liv"] > 0 and jag["liv"] > 0:
         mot = _ai_val(de, jag)
         de["ap"] -= _drag_info(mot)["energi"]
         tur["mot_at"] = mot
         y = _slag(de, mot, jag)
-        tur.update({"mot": y["skada"], "mot_miss": y["miss"], "mot_skydd": y["skydd"], "mot_tillbaka": y["tillbaka"]})
+        tur.update({"mot": y["skada"], "mot_miss": y["miss"], "mot_skydd": y["skydd"], "mot_tillbaka": y["tillbaka"], "mot_super": y.get("super")})
     tur["jag_efter"], tur["de_efter"] = jag["liv"], de["liv"]
     jag["ap"] = min(ARENA_AP_MAX, jag["ap"] + ARENA_AP_TUR)
     de["ap"] = min(ARENA_AP_MAX, de["ap"] + ARENA_AP_TUR)
@@ -2699,7 +2821,8 @@ def arena_status(data: dict) -> dict:
     n = djur_niva(data)
     return {"niva": n, "cp": djur_cp(data), "def": djur_def(data), "traning": traning_status(data), "kraft": round(djur_kraft(data), 2), "poang": k.get("arena_poang", 0),
             "vinster": _m(data)["raknare"].get("arena_vinster", 0), "pagar": a, "hist": k.get("arena_hist", [])[-5:],
-            "knuff": KNUFF, "ap_max": ARENA_AP_MAX, "ver": ARENA_VER, "drag": {x["id"]: {y: x[y] for y in ("ikon", "namn", "typ", "energi")} for x in [KNUFF, *ATTACKER]}}
+            "knuff": KNUFF, "ap_max": ARENA_AP_MAX, "ver": ARENA_VER, "drag": {x["id"]: {y: x.get(y) for y in ("ikon", "namn", "typ", "energi", "ladd", "ganger")} for x in [KNUFF, *ATTACKER]},
+            "ladd_max": LADD_MAX, "svag_mot": ELEMENT_SVAG_MOT, "element": DJUR_ELEMENT}
 
 
 # ---------- husdjurets rum ----------
@@ -2921,6 +3044,8 @@ def lagstrid_start(data: dict, jag: str, lag_namn: str, kampar: list[dict], de: 
     if k.get("energi", 0) < 1:
         raise ValueError("Du behöver 1 ⚡ energi för en lagstrid. Plugga så laddas den!")
     k["energi"] -= 1
+    for x in kampar + (de or []):  # laddattacker finns bara i arenan och mot bossar
+        x["drag"] = {a: v for a, v in x["drag"].items() if not _drag_info(a).get("ladd")}
     k["lagstrid"] = {"jag": jag, "lag_namn": lag_namn, "lag": kampar, "de": de or _utmanarlag(kampar),
                      "de_namn": de_namn or "Utmanarlaget", "turer": [], "start": dt_util.now().isoformat(timespec="seconds")}
     return k["lagstrid"]

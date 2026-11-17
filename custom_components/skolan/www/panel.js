@@ -425,6 +425,13 @@ const STRID_CSS = `
 #skolan-strid .kommandon [data-s-lamna] { grid-column:1 / -1; margin-top:4px; }
 #skolan-strid .kommandon button { all:unset; cursor:pointer; padding:5px 6px 5px 18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:4px; font-size:14px; font-weight:700; color:#fff; text-shadow:2px 2px 0 #000; position:relative; }
 #skolan-strid .kommandon button small { font-size:11px; opacity:.8; }
+#skolan-strid .shint { grid-column:1/-1; font-size:11px; color:#ffe082; text-shadow:1px 1px 0 #000; }
+#skolan-strid .ladd-rad { grid-column:1/-1; display:flex; align-items:center; gap:6px; font-size:11px; color:#fff; text-shadow:1px 1px 0 #000; margin:2px 0 4px; }
+#skolan-strid .ladd-bar { flex:1; height:8px; border-radius:5px; background:rgba(255,255,255,.2); overflow:hidden; }
+#skolan-strid .ladd-bar div { height:100%; background:linear-gradient(90deg,#ffca28,#ff7043); transition:width .4s; }
+#skolan-strid .ladd-rad.full .ladd-bar div, #skolan-strid .kommandon button.ladd-knapp.redo { animation:sLaddPuls .7s ease-in-out infinite alternate; }
+#skolan-strid .kommandon button.ladd-knapp.redo { color:#ffe082; }
+@keyframes sLaddPuls { from { filter:brightness(1); } to { filter:brightness(1.6); } }
 #skolan-strid .kommandon button:hover:not(:disabled), #skolan-strid .kommandon button:focus-visible { background:rgba(255,255,255,.12); }
 #skolan-strid .kommandon button:hover:not(:disabled)::before { content:"▶"; position:absolute; left:3px; color:#fff59d; }
 #skolan-strid .kommandon button:disabled { opacity:.4; cursor:default; }
@@ -549,6 +556,8 @@ function evoFram(form, cx, cy, r, hatt) {
   if (f === "boss") s += `<circle cx="100" cy="120" r="6" fill="#ffd54f" stroke="#ff8f00" stroke-width="2"/>`;
   return s;
 }
+
+const TYP_TEXT = { eld: "🔥 Eld", natur: "🍃 Natur", blixt: "⚡ Blixt", vatten: "🌊 Vatten", is: "❄️ Is", kraft: "💥 Kraft" };
 
 function ritaDjur(art, humor, steg, x = {}) {
   const u = DJUR_UTSEENDE[art] || DJUR_UTSEENDE["🐶"];
@@ -1746,6 +1755,7 @@ class SkolanPanel extends HTMLElement {
     };
     const paketHtml = (s.paket || []).length ? `<h3>📦 Paket <span class="small muted">★ = finns bara i paket</span></h3>${s.paket.map(paketKort).join("")}` : "";
     const am = s.karta, mon = am?.monster;
+    const med = new Set(am?.uppsattning || []);
     const attackKort = (x) => {
       const last = d.steg < x.steg;
       const upp = x.lvl_pris == null ? `<span class="small">🏆 Max nivå!</span>`
@@ -1760,12 +1770,21 @@ class SkolanPanel extends HTMLElement {
         ${x.har ? `<div class="attack-stjarnor">${"★".repeat(x.lvl)}${"☆".repeat(x.lvl_max - x.lvl)}</div>` : ""}
         <div class="small muted">${x.har ? x.skada_lvl : x.skada} skada${x.har && x.skada_nasta ? ` → <b>${x.skada_nasta}</b>` : ""} · ${x.energi} ⚡</div>
         <div class="small muted">${esc(x.info)}</div>${x.svag ? `<div class="small">🎯 Bra mot nivå ${am.niva}!</div>` : ""}
-        ${x.pass > 1 ? `<div class="passform bra">💪 Passar ${esc(d.namn)}: +25 %</div>` : x.pass < 1 ? `<div class="passform dalig">😕 Passar inte ${esc(d.namn)}: −25 %</div>` : ""}${knapp}</div>`;
+        ${x.pass > 1 ? `<div class="passform bra">💪 Passar ${esc(d.namn)}: +25 %</div>` : x.pass < 1 ? `<div class="passform dalig">😕 Passar inte ${esc(d.namn)}: −25 %</div>` : ""}
+        ${x.ladd ? `<div class="small">🌟 Laddas ${x.ladd} · ${x.ganger}× per strid</div>` : ""}${knapp}
+        ${x.har && !titta ? (med.has(x.id) ? `<button class="mini upps-med" data-upps="${x.id}" ${am.boss_las ? "disabled" : ""}>✅ Med i striden</button>`
+          : `<button class="mini" data-upps="${x.id}" ${am.boss_las || med.size >= am.uppsattning_max ? "disabled" : ""}>➕ Ta med</button>`) : ""}</div>`;
     };
     const attackHtml = am ? `<h3>⚔️ Attacker för kartan</h3>
       <div class="small muted">Attackerna laddas med ⚡ energi när du pluggar. Varje monster är svagt mot en typ och tar då dubbel skada.</div>
       ${d.element ? `<div class="element-rad">${esc(d.namn)} är ett <b>${d.element.namn}-djur</b>: ${esc(am.typer[d.element.bra])}-attacker gör <b>+25 %</b>, ${esc(am.typer[d.element.dalig])}-attacker <b>−25 %</b>.</div>` : ""}
-      <div class="sak-rutnat">${am.attacker.map(attackKort).join("")}</div>
+      <div class="upps-kort"><b>🎒 Stridsuppsättning</b> <span class="small muted">· ${med.size}/${am.uppsattning_max} platser</span>
+        <div class="upps-platser">${[...Array(am.uppsattning_max)].map((_, i) => { const x = am.attacker.find((y) => y.id === am.uppsattning[i]); return `<div class="upps-plats ${x ? "" : "tom"}">${x ? `${x.ikon}<small>${esc(x.namn)}</small>` : "<small>tom</small>"}</div>`; }).join("")}</div>
+        <div class="small muted">I arenan och mot världsbossar får ${esc(d.namn)} bara använda de här ${am.uppsattning_max}. Välj efter motståndaren! ${am.boss_las ? "<b>🔒 Låst tills bossen är besegrad.</b>" : ""}</div></div>
+      <div class="sak-rutnat">${am.attacker.filter((x) => !x.ladd).map(attackKort).join("")}</div>
+      <h3>🌟 Laddattacker</h3>
+      <div class="small muted">Kostar ingen ⚡ men måste laddas upp med bra träffar. Träffa motståndarens svaga punkt så laddas de snabbare. Fungerar bara i arenan och mot världsbossar, och tar en plats i uppsättningen.</div>
+      <div class="sak-rutnat">${am.attacker.filter((x) => x.ladd).map(attackKort).join("")}</div>
       <h3>⚡ Energi</h3>
       <div class="small muted">Du har ⚡ ${am.energi} av ${am.energi_max}. Pluggar du får du 1 ⚡ per ${am.p_energi} ⭐ och behåller stjärnorna. Du kan också köpa energi, högst ${am.energi_kop_kvar ?? 0} till idag.</div>
       <div class="sak-rutnat">${[1, 3].map((n) => {
@@ -1873,15 +1892,18 @@ class SkolanPanel extends HTMLElement {
       }).join("")}</div>` : ""}
       ${ko ? `<div class="small ko-text">😵 ${esc(d.namn)} är utmattad. Plugga för att få tillbaka liv${barn ? ", eller drick en livdryck 🧪" : ""}.</div>` : ""}` : "";
     if (d && barn) {
-      const mina = (k.attacker || []).filter((x) => x.har);
+      const boss = !!k.ladd, med = new Set(k.uppsattning || []);
+      const mina = (k.attacker || []).filter((x) => x.har && (boss ? med.has(x.id) : !x.ladd));
+      const laddKan = (x) => !x.ladd || (boss && k.ladd.p >= x.ladd && (k.ladd.anv?.[x.id] || 0) < x.ganger);
       attacker = mina.length
         ? `<div class="attack-rad"><span class="energi" title="Energi">⚡ ${k.energi}</span>${mina.map((x) => {
-            const slut = x.slut;
-            const kan = !slut && !ko && k.energi >= x.energi && !this._busy;
+            const slut = x.slut || (x.ladd && (k.ladd?.anv?.[x.id] || 0) >= x.ganger);
+            const kan = !slut && !ko && k.energi >= x.energi && !this._busy && laddKan(x);
             return `<button class="attack-knapp ${x.svag ? "svag" : ""}" data-attack="${x.id}" ${kan ? "" : "disabled"} title="${esc(x.namn)}: ${esc(x.info)}">
               <span class="ai">${x.ikon}</span><b>${x.nu}${x.pass > 1 ? "💪" : x.pass < 1 ? "😕" : ""}</b><small>${slut ? "använd" : x.energi + "⚡"}</small></button>`;
           }).join("")}</div>
-          <div class="small muted">1 ⚡ per ${k.p_energi} ⭐ du tjänar (max ${k.energi_max})</div>`
+          <div class="small muted">1 ⚡ per ${k.p_energi} ⭐ du tjänar (max ${k.energi_max})</div>
+          ${boss ? `${this._laddRad(k.ladd.p, k.ladd.max)}<div class="small muted">⚔️ Bosstrid: bara din stridsuppsättning${k.boss_las ? " (låst tills bossen är besegrad)" : ""}. Träffa bossens svaga punkt så laddas 🌟 snabbare!</div>` : ""}`
         : `<div class="small">⚔️ ⚡ ${k.energi} energi · lär ${esc(d.namn)} attacker i <button class="mini butik-knapp" id="open-djurbutik">🛍️ Butiken</button></div>`;
     }
     const sen = k.klara?.length ? k.klara[k.klara.length - 1] : null;
@@ -2328,7 +2350,8 @@ class SkolanPanel extends HTMLElement {
       ${a.pagar ? `<button class="primary" id="arena-fortsatt">⚔️ Fortsätt striden mot ${esc(a.pagar.mot_namn)}</button>` : ""}
       <h3>⚔️ Utmana</h3>
       ${andra.length ? `<ul class="lista arena-lista">${andra.map((t) => `<li><span class="van-djur">${t.karta.art ? ritaDjur(t.karta.art, "glad", Math.max(1, t.karta.steg || 1), {}) : "🥚"}</span>
-          <span><b>${esc(t.namn)}</b>${t.karta.djur ? ` · ${esc(t.karta.djur)}` : ""}<br><span class="small">⬆️ ${t.karta.djur_niva || 1} · 💪 CP ${t.karta.cp || 0} · ${t.karta.skold || "🛡️"} DEF ${t.karta.def || 0}${t.karta.traning ? ` · 🎓 ${t.karta.traning}` : ""}</span></span>
+          <span><b>${esc(t.namn)}</b>${t.karta.djur ? ` · ${esc(t.karta.djur)}` : ""}<br><span class="small">⬆️ ${t.karta.djur_niva || 1} · 💪 CP ${t.karta.cp || 0} · ${t.karta.skold || "🛡️"} DEF ${t.karta.def || 0}${t.karta.traning ? ` · 🎓 ${t.karta.traning}` : ""}</span>
+          ${(() => { const el = a.element?.[t.karta.art]; return el ? `<br><span class="small">${TYP_TEXT[el]}-djur · 🎯 svag mot <b>${TYP_TEXT[a.svag_mot[el]]}</b></span>` : ""; })()}</span>
           ${barn && t.karta.art && !a.pagar ? `<button class="mini primary" data-arena-mot="${esc(t.id)}" ${k.energi >= 1 && !this._busy ? "" : "disabled"}>Utmana · 1⚡</button>` : ""}</li>`).join("")}</ul>`
         : `<p class="muted">Ingen att utmana än.</p>`}
       ${(this._vanner?.vanner || []).length ? `<h3>🤝 Vänner</h3><ul class="lista arena-lista">${this._vanner.vanner.map((x) => {
@@ -2352,7 +2375,7 @@ class SkolanPanel extends HTMLElement {
     const motAt = tur?.mot_at ? info[tur.mot_at] : null;
     return { at, djur: { art: a.jag.art, steg: Math.max(1, a.jag.steg), namn: a.jag.namn }, motDjur: { art: a.de.art, steg: Math.max(1, a.de.steg) },
       mon: { ikon: "", namn: `${a.de.namn}`, boss: false, varld: { farg: "#6a1b9a" } }, hp: a.de.max, kvar: tur ? tur.de_fore : a.de.liv,
-      skada: tur?.skada || 0, jagMiss: !!tur?.miss, svag: false, klar: tur?.slut === "vinst", mot: tur?.mot || 0, miss: !!tur?.mot_miss, motAt,
+      skada: tur?.skada || 0, jagMiss: !!tur?.miss, svag: !!tur?.super, klar: tur?.slut === "vinst", mot: tur?.mot || 0, miss: !!tur?.mot_miss, motAt,
       livFore: tur ? tur.jag_fore : a.jag.liv, livMax: a.jag.max, arena: true,
       efter: tur?.de_efter, livEfter: tur?.jag_efter, skold: a.jag.skold, motSkold: a.de.skold,
       deSkydd: tur?.skydd, deTillbaka: tur?.tillbaka, skydd: tur?.mot_skydd, tillbaka: tur?.mot_tillbaka, ...extra };
@@ -2438,8 +2461,11 @@ class SkolanPanel extends HTMLElement {
     if (ln) ln.textContent = `${k.liv}/${k.liv_max}`;
     const ko = k.liv <= 0, fel = this._msg?.type === "error" ? this._msg.text : "";
     const vecka = k.super_anvand;
-    const at = (k.attacker || []).filter((x) => x.har).map((x) => {
-      const kan = !o.titta && !ko && k.energi >= x.energi && !x.slut;
+    const boss = !!k.ladd, med = new Set(k.uppsattning || []);
+    const at = (k.attacker || []).filter((x) => x.har && (boss ? med.has(x.id) : !x.ladd)).map((x) => {
+      const anvand = x.ladd && (k.ladd?.anv?.[x.id] || 0) >= x.ganger;
+      const kan = !o.titta && !ko && k.energi >= x.energi && !x.slut && !anvand && (!x.ladd || k.ladd.p >= x.ladd);
+      if (x.ladd) return `<button class="ladd-knapp ${kan ? "redo" : ""}" data-s-attack="${x.id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${anvand ? "använd" : `🌟 ${x.ladd}`} · ${x.nu}</small></button>`;
       return `<button data-s-attack="${x.id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${x.nu}${x.pass > 1 ? " 💪" : x.pass < 1 ? " 😕" : ""}</small></button>`;
     }).join("");
     const dr = (k.drycker || []).filter((x) => x.antal).map((x) => {
@@ -2450,7 +2476,7 @@ class SkolanPanel extends HTMLElement {
     el.querySelector(".kommando")?.remove();
     meny.innerHTML = o.klar
       ? `<button data-s-nasta>➡️ Nästa nivå</button><button data-s-lamna>🏃 Lämna</button>`
-      : `${fel ? `<div class="sfel">${esc(fel)}</div>` : ""}${o.titta ? `<div class="stom">👀 Du tittar. Bara ${esc(this._s.namn || "barnet")} kan attackera.</div>` : ""}<div class="srubrik">⚔️ Attack · ⚡ ${k.energi}</div>${at || `<div class="stom">Köp attacker i Butiken 🛍️</div>`}
+      : `${fel ? `<div class="sfel">${esc(fel)}</div>` : ""}${o.titta ? `<div class="stom">👀 Du tittar. Bara ${esc(this._s.namn || "barnet")} kan attackera.</div>` : ""}<div class="srubrik">⚔️ Attack · ⚡ ${k.energi}</div>${boss ? this._laddRad(k.ladd.p, k.ladd.max) : ""}${at || `<div class="stom">Köp attacker i Butiken 🛍️</div>`}
          <div class="srubrik">🎒 Ryggsäck</div>${dr || `<div class="stom">Tom. Livdrycker finns i Butiken 🛍️</div>`}
          <button data-s-lamna>🏃 Lämna striden</button>`;
     this._msg = null;
@@ -2480,6 +2506,12 @@ class SkolanPanel extends HTMLElement {
     };
   }
 
+  // Laddmätaren för laddattacker (mot världsbossar och i arenan).
+  _laddRad(p, max = 100) {
+    const pct = Math.min(100, Math.round((p / max) * 100));
+    return `<div class="ladd-rad ${pct >= 100 ? "full" : ""}"><span>🌟 Laddning</span><div class="ladd-bar"><div style="width:${pct}%"></div></div><b>${p}/${max}</b></div>`;
+  }
+
   _arenaMeny(el, o) {
     const a = this._s.arena?.pagar, info = this._s.arena?.drag || {}, barn = !this._s.kan_valja;
     const fel = this._msg?.type === "error" ? this._msg.text : "";
@@ -2496,9 +2528,16 @@ class SkolanPanel extends HTMLElement {
     meny.innerHTML = !a
       ? `<button data-s-arena>🏟️ Till arenan</button><button data-s-lamna>🏃 Lämna</button>`
       : `${fel ? `<div class="sfel">${esc(fel)}</div>` : ""}<div class="srubrik">⚔️ Drag · ⚡ ${a.jag.ap}</div>
+         ${this._laddRad(a.jag.ladd || 0, this._s.arena?.ladd_max || 100)}
+         ${(() => { const svag = this._s.arena?.svag_mot?.[this._s.arena?.element?.[a.de.art] || "kraft"]; return svag ? `<div class="shint">🎯 ${esc(a.de.namn)} är svag mot ${TYP_TEXT[svag] || svag}</div>` : ""; })()}
          ${Object.entries(a.jag.drag).map(([id, dmg]) => {
            const x = info[id] || { ikon: "⚔️", namn: id, energi: 0 };
-           return `<button data-s-drag="${id}" ${barn && x.energi <= a.jag.ap ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${dmg}</small></button>`;
+           if (x.ladd) {
+             const anv = (a.jag.ladd_anv?.[id] || 0) >= x.ganger, kan = barn && !anv && (a.jag.ladd || 0) >= x.ladd;
+             return `<button class="ladd-knapp ${kan ? "redo" : ""}" data-s-drag="${id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${anv ? "använd" : `🌟 ${x.ladd}`} · ${dmg}</small></button>`;
+           }
+           const sv = this._s.arena?.svag_mot?.[this._s.arena?.element?.[a.de.art] || "kraft"] === x.typ && id !== "knuff";
+           return `<button data-s-drag="${id}" ${barn && x.energi <= a.jag.ap ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${dmg}${sv ? " 🎯" : ""}</small></button>`;
          }).join("")}
          <button data-s-geupp ${barn ? "" : "disabled"}>🏳️ Ge upp</button><button data-s-lamna>🏃 Pausa</button>`;
     meny.onclick = async (e) => {
@@ -2918,6 +2957,9 @@ class SkolanPanel extends HTMLElement {
         `🛍️ I <b>Husdjursbutiken</b> kan du köpa hattar, bakgrunder och effekter för dina stjärnor. Djuret växer ändå, för storleken räknas på alla meriter du har tjänat.`,
         `🎉 Inför högtider (jul, påsk, Halloween, sommarlov med flera) finns specialsaker i 2 veckor. Det du köper får du behålla för alltid.`,
         `🐾 Du kan ha <b>flera husdjur</b>. Ett nytt kostar 100 ⭐ och börjar som ett ägg. Byt gratis mellan dina djur i butiken. Bara djuret som är med dig växer, får XP och utvecklas av det du gör. Attacker, försvarsträning och kompisar hör till djuret du köper dem till, så ett nytt djur börjar om från början. Allt finns kvar när du byter tillbaka.`,
+        `🎒 <b>Stridsuppsättning:</b> i arenan och mot världsbossar får djuret bara ta med 4 attacker. Välj dem i butiken. Mot bossen låses de när striden har börjat.`,
+        `🎯 I arenan är varje djur svagt mot en typ: 🔥 mot 🌊, 🌊 mot ⚡, ⚡ mot 🍃, 🍃 mot 🔥, ❄️ mot 💥 och 💥 mot ❄️. Träffar du den svaga punkten blir det <b>×1,5</b> skada.`,
+        `🌟 <b>Laddattacker</b> köps i butiken. De laddas upp av bra träffar (mest av träffar på den svaga punkten) och kan bara användas 1–2 gånger per strid.`,
         `🔥 Varje djur har ett <b>element</b>. Attacker av samma typ gör <b>+25 %</b> 💪, och en typ passar dåligt och gör <b>−25 %</b> 😕. Välj attacker som passar ditt djur och som monstren är svaga mot!`,
       ])}
 
@@ -5835,6 +5877,7 @@ class SkolanPanel extends HTMLElement {
       }
     }));
     r.querySelectorAll("[data-djur-av]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: b.dataset.djurAv, sak: null })));
+    r.querySelectorAll("[data-upps]").forEach((b) => b.addEventListener("click", () => this._act("uppsattning", { attack: b.dataset.upps })));
     r.querySelectorAll("[data-djur-till]").forEach((b) => b.addEventListener("click", async () => {
       const h = (this._s.meriter?.djur?.mina || []).find((x) => x.id === b.dataset.djurTill);
       if (h && await this._act("djur", { id: h.id, art: h.art, namn: "" })) this._msg = { type: "ok", text: `${h.art} ${h.namn} är med dig nu! Allt du gör nu hjälper ${h.namn} att växa.` };
@@ -6604,6 +6647,17 @@ const CSS = `
   .lar-rad.barn .lar-bubbla { background:#e3f2fd; color:#0d47a1; border-bottom-right-radius:4px; }
   .lar-bubbla.tanker { animation:andas 1s ease-in-out infinite; }
   .lar-input { display:flex; flex-direction:column; gap:6px; }
+  .upps-kort { border:2px solid #7e57c2; border-radius:12px; padding:8px 10px; margin:8px 0; background:rgba(126,87,194,.06); }
+  .upps-platser { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin:6px 0; }
+  .upps-plats { border:2px solid #7e57c2; border-radius:10px; text-align:center; font-size:24px; padding:4px 2px; display:flex; flex-direction:column; align-items:center; }
+  .upps-plats small { font-size:10px; line-height:1.1; } .upps-plats.tom { border-style:dashed; opacity:.5; }
+  .upps-med { background:#ede7f6; border-color:#7e57c2; }
+  .ladd-rad { display:flex; align-items:center; gap:6px; font-size:12px; margin:4px 0; }
+  .ladd-bar { flex:1; height:10px; border-radius:6px; background:rgba(0,0,0,.12); overflow:hidden; }
+  .ladd-bar div { height:100%; background:linear-gradient(90deg,#ffca28,#ff7043); transition:width .4s; }
+  .ladd-rad.full .ladd-bar div { animation:laddPuls 0.8s ease-in-out infinite alternate; }
+  @keyframes laddPuls { from { filter:brightness(1); } to { filter:brightness(1.5); box-shadow:0 0 8px #ffca28; } }
+  .ladd-knapp.redo { background:linear-gradient(90deg,#ffe082,#ffab91) !important; font-weight:700; animation:laddPuls 0.8s ease-in-out infinite alternate; }
   .passform { font-size:12px; font-weight:600; border-radius:8px; padding:2px 6px; margin:3px 0; }
   .passform.bra { background:#e8f5e9; color:#1b5e20; } .passform.dalig { background:#fbe9e7; color:#bf360c; }
   .element-rad { background:rgba(33,150,243,.08); border-radius:10px; padding:6px 10px; margin:6px 0; font-size:13px; }
