@@ -1532,6 +1532,32 @@ class SkolanPanel extends HTMLElement {
     return b?.deko ? `<span class="bg-deko">${b.deko}</span>` : "";
   }
 
+  // Gåtor om vilka husdjur kompisarna trivs bäst med. Säger aldrig rakt ut vad det ger.
+  static KOMPIS_GATA = {
+    k_kyckling: "Längtar hem till bondgården.", k_mus: "Gillar snabbmat… och är konstigt nog inte rädd för katter.",
+    k_groda: "Trivs bäst där det är blött och skuggigt.", k_nyckelpiga: "Hänger helst i trädgården bland gröna och saftiga saker.",
+    k_snigel: "Vill ha en kompis som inte har så bråttom.", k_fjaril: "Dras till allt som är färgglatt och sött.",
+    k_papegoja: "Pratar hela dagarna med djungelns invånare.", k_blackfisk: "Saknar havet och allt som simmar.",
+    k_spoke: "Vaknar först när det blir mörkt.", k_robot: "Gillar sånt som är hårt, uråldrigt eller av metall.",
+    k_alien: "Kommer uppifrån och gillar det som svävar eller är magiskt.", k_drake: "Vill bara umgås med de vildaste av de vilda.",
+    k_enhorning: "Älskar sötsaker och allt som är magiskt.", ps_nalle: "Kramas helst med andra björnar.",
+    ps_valp: "Vem har snott min strumpa?!", ps_katt: "Gillar kattdjur… och kanske något litet att jaga.",
+    b_zombie: "Gillar sånt som är lite läskigt eller ruttet.", b_spoke: "Letar efter andra som är vakna på natten.",
+  };
+
+  // En retsam rad om att kompisar kan göra mer än att bara hänga med. Byts varje dag.
+  _kompisRetas(d) {
+    if (d.bastis) return `<div class="kompis-retas">💞 ${esc(d.namn || "Ditt husdjur")} har hittat sin bästis. Det känns… på något sätt. 😏</div>`;
+    const rader = [
+      "🤫 Psst… vissa kompisar trivs extra bra med vissa husdjur. Mer än man kan tro.",
+      "🤔 Har du märkt att vissa kompisar verkar göra mer än att bara hänga med?",
+      "🔍 Läs ledtrådarna noga. Någon här kanske letar efter just ett husdjur som ditt…",
+      "😏 Vi säger inget. Men det spelar roll vem du väljer.",
+      `👀 ${esc(d.namn || "Ditt husdjur")} har inte hittat sin bästis än…`,
+    ];
+    return `<div class="kompis-retas">${rader[new Date().getDate() % rader.length]}</div>`;
+  }
+
   _djurbutikView() {
     const s = this._s;
     const d = s.meriter?.djur;
@@ -1550,7 +1576,8 @@ class SkolanPanel extends HTMLElement {
       else if (last) knapp = `<span class="small muted">🔒 ${esc(s.djur_steg[x.steg])}</span>`;
       else if (!x.kan_kopas) knapp = `<span class="small muted">Säsong slut</span>`;
       else knapp = `<button class="mini ${saldo >= x.pris ? "primary" : ""}" data-djur-kop="${x.id}" ${saldo >= x.pris ? "" : "disabled"}>${x.pris} ⭐</button>`;
-      return `<div class="sak-kort ${pa ? "pa" : ""} ${last ? "last" : ""}"><div class="sak-ikon">${x.ikon}</div><div class="small">${esc(x.namn)}</div>${knapp}</div>`;
+      const gata = x.typ === "kompis" ? SkolanPanel.KOMPIS_GATA[x.id] : "";
+      return `<div class="sak-kort ${pa ? "pa" : ""} ${last ? "last" : ""}"><div class="sak-ikon">${x.ikon}${pa && x.typ === "kompis" && d.bastis ? `<span class="bastis-hjarta" title="Bästisar!">💞</span>` : ""}</div><div class="small">${esc(x.namn)}</div>${gata ? `<div class="kompis-gata">${esc(gata)}</div>` : ""}${knapp}</div>`;
     };
     const fmt = (iso) => new Date(iso + "T12:00").toLocaleDateString("sv-SE", { day: "numeric", month: "short" });
     const vanliga = (typ) => (s.djurbutik || []).filter((x) => x.typ === typ && ((!x.hogtid && !x.bara_paket) || (d.agt || []).includes(x.id))).sort((a, b) => a.pris - b.pris);
@@ -1613,7 +1640,7 @@ class SkolanPanel extends HTMLElement {
       <div class="butik-saldo">${titta ? `${esc(s.namn)} har <b>⭐ ${saldo}</b>. Bara ${esc(s.namn)} kan handla här.` : `Du har <b>⭐ ${saldo}</b> att handla för`}</div>
       <div class="small muted center">Samling: ${antalAgt} saker (${antalAlla} vanliga + säsongssaker)</div>
       ${paketHtml}${sasong}${nasta}${attackHtml}
-      ${typer.map(([typ, rubrik]) => `<h3>${rubrik}</h3><div class="sak-rutnat">${vanliga(typ).map(kort).join("")}</div>`).join("")}
+      ${typer.map(([typ, rubrik]) => `<h3>${rubrik}</h3>${typ === "kompis" ? this._kompisRetas(d) : ""}<div class="sak-rutnat">${vanliga(typ).map(kort).join("")}</div>`).join("")}
       ${titta ? "" : `<h3>🔄 Byt djur · ${d.gratis_byte !== false ? "🎁 Gratis en gång!" : `${s.byt_djur_pris} ⭐`}</h3>
       ${(d.agda_djur || []).filter((a) => a !== d.art).length ? `<div class="small">Dina paketdjur (gratis att byta till):</div><div class="djur-val">${d.agda_djur.filter((a) => a !== d.art).map((a) => `<button data-djur-paketdjur="${a}" class="rit-val">${ritaDjur(a, "glad", Math.max(1, d.steg))}</button>`).join("")}</div>` : ""}
       <div class="djur-val">${(s.djurlista || []).filter((a) => a !== d.art).map((a) => `<button data-djur-byt="${a}" class="rit-val" ${d.gratis_byte !== false || saldo >= s.byt_djur_pris ? "" : "disabled"}>${ritaDjur(a, "glad", Math.max(1, d.steg))}</button>`).join("")}</div>
@@ -5909,6 +5936,11 @@ const CSS = `
   .glod-eld .kropp { filter:drop-shadow(0 0 8px #ff5722) drop-shadow(0 0 18px #ffab00); }
   .glod-skugga .kropp { filter:drop-shadow(6px 6px 0 rgba(0,0,0,.55)); }
   .glod-snurr .kropp { animation:snurra 4s linear infinite; } @keyframes snurra { to { transform:rotate(360deg); } }
+  .kompis-gata { font-size:11px; font-style:italic; opacity:.75; margin:2px 0 4px; line-height:1.25; }
+  .kompis-retas { font-size:13px; font-style:italic; padding:8px 12px; margin:-4px 0 10px; border-radius:10px; background:rgba(156,39,176,.10); }
+  .sak-ikon { position:relative; }
+  .bastis-hjarta { position:absolute; top:-6px; right:-10px; font-size:16px; animation:bastis 1.6s ease-in-out infinite; }
+  @keyframes bastis { 0%,100% { transform:scale(1); } 50% { transform:scale(1.25); } }
   .tl-ledare { display:flex; gap:12px; align-items:center; padding:12px 14px; border-radius:14px; background:linear-gradient(135deg,#fff8e1,#ffe082); color:#4e342e; margin-bottom:10px; }
   .tl-ledare.tom { justify-content:center; }
   .tl-krona { font-size:34px; }
