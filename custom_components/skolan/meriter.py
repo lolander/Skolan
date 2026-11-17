@@ -1632,6 +1632,8 @@ def _klara_niva(data: dict, k: dict) -> None:
             d["agt"].append(info["sak"]["id"])
         _rakna(data, "bossar")
         _kort_ge(data, f"{info['varld']['id']}:9")  # bossens eget kort
+    elif random.random() < KORT_MONSTER_CHANS:  # ett besegrat monster tappar ibland sitt kort
+        _kort_ge(data, f"{info['varld']['id']}:{(n - 1) % NIVA_PER_VARLD}")
     _rakna(data, "nivaer")
     k.setdefault("klara", []).append({"niva": n, "stjarnor": st, "tid": dt_util.now().isoformat(timespec="minutes")})
     del k["klara"][:-20]
@@ -2695,6 +2697,89 @@ def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict
     return k["arena"]
 
 
+KORT_MONSTER_CHANS = 0.5
+
+# ---------- revansch: slå en världsboss man redan har besegrat igen, i arenans stridsmotor ----------
+REVANSCH_ENERGI = 2
+REVANSCH_XP = 5
+REVANSCH_KORT_DAG = 3  # så många revanschvinster per dag ger kort
+ELEMENT_FRAN_SVAGHET = {v: k for k, v in ELEMENT_SVAG_MOT.items()}  # bossens svaghet → bossens element
+
+
+def _bossar_slagna(data: dict) -> list[int]:
+    """Index på världarna vars boss barnet har besegrat (minst en gång)."""
+    n = _karta(data)["niva"]
+    return sorted({vi % len(VARLDAR) for vi in range(0, (n - 1) // NIVA_PER_VARLD)})
+
+
+def revansch_kort_kvar(data: dict) -> int:
+    rk = _karta(data).get("revansch_kort", {})
+    return REVANSCH_KORT_DAG - (rk.get("n", 0) if rk.get("dag") == dt_util.now().date().isoformat() else 0)
+
+
+def revansch_lista(data: dict) -> list[dict]:
+    kort = _m(data).get("kort", {})
+    ut = []
+    for vi in _bossar_slagna(data):
+        b, v = BOSSAR[vi], VARLDAR[vi]
+        ut.append({"varld": v["id"], "varld_namn": v["namn"], "farg": v["farg"], "ikon": b["ikon"], "namn": b["namn"], "svag": b["svag"],
+                   "kort_kvar": sum(1 for i in range(10) if not kort.get(f"{v['id']}:{i}")), "har_bosskort": bool(kort.get(f"{v['id']}:9"))})
+    return ut
+
+
+def _boss_kampe(data: dict, vi: int) -> dict:
+    """Bossen som datorstyrd motståndare: lika stark som husdjuret, lite starkare för senare världar."""
+    b = BOSSAR[vi]
+    jag = _kampe(data, "")
+    faktor = (1.0 + 0.05 * vi) * b["svar"]
+    vanliga = [v for a, v in jag["drag"].items() if a != "knuff" and not _drag_info(a).get("ladd")]
+    bas = max(vanliga or [KNUFF["skada"] * ARENA_GANGER])
+    slag = VARLD_SLAG.get(VARLDAR[vi]["id"], "kraft")
+    pool = [x for x in ATTACKER if x["typ"] in (slag, "kraft") and not x.get("ladd") and not x.get("per_dag") and x["id"] != "a_super"]
+    if len(pool) < 3:
+        pool += [x for x in ATTACKER if x not in pool and not x.get("ladd") and not x.get("per_dag") and x["id"] != "a_super"][: 3 - len(pool)]
+    pool = sorted(pool, key=lambda x: x["skada"])[:3]
+    drag = {"knuff": round(KNUFF["skada"] * ARENA_GANGER * faktor)}
+    for i, x in enumerate(pool):
+        drag[x["id"]] = max(1, round(bas * (0.5 + 0.2 * i) * faktor))
+    if vi >= 2:  # bossar längre fram har en egen laddattack
+        la = next((x for x in ATTACKER if x.get("ladd") and x["typ"] == slag), next(x for x in ATTACKER if x["id"] == "l_stjarna"))
+        drag[la["id"]] = round(bas * 1.4 * faktor)
+    mx = round(jag["max"] * (1.1 + 0.06 * vi) * b["svar"])
+    return {"agare": "boss", "namn": b["namn"], "art": b["ikon"], "element": ELEMENT_FRAN_SVAGHET.get(b["svag"], "kraft"), "boss": True,
+            "steg": 5, "niva": 0, "cp": 0, "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag, "skold": "", "def": 0, "traning": min(5, 1 + vi)}
+
+
+def revansch_start(data: dict, varld: str) -> dict:
+    m = _m(data)
+    if not m.get("djur"):
+        raise ValueError("Du behöver ett husdjur först.")
+    vi = next((i for i, v in enumerate(VARLDAR) if v["id"] == varld), None)
+    if vi is None or vi not in _bossar_slagna(data):
+        raise ValueError("Den bossen har du inte besegrat än.")
+    k = _karta(data)
+    if k.get("arena") or k.get("lagstrid"):
+        raise ValueError("Gör klart striden som pågår först.")
+    if k.get("energi", 0) < REVANSCH_ENERGI:
+        raise ValueError(f"En revansch kostar {REVANSCH_ENERGI} ⚡. Plugga så laddas energin!")
+    k["energi"] -= REVANSCH_ENERGI
+    k["arena"] = {"mot": "boss", "mot_namn": BOSSAR[vi]["namn"], "revansch": varld, "jag": _kampe(data, "jag"), "de": _boss_kampe(data, vi),
+                  "turer": [], "start": dt_util.now().isoformat(timespec="seconds")}
+    return k["arena"]
+
+
+def _revansch_kort(data: dict, varld: str) -> str:
+    """Vinst: bossens eget kort om det saknas, annars ett kort från världen (helst ett man inte har)."""
+    kort = _m(data).get("kort", {})
+    if not kort.get(f"{varld}:9"):
+        kid = f"{varld}:9"
+    else:
+        saknas = [i for i in range(9) if not kort.get(f"{varld}:{i}")]
+        kid = f"{varld}:{random.choice(saknas) if saknas and random.random() < 0.6 else random.randint(0, 8)}"
+    _kort_ge(data, kid)
+    return kid
+
+
 def _slag(kampe: dict, at_id: str, mal: dict) -> dict:
     """Ett anfall i arenan. Målets sköld tar emot träffen."""
     ls = SKOLD.get(kampe.get("skold") or "")
@@ -2708,7 +2793,7 @@ def _slag(kampe: dict, at_id: str, mal: dict) -> dict:
     if random.random() < ARENA_MISS and not info.get("ladd"):
         return {"skada": 0, "miss": True, "skydd": "", "tillbaka": 0, "super": False}
     ra = max(1, round(kampe["drag"][at_id] * random.uniform(0.85, 1.15)))
-    sup = ELEMENT_SVAG_MOT.get(DJUR_ELEMENT.get(mal.get("art") or "", "kraft")) == info["typ"] and at_id != "knuff"
+    sup = ELEMENT_SVAG_MOT.get(mal.get("element") or DJUR_ELEMENT.get(mal.get("art") or "", "kraft")) == info["typ"] and at_id != "knuff"
     if sup:
         ra = round(ra * ARENA_SUPER)
     s = SKOLD.get(mal.get("skold") or "")
@@ -2802,6 +2887,21 @@ def arena_ge_upp(data: dict) -> None:
 def _arena_slut(data: dict, vann: bool, gav_upp: bool = False) -> None:
     k = _karta(data)
     a = k.pop("arena")
+    if a.get("revansch"):  # revansch mot en boss: kort i stället för arenapoäng
+        idag = dt_util.now().date().isoformat()
+        rk = k.setdefault("revansch_kort", {})
+        if rk.get("dag") != idag:
+            rk.clear()
+            rk["dag"] = idag
+        kid = None
+        if vann and rk.get("n", 0) < REVANSCH_KORT_DAG:
+            rk["n"] = rk.get("n", 0) + 1
+            kid = _revansch_kort(data, a["revansch"])
+        _djur_xp(data, 0)
+        k["djur_xp"] += REVANSCH_XP if vann else 0
+        k["revansch_hist"] = (k.get("revansch_hist", []) + [{"varld": a["revansch"], "mot_namn": a["mot_namn"], "vann": vann, "gav_upp": gav_upp,
+                                                             "kort": kid, "tid": dt_util.now().isoformat(timespec="seconds"), "turer": a["turer"][-40:]}])[-10:]
+        return
     k["arena_poang"] = k.get("arena_poang", 0) + (ARENA_VINST if vann else ARENA_FORLUST if not gav_upp else 0)
     _djur_xp(data, 0)
     k["djur_xp"] += ARENA_XP_VINST if vann else ARENA_XP_FORLUST if not gav_upp else 0

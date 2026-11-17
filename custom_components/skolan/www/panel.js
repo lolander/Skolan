@@ -2348,6 +2348,12 @@ class SkolanPanel extends HTMLElement {
           <div class="small">🏆 ${a.poang} arenapoäng · ${a.vinster} vinster · ⚡ ${k.energi}</div></div></div>
       ${this._traningKort(a, d, barn)}
       ${a.pagar ? `<button class="primary" id="arena-fortsatt">⚔️ Fortsätt striden mot ${esc(a.pagar.mot_namn)}</button>` : ""}
+      ${(() => { const rv = s.revansch; if (!rv?.bossar?.length) return "";
+        return `<h3>🔁 Revansch mot bossar</h3>
+        <div class="small muted">Slå en boss du redan har besegrat igen och vinn kort till albumet 🃏. Kostar ${rv.energi} ⚡. Din stridsuppsättning och dina laddattacker gäller. ${rv.kort_kvar > 0 ? `Kort kvar att vinna idag: <b>${rv.kort_kvar}</b>.` : "Dagens kort är slut, men du kan träna ändå."}</div>
+        <ul class="lista arena-lista">${rv.bossar.map((b) => `<li><span class="van-djur" style="font-size:34px;text-align:center">${b.ikon}</span>
+          <span><b>${esc(b.namn)}</b><br><span class="small">${esc(b.varld_namn)} · 🎯 svag mot ${TYP_TEXT[b.svag]} · 🃏 ${b.kort_kvar ? `${b.kort_kvar} kort saknas` : "alla kort!"}</span></span>
+          ${barn && !a.pagar ? `<button class="mini primary" data-revansch="${b.varld}" ${k.energi >= rv.energi && !this._busy ? "" : "disabled"}>Revansch · ${rv.energi}⚡</button>` : ""}</li>`).join("")}</ul>`; })()}
       <h3>⚔️ Utmana</h3>
       ${andra.length ? `<ul class="lista arena-lista">${andra.map((t) => `<li><span class="van-djur">${t.karta.art ? ritaDjur(t.karta.art, "glad", Math.max(1, t.karta.steg || 1), {}) : "🥚"}</span>
           <span><b>${esc(t.namn)}</b>${t.karta.djur ? ` · ${esc(t.karta.djur)}` : ""}<br><span class="small">⬆️ ${t.karta.djur_niva || 1} · 💪 CP ${t.karta.cp || 0} · ${t.karta.skold || "🛡️"} DEF ${t.karta.def || 0}${t.karta.traning ? ` · 🎓 ${t.karta.traning}` : ""}</span>
@@ -2373,8 +2379,9 @@ class SkolanPanel extends HTMLElement {
     const info = this._s.arena?.drag || {};
     const at = info[tur?.at] || { ikon: "⚔️", namn: "Strid", typ: "kraft" };
     const motAt = tur?.mot_at ? info[tur.mot_at] : null;
-    return { at, djur: { art: a.jag.art, steg: Math.max(1, a.jag.steg), namn: a.jag.namn }, motDjur: { art: a.de.art, steg: Math.max(1, a.de.steg) },
-      mon: { ikon: "", namn: `${a.de.namn}`, boss: false, varld: { farg: "#6a1b9a" } }, hp: a.de.max, kvar: tur ? tur.de_fore : a.de.liv,
+    const rv = a.revansch && (this._s.revansch?.bossar || []).find((x) => x.varld === a.revansch);
+    return { at, djur: { art: a.jag.art, steg: Math.max(1, a.jag.steg), namn: a.jag.namn }, motDjur: a.de.boss ? null : { art: a.de.art, steg: Math.max(1, a.de.steg) },
+      mon: a.de.boss ? { ikon: a.de.art, namn: `${a.de.namn}`, boss: true, varld: { farg: rv?.farg || "#6a1b9a" } } : { ikon: "", namn: `${a.de.namn}`, boss: false, varld: { farg: "#6a1b9a" } }, hp: a.de.max, kvar: tur ? tur.de_fore : a.de.liv,
       skada: tur?.skada || 0, jagMiss: !!tur?.miss, svag: !!tur?.super, klar: tur?.slut === "vinst", mot: tur?.mot || 0, miss: !!tur?.mot_miss, motAt,
       livFore: tur ? tur.jag_fore : a.jag.liv, livMax: a.jag.max, arena: true,
       efter: tur?.de_efter, livEfter: tur?.jag_efter, skold: a.jag.skold, motSkold: a.de.skold,
@@ -2398,10 +2405,15 @@ class SkolanPanel extends HTMLElement {
     if (!fore || this._busy) return false;
     if (!(await this._act("arena_drag", { drag }))) return false;
     const k = this._s.data?.meriter?.karta || {};
-    const a = k.arena || (k.arena_hist || []).at(-1);
+    const a = k.arena || (fore.revansch ? k.revansch_hist : k.arena_hist || [])?.at(-1);
     const tur = a?.turer?.at(-1);
     if (!tur) return false;
     const laddat = this._load();
+    if (fore.revansch && tur.slut) laddat.then(() => setTimeout(() => {
+      const h = (this._s.data?.meriter?.karta?.revansch_hist || []).at(-1);
+      if (h?.vann && h.kort) this._fx({ text: "🃏 NYTT KORT!", sub: `${fore.mot_namn} tappade ett kort`, emojis: ["🃏", "✨", fore.de.art, "⭐"], antal: 30, konfetti: true, farg: "#7e57c2" });
+      else if (h?.vann) this._msg = { type: "ok", text: "Du vann! Dagens revanschkort är slut, kom tillbaka i morgon för fler kort." };
+    }, 2600));
     this._strid(this._arenaO({ ...fore, jag: { ...fore.jag }, de: { ...fore.de } }, tur, { live: true, fortsatt: true, laddat }));
     await laddat;
     return true;
@@ -2529,14 +2541,14 @@ class SkolanPanel extends HTMLElement {
       ? `<button data-s-arena>🏟️ Till arenan</button><button data-s-lamna>🏃 Lämna</button>`
       : `${fel ? `<div class="sfel">${esc(fel)}</div>` : ""}<div class="srubrik">⚔️ Drag · ⚡ ${a.jag.ap}</div>
          ${this._laddRad(a.jag.ladd || 0, this._s.arena?.ladd_max || 100)}
-         ${(() => { const svag = this._s.arena?.svag_mot?.[this._s.arena?.element?.[a.de.art] || "kraft"]; return svag ? `<div class="shint">🎯 ${esc(a.de.namn)} är svag mot ${TYP_TEXT[svag] || svag}</div>` : ""; })()}
+         ${(() => { const svag = this._s.arena?.svag_mot?.[a.de.element || this._s.arena?.element?.[a.de.art] || "kraft"]; return svag ? `<div class="shint">🎯 ${esc(a.de.namn)} är svag mot ${TYP_TEXT[svag] || svag}</div>` : ""; })()}
          ${Object.entries(a.jag.drag).map(([id, dmg]) => {
            const x = info[id] || { ikon: "⚔️", namn: id, energi: 0 };
            if (x.ladd) {
              const anv = (a.jag.ladd_anv?.[id] || 0) >= x.ganger, kan = barn && !anv && (a.jag.ladd || 0) >= x.ladd;
              return `<button class="ladd-knapp ${kan ? "redo" : ""}" data-s-drag="${id}" ${kan ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${anv ? "använd" : `🌟 ${x.ladd}`} · ${dmg}</small></button>`;
            }
-           const sv = this._s.arena?.svag_mot?.[this._s.arena?.element?.[a.de.art] || "kraft"] === x.typ && id !== "knuff";
+           const sv = this._s.arena?.svag_mot?.[a.de.element || this._s.arena?.element?.[a.de.art] || "kraft"] === x.typ && id !== "knuff";
            return `<button data-s-drag="${id}" ${barn && x.energi <= a.jag.ap ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${dmg}${sv ? " 🎯" : ""}</small></button>`;
          }).join("")}
          <button data-s-geupp ${barn ? "" : "disabled"}>🏳️ Ge upp</button><button data-s-lamna>🏃 Pausa</button>`;
@@ -2957,6 +2969,7 @@ class SkolanPanel extends HTMLElement {
         `🛍️ I <b>Husdjursbutiken</b> kan du köpa hattar, bakgrunder och effekter för dina stjärnor. Djuret växer ändå, för storleken räknas på alla meriter du har tjänat.`,
         `🎉 Inför högtider (jul, påsk, Halloween, sommarlov med flera) finns specialsaker i 2 veckor. Det du köper får du behålla för alltid.`,
         `🐾 Du kan ha <b>flera husdjur</b>. Ett nytt kostar 100 ⭐ och börjar som ett ägg. Byt gratis mellan dina djur i butiken. Bara djuret som är med dig växer, får XP och utvecklas av det du gör. Attacker, försvarsträning och kompisar hör till djuret du köper dem till, så ett nytt djur börjar om från början. Allt finns kvar när du byter tillbaka.`,
+        `🃏 <b>Samlarkort:</b> besegrade monster tappar ibland sitt kort (50 %). I 🏟️ Arenan kan du ta <b>🔁 revansch</b> på bossar du redan har slagit (2 ⚡) och vinna kort, högst 3 kort per dag.`,
         `🎒 <b>Stridsuppsättning:</b> i arenan och mot världsbossar får djuret bara ta med 4 attacker. Välj dem i butiken. Mot bossen låses de när striden har börjat.`,
         `🎯 I arenan är varje djur svagt mot en typ: 🔥 mot 🌊, 🌊 mot ⚡, ⚡ mot 🍃, 🍃 mot 🔥, ❄️ mot 💥 och 💥 mot ❄️. Träffar du den svaga punkten blir det <b>×1,5</b> skada.`,
         `🌟 <b>Laddattacker</b> köps i butiken. De laddas upp av bra träffar (mest av träffar på den svaga punkten) och kan bara användas 1–2 gånger per strid.`,
@@ -3917,7 +3930,7 @@ class SkolanPanel extends HTMLElement {
   _albumView() {
     const k = this._s.kort;
     if (!k) return `<p class="muted">Hämtar…</p>`;
-    return `<p class="small muted">Du får ett kort när du tjänar ${k.granser.join(", ")} ⭐ samma dag, och bossens kort när du besegrar den. Fullt album ger +${k.p_album} ⭐!</p>
+    return `<p class="small muted">Du får ett kort när du tjänar ${k.granser.join(", ")} ⭐ samma dag, ibland när du besegrar ett monster på kartan, och bossens kort när du besegrar den. Saknar du kort? Ta 🔁 revansch på gamla bossar i 🏟️ Arenan. Fullt album ger +${k.p_album} ⭐!</p>
       <div class="karta-topp">🃏 ${k.antal} av ${k.totalt} kort</div>
       ${k.album.map((a) => { const har = a.kort.filter((x) => x.antal).length;
         return `<h3>${a.ikon} ${esc(a.namn)} <span class="small muted">${har}/10${har === 10 ? " 📖 Komplett!" : ""}</span></h3>
@@ -5740,6 +5753,11 @@ class SkolanPanel extends HTMLElement {
     r.querySelectorAll("[data-lag-bort]").forEach((b) => b.addEventListener("click", () => this._lagSpara(b.dataset.lagBort)));
     r.querySelectorAll("[data-lag-redigera]").forEach((b) => b.addEventListener("click", () => { this._lagRed = b.dataset.lagRedigera; this._render(); }));
     r.querySelectorAll("[data-arena-mot]").forEach((b) => b.addEventListener("click", () => this._arenaStart(b.dataset.arenaMot)));
+    r.querySelectorAll("[data-revansch]").forEach((b) => b.addEventListener("click", async () => {
+      if (this._busy || !(await this._act("revansch_start", { varld: b.dataset.revansch }))) return this._render();
+      await this._load();
+      this._arenaVisa();
+    }));
     r.querySelectorAll("[data-arena-van]").forEach((b) => b.addEventListener("click", () => this._arenaStart(null, b.dataset.arenaVan)));
     r.querySelector("#arena-fortsatt")?.addEventListener("click", () => this._arenaVisa());
     r.querySelectorAll("[data-arena-repris]").forEach((b) => b.addEventListener("click", () => this._arenaRepris(b.dataset.arenaRepris)));

@@ -878,7 +878,7 @@ class StateView(HomeAssistantView):
                 "djurlista": meriter.DJUR,
                 "djurbutik": meriter.butik_lista(),
                 "pass": meriter.pass_status(data),
-                "karta": meriter.karta_status(data), "arena": meriter.arena_status(data),
+                "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
                 "skola": await _skola_status(hass, barn, parent) if skola.PA else None,
                 "lag_lista": (await hass.async_add_executor_job(_load_fil, _lag_fil(hass))).get("lag", []) if parent else None,
@@ -1283,7 +1283,7 @@ def _apply(data: dict, body: dict) -> list[str]:
         else:
             dagens.visa_svar(data)
         return []
-    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack_upp", "uppsattning", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "traning_kop", "lagstrid_start", "lagstrid_drag", "lagstrid_ge_upp", "arena_start", "arena_drag", "arena_ge_upp"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
+    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack_upp", "uppsattning", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "traning_kop", "lagstrid_start", "lagstrid_drag", "lagstrid_ge_upp", "arena_start", "arena_drag", "arena_ge_upp", "revansch_start"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
         if op == "djur":
@@ -1325,6 +1325,8 @@ def _apply(data: dict, body: dict) -> list[str]:
                 meriter.arena_start(data, jag_namn, mot_id, mot_namn, mot_data)
             else:
                 raise ValueError("Välj en motståndare.")
+        elif op == "revansch_start":
+            meriter.revansch_start(data, str(body.get("varld") or ""))
         elif op == "arena_drag":
             meriter.arena_drag(data, str(body.get("drag") or ""))
         elif op == "lagstrid_start":
