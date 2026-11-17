@@ -45,7 +45,7 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "skolan"
 TMP_SUBDIR = "skolan_tmp"
 STATIC_URL = "/skolan_static"
-VERSION = "1.50.0"
+VERSION = "1.51.0"
 MAX_BYTES = 20 * 1024 * 1024
 MAX_NAME = 40
 # Delar ett ämne kan ha. Föräldern eller barnet väljer när ämnet skapas och kan ändra sedan.
@@ -160,7 +160,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -892,6 +892,38 @@ class StateView(HomeAssistantView):
                 "data": _ut(data, parent),
             }
         )
+
+
+class GlosstridView(HomeAssistantView):
+    """Glosstrid: ett svar i taget. Servern rättar, så att bara riktiga rätt svar gör skada."""
+
+    url = "/api/skolan/glosstrid"
+    name = "api:skolan:glosstrid"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest
+        barn = _barn_for(hass, request, body.get("barn"))
+        foralder = _ar_foralder(hass, request)
+        path = _dir(hass, barn)
+        async with hass.data[DOMAIN]["locks"][barn]:
+            data = await hass.async_add_executor_job(_load, path)
+            try:
+                a = _find(data.get("amnen", []), body.get("amne"))
+                g = _find(a["glosor"], body.get("glosor"))
+                i, r = int(body.get("i")), 1 if body.get("r") else 0
+                par = g["par"][i]
+            except (ValueError, TypeError, IndexError, KeyError):
+                return self.json_message("Ordet finns inte.", 400)
+            facit = par[1 - r]
+            ratt = _ratt_svar(str(body.get("svar") or ""), facit, g.get("typ") == "formler" and r == 0)
+            if foralder:  # föräldrar kan prova, men det påverkar inte barnets karta
+                return self.json({"ratt": ratt, "facit": facit, "prov": True})
+            ut = meriter.glosstrid_svar(data, ratt)
+            await hass.async_add_executor_job(_save, path, data)
+        return self.json({**ut, "facit": facit})
 
 
 class ActionView(HomeAssistantView):

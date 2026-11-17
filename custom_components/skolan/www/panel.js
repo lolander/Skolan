@@ -186,6 +186,7 @@ const las_upp_forhor = (hass, barn, forhor, i, sprak) => {
 };
 
 // Ordpar som har både ord och översättning (krävs för Glosrekord)
+const GS = { kombo: 5 }; // glosstrid: så många rätt i rad ger dubbel skada
 const spelbaraPar = (g) => (g?.par || []).filter((p) => p.length > 1 && String(p[0]).trim() && String(p[1]).trim());
 
 // ---------- husdjuret som bild (SVG) ----------
@@ -1060,6 +1061,10 @@ class SkolanPanel extends HTMLElement {
       title = "🏟️ Arenan";
       back = { name: "hem" };
       body = this._arenaView();
+    } else if (v.name === "glosstrid") {
+      title = "⚔️ Glosstrid";
+      back = v.gs && !v.gs.klar ? null : v.fran === "glosor" ? { name: "glosor", amne: v.amne, glosor: v.glosor } : { name: "hem" };
+      body = this._glosstridView();
     } else if (v.name === "karta") {
       title = "🗺️ Äventyrskartan";
       back = { name: "hem" };
@@ -1747,7 +1752,7 @@ class SkolanPanel extends HTMLElement {
         <div class="small">❤️ ${kvar} av ${k.hp} liv · 🎯 svag mot <b>${k.typer[mon.svag]}</b></div>
         <div class="small muted">Varje merit du tjänar gör skada.${mon.boss && mon.sak ? ` Besegra bossen för ${mon.sak.ikon} ${esc(mon.sak.namn)}!` : ""}${sen ? ` Senast: nivå ${sen.niva} ${"⭐".repeat(sen.stjarnor)}` : ""}</div>
         ${livRad}
-        ${d ? `<button class="mini primary strid-knapp" id="till-strid">${barn ? "⚔️ Till strid" : "👀 Se striden"}</button>` : ""}
+        ${d ? `<button class="mini primary strid-knapp" id="till-strid">${barn ? "⚔️ Till strid" : "👀 Se striden"}</button>` : ""}${d && barn ? ` <button class="mini primary strid-knapp" id="glosstrid-val">📝 Glosstrid</button>` : ""}
         ${attacker}
         ${this._reprisRad()}
         <button class="mini karta-knapp" id="open-karta">🗺️ Kartan · ⭐ ${k.stjarnor_tot}</button>${d ? ` <button class="mini karta-knapp" id="open-arena">🏟️ Arenan${this._s.arena?.pagar ? " ⚔️" : ""}</button>` : ""}${barn ? ` <button class="mini karta-knapp" id="open-till">🤝 Plugga ihop${this._tillNy ? " 🆕" : ""}</button>` : ""}${this._s.lag || this._s.lag_lista ? ` <button class="mini karta-knapp" id="open-lag">${this._s.lag ? `${this._s.lag.marke} Laget${this._s.lag.bonus ? ` · +${this._s.lag.bonus_pct} %` : ""}${this._s.lagstrid?.pagar ? " ⚔️" : ""}` : "🏳️ Lag"}</button>` : ""}${this._vanner ? ` <button class="mini karta-knapp" id="open-vanner">🤝 Vänner${this._vanner.inkommande.length ? ` (${this._vanner.inkommande.length})` : ""}</button>` : ""}
@@ -3684,6 +3689,87 @@ class SkolanPanel extends HTMLElement {
       ${igar}</div>`;
   }
 
+  // ---------- glosstrid: svara rätt på glosor för att attackera kartans monster ----------
+  _glosstridView() {
+    const v = this._view, s = this._s, k = s.karta, d = s.meriter?.djur;
+    if (!k || !d) return `<p class="muted">Du behöver ett husdjur och kartan först.</p>`;
+    if (!v.glosor) { // välj lista
+      const listor = (s.data.amnen || []).flatMap((a) => a.glosor.filter((g) => spelbaraPar(g).length >= 3).map((g) => ({ a, g })));
+      return `<p class="small muted">Välj en lista. Varje rätt svar är en attack mot ${esc(k.monster.namn)} ${k.monster.ikon}, och ${GS.kombo} rätt i rad ger dubbel skada!</p>
+        <div class="list">${listor.map(({ a, g }) => `<button class="row" data-gs-lista="${a.id}|${g.id}"><span><b>${esc(g.namn)}</b><br><span class="muted small">${esc(a.namn)} · ${spelbaraPar(g).length} ord</span></span><span>⚔️</span></button>`).join("")
+          || `<p class="muted">Lägg in glosor, formler eller begrepp först.</p>`}</div>`;
+    }
+    const a = this._amne(v.amne), g = a?.glosor.find((x) => x.id === v.glosor);
+    if (!g) return `<p class="muted">Listan finns inte.</p>`;
+    if (!v.gs) {
+      const idx = g.par.map((p, i) => i).filter((i) => g.par[i].length > 1 && String(g.par[i][0]).trim() && String(g.par[i][1]).trim());
+      for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+      const typ = gTyp(g);
+      v.gs = { ordning: idx, pos: 0, r: idx.map(() => (typ === "begrepp" ? 1 : typ === "formler" ? 0 : Math.random() < 0.5 ? 0 : 1)),
+        kombo: 0, ratt: 0, skada: 0, ord: [], hp: k.hp, kvar: Math.max(0, k.hp - k.skada), liv: k.liv, liv_max: k.liv_max, mon: k.monster, senaste: null };
+    }
+    const gs = v.gs, mon = gs.mon;
+    const bar = (x, mx, kl) => `<div class="progress ${kl}"><div style="width:${mx ? Math.round((x / mx) * 100) : 0}%"></div></div>`;
+    const scen = `<div class="gs-scen" style="--varld:${k.monster.varld?.farg || "#5c6bc0"}">
+      <div class="gs-sida"><div class="gs-figur">${ritaDjur(d.art, gs.senaste && !gs.senaste.ratt ? "ledsen" : "glad", Math.max(1, d.steg), {})}</div>${bar(gs.liv, gs.liv_max, "liv")}<div class="small">❤️ ${gs.liv}/${gs.liv_max}</div></div>
+      <div class="gs-mitt">${gs.senaste ? (gs.senaste.ratt ? `<div class="gs-traff">⚔️ −${gs.senaste.skada || 0}${gs.kombo >= GS.kombo ? "<small>🔥 KOMBO ×2</small>" : ""}${gs.senaste.trott ? "<small>Monstret är trött på glosor idag</small>" : ""}</div>` : `<div class="gs-miss">💥 −${gs.senaste.mot} ❤️</div>`) : "⚔️"}</div>
+      <div class="gs-sida"><div class="gs-figur mon ${gs.senaste?.ratt ? "traff" : ""}">${mon.ikon}</div>${bar(gs.kvar, gs.hp, "boss-hp")}<div class="small">${mon.boss ? "👑 " : ""}${esc(mon.namn)} · ${gs.kvar}/${gs.hp}</div></div></div>
+      <div class="gs-kombo">${gs.kombo ? `🔥 ${gs.kombo} i rad${gs.kombo >= GS.kombo ? " · dubbel skada!" : ` · ${GS.kombo - gs.kombo} till kombo`}` : "&nbsp;"}</div>`;
+    if (gs.klar) {
+      return `${scen}<div class="card center"><h3>${gs.niva_klar ? "🎉 Du klarade nivån!" : "Bra kämpat! 💪"}</h3>
+        <p>${gs.ratt} av ${gs.ordning.length} rätt · ⚔️ ${gs.skada} skada på monstren</p>
+        <div class="actions"><button class="primary" id="gs-igen">⚔️ En gång till</button><button class="ghost" id="gs-klar">Klar</button></div></div>`;
+    }
+    const i = gs.ordning[gs.pos], r = gs.r[gs.pos], fraga = g.par[i][r];
+    const sprak = (g.sprak || LISTTYP[gTyp(g)]?.sprak || ["", ""])[1 - r];
+    return `${scen}
+      <div class="card gs-fraga-kort"><div class="small muted">Ord ${gs.pos + 1} av ${gs.ordning.length}${sprak ? ` · svara på ${esc(sprak).toLowerCase()}` : ""}</div>
+        <div class="gs-fraga">${esc(fraga)}</div>
+        ${gs.visaFacit ? `<div class="gs-facit">Rätt svar: <b>${esc(gs.visaFacit)}</b></div><button class="primary" id="gs-nasta">Nästa ›</button>`
+          : `<div class="gata-rad"><input id="gs-svar" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ditt svar…"><button class="primary" id="gs-skicka" ${this._busy ? "disabled" : ""}>⚔️ Attack</button></div>`}</div>`;
+  }
+
+  async _glosstridSvar() {
+    const v = this._view, gs = v.gs, inp = this.shadowRoot.querySelector("#gs-svar");
+    const svar = (inp?.value || "").trim();
+    if (!svar || this._gsVantar) return;
+    this._gsVantar = true;
+    const i = gs.ordning[gs.pos], r = gs.r[gs.pos];
+    try {
+      const res = await this._hass.fetchWithAuth("/api/skolan/glosstrid", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barn: this._s.barn, amne: v.amne, glosor: v.glosor, i, r, svar }) });
+      const x = await res.json();
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      const g = this._amne(v.amne).glosor.find((y) => y.id === v.glosor);
+      gs.ord.push({ o: g.par[i][0], r: x.ratt });
+      gs.senaste = x;
+      if (x.ratt) gs.ratt++;
+      if (!x.prov) {
+        gs.kombo = x.kombo; gs.skada += x.skada || 0; gs.liv = x.liv; gs.liv_max = x.liv_max; gs.niva_klar = gs.niva_klar || x.niva_klar;
+        gs.hp = x.hp; gs.kvar = x.kvar; gs.mon = { ...gs.mon, ...x.mon };
+      } else gs.kombo = x.ratt ? gs.kombo + 1 : 0;
+      if (x.ratt) this._gsNasta(); else { gs.visaFacit = x.facit; this._render(); }
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+      this._render();
+    } finally {
+      this._gsVantar = false;
+    }
+  }
+
+  _gsNasta() {
+    const v = this._view, gs = v.gs;
+    gs.visaFacit = null;
+    gs.pos++;
+    if (gs.pos >= gs.ordning.length) {
+      gs.klar = true;
+      // räknas som en vanlig övning (meriter och svit)
+      this._act("ova_resultat", { amne: v.amne, glosor: v.glosor, ratt: gs.ratt, av: gs.ordning.length, ord: gs.ord }).then(() => this._load(this._s.barn));
+    }
+    this._render();
+    setTimeout(() => this.shadowRoot.querySelector("#gs-svar")?.focus(), 30);
+  }
+
   _hem() {
     const amnen = this._s.data.amnen || [];
     return `
@@ -4261,6 +4347,7 @@ class SkolanPanel extends HTMLElement {
         ${svara.size ? `<button class="primary svar-knapp" id="ova-svara">🔥 Öva svåra ord (${svara.size})</button>` : ""}
         <button class="ghost" id="edit-glosor">Ändra</button>
       </div>
+      ${spelbaraPar(g).length >= 3 && this._s.karta && this._s.meriter?.djur ? `<button class="row glosstrid-knapp" id="glosstrid-start"><span>⚔️ <b>Glosstrid</b><br><span class="small">Varje rätt svar är en attack mot ${esc(this._s.karta.monster?.namn || "monstret")} ${this._s.karta.monster?.ikon || ""}</span></span><span>›</span></button>` : ""}
       ${spelbaraPar(g).length >= 4 ? `<button class="row rekord-knapp" id="rekord-start"><span>⚡ <b>Glosrekord</b><br><span class="small">Så många rätt du hinner på 60 sekunder!</span></span><span class="rekord-siffra">${g.rekord ? `🏆 ${g.rekord.poang}` : "Nytt!"}</span></button>` : ""}
       ${this._s.kan_valja ? `<button class="row skicka-forhor" id="skicka-forhor">📋 Skicka förhör till ${esc(this._s.namn)} ›</button>
         <button class="row skicka-forhor" id="man-forhor">🗣️ Registrera förhör gjort muntligt/på papper ›</button>
@@ -5287,6 +5374,14 @@ class SkolanPanel extends HTMLElement {
     });
     // Glosrekord
     on("#rekord-start", () => this._go({ name: "rekord", amne: v.amne, glosor: v.glosor }));
+    on("#glosstrid-start", () => this._go({ name: "glosstrid", amne: v.amne, glosor: v.glosor, fran: "glosor" }));
+    on("#glosstrid-val", () => this._go({ name: "glosstrid" }));
+    r.querySelectorAll("[data-gs-lista]").forEach((b) => b.addEventListener("click", () => { const [am, gl] = b.dataset.gsLista.split("|"); this._go({ name: "glosstrid", amne: am, glosor: gl }); }));
+    on("#gs-skicka", () => this._glosstridSvar());
+    $("#gs-svar")?.addEventListener("keydown", (e) => { if (e.key === "Enter") this._glosstridSvar(); });
+    on("#gs-nasta", () => this._gsNasta());
+    on("#gs-igen", () => { const v2 = this._view; this._go({ name: "glosstrid", amne: v2.amne, glosor: v2.glosor, fran: v2.fran }); });
+    on("#gs-klar", () => this._go(this._view.fran === "glosor" ? { name: "glosor", amne: this._view.amne, glosor: this._view.glosor } : { name: "hem" }));
     on("#rekord-go", () => this._rekordStart());
     on("#rekord-tillbaka", () => this._go({ name: "glosor", amne: v.amne, glosor: v.glosor }));
     r.querySelectorAll("[data-rek]").forEach((b) =>
@@ -6024,6 +6119,25 @@ const CSS = `
   .ny-bricka { font-size:11px; font-weight:700; color:#e65100; }
   .varld-berattelse { font-size:12px; font-style:italic; opacity:.9; margin:4px 0 6px; }
   .varld-berattelse.stor { font-size:14px; padding:10px 12px; border-radius:12px; border-left:4px solid var(--farg); background:color-mix(in srgb, var(--farg) 12%, transparent); font-style:normal; }
+  .glosstrid-knapp { background:linear-gradient(135deg,#311b92,#c62828) !important; color:#fff !important; }
+  .gs-scen { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px; border-radius:16px; color:#fff;
+    background:radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--varld) 60%, #000), #0b0b20 80%); }
+  .gs-sida { flex:1; text-align:center; min-width:0; }
+  .gs-sida .progress { height:8px; background:rgba(255,255,255,.2); margin:4px 8px; }
+  .gs-sida .progress.liv div { background:#66bb6a; }
+  .gs-figur { height:96px; display:flex; align-items:center; justify-content:center; }
+  .gs-figur svg { width:90px; height:90px; }
+  .gs-figur.mon { font-size:64px; }
+  .gs-figur.traff { animation:gs-skaka .4s; }
+  @keyframes gs-skaka { 0%,100% { transform:translateX(0); } 25% { transform:translateX(-8px) rotate(-6deg); } 75% { transform:translateX(8px) rotate(6deg); } }
+  .gs-mitt { font-size:28px; text-align:center; min-width:70px; }
+  .gs-traff { color:#ffeb3b; font-weight:800; animation:gs-pop .5s; }
+  .gs-traff small, .gs-miss small { display:block; font-size:11px; }
+  .gs-miss { color:#ff8a80; font-weight:800; animation:gs-pop .5s; }
+  @keyframes gs-pop { 0% { transform:scale(.4); opacity:0; } 60% { transform:scale(1.3); opacity:1; } 100% { transform:scale(1); } }
+  .gs-kombo { text-align:center; font-weight:700; color:#ff6d00; margin:6px 0; min-height:20px; }
+  .gs-fraga { font-size:26px; font-weight:700; text-align:center; margin:10px 0 12px; }
+  .gs-facit { text-align:center; margin-bottom:8px; color:#c62828; }
   .tl-ledare { display:flex; gap:12px; align-items:center; padding:12px 14px; border-radius:14px; background:linear-gradient(135deg,#fff8e1,#ffe082); color:#4e342e; margin-bottom:10px; }
   .tl-ledare.tom { justify-content:center; }
   .tl-krona { font-size:34px; }

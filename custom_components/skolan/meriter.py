@@ -1996,6 +1996,44 @@ def attack_kop(data: dict, at_id: str) -> None:
     agda.append(at_id)
 
 
+# ---------- glosstrid: rätt svar på glosor blir attacker mot kartans monster ----------
+GS_SKADA = 1  # grundskada per rätt svar (× husdjurets kraft, × 2 vid kombo)
+GS_KOMBO = 5  # så många rätt i rad ger dubbel skada
+GS_MAX_DAG = 30  # så många träffar per dag gör skada (sedan är det vanlig övning)
+
+
+def glosstrid_svar(data: dict, ratt: bool) -> dict:
+    """Ett svar i glosstriden. Rätt = skada på monstret, fel = monstret slår tillbaka lite."""
+    k = _karta(data)
+    idag = dt_util.now().date().isoformat()
+    gs = k.get("glosstrid") or {}
+    if gs.get("dag") != idag:
+        gs = {"dag": idag, "traffar": 0, "kombo": 0}
+    n = k["niva"]
+    mon = niva_info(n)
+    ut = {"ratt": ratt, "skada": 0, "mot": 0, "trott": False, "niva_klar": False}
+    if ratt:
+        gs["kombo"] = gs.get("kombo", 0) + 1
+        if gs["traffar"] < GS_MAX_DAG:
+            gs["traffar"] += 1
+            skada = round(GS_SKADA * djur_kraft(data) * (2 if gs["kombo"] >= GS_KOMBO else 1))
+            _karta_skada(data, skada)
+            ut.update({"skada": skada, "niva_klar": k["niva"] > n})
+        else:
+            ut["trott"] = True
+    else:
+        gs["kombo"] = 0
+        liv, _mx = djur_liv(data)
+        mot = min(max(0, liv - 1), random.randint(1, 2 + (1 if mon.get("boss") else 0)))  # husdjuret slås aldrig ut av glosor
+        k["liv"] = liv - mot
+        ut["mot"] = mot
+    k["glosstrid"] = gs
+    ut.update({"kombo": gs["kombo"], "traffar": gs["traffar"], "max": GS_MAX_DAG, "hp": k["hp"], "kvar": max(0, k["hp"] - k["skada"]),
+               "liv": djur_liv(data)[0], "liv_max": djur_liv(data)[1], "niva": k["niva"],
+               "mon": {x: niva_info(k["niva"])[x] for x in ("ikon", "namn", "boss")}})
+    return ut
+
+
 def attack_uppgradera(data: dict, at_id: str) -> int:
     """Gör en köpt attack starkare. Returnerar den nya nivån."""
     m = _m(data)
