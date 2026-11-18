@@ -34,7 +34,7 @@ tr.klick{cursor:pointer}tr.klick:hover td{background:var(--bg)}td input{padding:
 <header><img src="/ikon.png" width="32" height="32" alt=""><h1 id="rubrik">Läxspelet Lärare</h1><span id="ver" class="small"></span></header>
 <nav id="nav"></nav><main id="main"></main>
 <script>
-const flikar = [["oversikt", "🏫 Översikt"], ["statistik", "📈 Statistik"], ["studieteknik", "🧠 Studieteknik"], ["veckobrev", "📬 Veckobrev"], ["prov", "📝 Prov"], ["material", "📎 Material"], ["grupper", "👥 Grupper"], ["klasslag", "🐲 Klasslag"], ["rapporter", "📊 Rapporter"], ["historik", "📜 Historik"], ["inst", "⚙️ Inställningar"]];
+const flikar = [["oversikt", "🏫 Översikt"], ["statistik", "📈 Statistik"], ["studieteknik", "🧠 Studieteknik"], ["veckobrev", "📬 Veckobrev"], ["prov", "📝 Prov"], ["material", "📎 Material"], ["grupper", "👥 Grupper"], ["klasslag", "🐲 Klasslag"], ["rapporter", "📊 Rapporter"], ["foraldrar", "✉️ Från föräldrar"], ["historik", "📜 Historik"], ["inst", "⚙️ Inställningar"]];
 let valdElev = null, valtProv = null, filer = {};
 const VD = ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"];
 let L = null, flik = location.hash.slice(1) || "oversikt", msg = null;
@@ -53,12 +53,12 @@ function rita() {
   $("#rubrik").textContent = L.klass ? `Läxspelet Lärare · ${L.klass}` : "Läxspelet Lärare";
   $("#nav").innerHTML = flikar.map(([id, t]) => `<button class="${id === flik ? "vald" : ""}" data-f="${id}">${t}</button>`).join("");
   document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { flik = b.dataset.f; location.hash = flik; msg = null; rita(); });
-  $("#main").innerHTML = (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, historik, inst }[flik] || oversikt)();
+  $("#main").innerHTML = (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, foraldrar, historik, inst }[flik] || oversikt)();
   koppla();
 }
 const av = (k) => L.inst[k] ? "" : `<div class="msg fel">Den här funktionen är avstängd. Slå på den under ⚙️ Inställningar.</div>`;
 function oversikt() {
-  const f = (e) => Object.entries(e.foralder || {}).filter(([, v]) => v).map(([k]) => ({ veckobrev: "📬", rapport: "📊", klasslag: "🏫", mejl: "📧", grupper: "👥", statistik: "📈", material: "📎", schema: "🗓️", studieteknik: "🧠", riktlinjer: "📝" })[k]).join(" ");
+  const f = (e) => Object.entries(e.foralder || {}).filter(([, v]) => v).map(([k]) => ({ veckobrev: "📬", rapport: "📊", klasslag: "🏫", mejl: "📧", grupper: "👥", statistik: "📈", material: "📎", schema: "🗓️", studieteknik: "🧠", riktlinjer: "📝", lapp: "✉️", samtal: "🗣️" })[k]).join(" ");
   return `<div class="kort flex"><img class="qr" src="/api/qr.svg" alt="QR-kod">
     <div><h2>Eleverna ansluter här</h2><div class="adress">${esc(L.adress)}</div>
     <p class="muted">Eleverna ska vara på samma wifi som datorn. I Läxspelet trycker de <b>🤝 Plugga ihop → 🏫 Anslut till läraren</b> och skriver adressen.
@@ -242,6 +242,22 @@ function klasslag() {
   <div class="kort"><h2>Klassens plugg i klassrummet</h2><p class="small muted">Alla elever har inte Läxspelet. Lägg till poäng för det klassen gör tillsammans, så kan alla vara med. Den här veckan: ${b.extra}.</p>
     <div class="flex"><input id="kp-poang" type="number" min="1" value="20" style="width:120px"><button class="p" id="kp-lagg">➕ Lägg till</button></div></div>`;
 }
+function foraldrar() {
+  if (!L.inst.lapp && !L.inst.samtal) return av("lapp");
+  const lappar = L.elever.flatMap((e) => (e.lappar || []).map((x) => ({ ...x, elev: e.namn }))).sort((a, b) => b.tid.localeCompare(a.tid));
+  const lista = (rubrik, p) => (p && p.length ? `<p><b>${rubrik}</b></p><ul>${p.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
+  const samtal = (e) => { const s = e.samtal; return `<details class="kort"><summary><b>${esc(e.namn)}</b> <span class="small muted">· underlag ${esc(s.fran)} – ${esc(s.till)} · ${s.per_vecka} pluggdagar/vecka · kom ${esc(s.tid.slice(0, 10))}</span></summary>
+    ${s.ai ? `<div class="grupp">${lista("Styrkor", s.ai.styrkor)}${lista("Det som är svårt", s.ai.svart)}${lista("Föräldrarnas frågor", s.ai.fragor)}<p class="small muted">Sammanfattningen är skriven med AI utifrån underlaget nedan.</p></div>` : ""}
+    ${lista("Blivit bättre på", s.battre)}
+    ${Object.entries(s.amnen).map(([a, x]) => `<p><b>${esc(a)}</b></p><ul>${x.gjort.map((t) => `<li>${esc(t)}</li>`).join("")}${x.svart.map((t) => `<li style="color:#b23c17">⚠ ${esc(t)}</li>`).join("")}</ul>`).join("")}
+    ${lista("Övrigt", s.ovrigt)}</details>`; };
+  const med = L.elever.filter((e) => e.samtal);
+  return `${L.inst.lapp ? `<div class="kort"><h2>✉️ Lappar från föräldrarna</h2><p class="small muted">Föräldrarna skickar en kort lapp om vad eleven har tyckt varit svårt hemma. De läser och godkänner varje lapp själva.</p>
+      ${lappar.length ? lappar.map((x) => `<div class="grupp"><b>${esc(x.elev)}</b> <span class="small muted">${esc(x.tid.replace("T", " "))}</span><p style="white-space:pre-wrap">${esc(x.text)}</p></div>`).join("") : `<p class="muted">Inga lappar än.</p>`}</div>` : ""}
+    ${L.inst.samtal ? `<div class="kort"><h2>🗣️ Underlag till utvecklingssamtalet</h2><p class="small muted">Föräldern väljer när underlaget skickas. Det visar vad eleven har övat på hemma de senaste 8 veckorna. Inga poäng eller jämförelser.</p></div>
+      ${med.length ? med.map(samtal).join("") : `<p class="muted">Inget underlag än.</p>`}` : ""}`;
+}
+
 function rapporter() {
   if (!L.inst.rapport) return av("rapport");
   const r = L.elever.filter((e) => e.rapport);
@@ -249,7 +265,7 @@ function rapporter() {
     ${r.length ? r.map((e) => `<div class="grupp"><b>${esc(e.namn)}</b> <span class="small muted">${esc(e.rapport.fran)} – ${esc(e.rapport.till)}</span><ul>${e.rapport.rader.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`).join("") : `<p class="muted">Inga rapporter än.</p>`}</div>`;
 }
 function historik() {
-  const ik = { synk: "🔄", rapport: "📊", grupp: "👥", veckobrev: "📬", klasslag: "🐲", anteckning: "📝", prov: "📝", material: "📎" };
+  const ik = { lapp: "✉️", samtal: "🗣️", synk: "🔄", rapport: "📊", grupp: "👥", veckobrev: "📬", klasslag: "🐲", anteckning: "📝", prov: "📝", material: "📎" };
   return `<div class="kort"><h2>Anteckning</h2><textarea id="h-text" placeholder="t.ex. Grupparbetet gick bra, grupp 2 behöver mer tid"></textarea><button class="p" id="h-spara">📝 Spara anteckning</button></div>
   <div class="kort"><h2>Historik</h2><p class="small muted">Allt som har hänt: grupper, uppgifter, rapporter, veckobrev och anteckningar. <a href="/api/historik.csv">⬇️ Ladda ner som Excel-fil (CSV)</a></p>
     <label>Sök</label><input id="h-sok" placeholder="t.ex. ett namn eller en grupp">

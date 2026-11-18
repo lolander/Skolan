@@ -10,7 +10,7 @@ import uuid
 
 from homeassistant.util import dt as dt_util
 
-from . import meriter
+from . import meriter, skrivkrav
 
 STEG = {
     1: {"namn": "1–2 meningar", "mal": 15, "info": "en eller två hela meningar"},
@@ -180,6 +180,8 @@ def lamna_in(data: dict, bedomning: dict, fil: str, hash_: str) -> dict:
             "bra": bedomning.get("bra", [])[:2], "tips": bedomning.get("tips", [])[:2], "pepp": str(bedomning.get("pepp") or "")[:200],
             "djur": str(bedomning.get("djur") or "")[:300]}
     p["inlamnat"] = (p.get("inlamnat", []) + [post])[-200:]
+    if godkand:
+        post["slappt"] = skrivkrav.slapp(data)  # stjärnor som väntat på en skrivövning
     return {**post, "nytt_steg": bedomning.get("nytt_steg"), "ny_sak": bedomning.get("ny_sak"), "extra": bedomning.get("extra") or {},
             "vecka": bedomning.get("vecka")}
 
@@ -196,6 +198,7 @@ def foralder_andra(data: dict, pid: str, godkann: bool) -> dict:
         meriter.ge(data, x["p"], f"🖊️ Pennuppdrag godkänt av förälder: {x['uppgift'][:40]}", f"penna_f:{x['id']}", "🖊️")
         if x["steg"] == p.get("steg", 1):
             p["klara_pa_steg"] = p.get("klara_pa_steg", 0) + 1
+        skrivkrav.slapp(data)
     elif not godkann and x["godkand"]:
         if x.get("p"):
             meriter.ge(data, -x["p"], f"🖊️ Pennuppdrag underkänt av förälder: {x['uppgift'][:40]}", None, "🖊️")

@@ -10,7 +10,7 @@ import uuid
 
 from homeassistant.util import dt as dt_util
 
-from . import meriter
+from . import meriter, skrivkrav
 
 # Nivåer för teckenövningen: varje nivå lägger till nya tecken.
 NIVAER = {
@@ -148,7 +148,7 @@ def spara_resultat(data: dict, typ: str, poang: int, omraden: dict, alder: int |
         p = P_FORBATTRA
     if p or poang >= 60:
         meriter.aktiv(data, idag)
-    return p
+    return p + skrivkrav.slapp(data)  # stjärnor som väntat på en skrivövning
 
 
 def status(data: dict, alder: int | None) -> dict:

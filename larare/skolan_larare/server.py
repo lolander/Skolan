@@ -41,6 +41,8 @@ FUNKTIONER = {
     "schema": "🗓️ Se elevernas digitala scheman",
     "studieteknik": "🧠 Se elevernas studieteknik (pluggplaner, vad som är svårt, AI:ns tankar)",
     "riktlinjer": "📝 Skicka riktlinjer till elevernas AI-hjälplärare",
+    "lapp": "✉️ Ta emot lappar från föräldrarna (det eleven tycker är svårt)",
+    "samtal": "🗣️ Ta emot underlag till utvecklingssamtalet från föräldrarna",
 }
 FIL_TYPER = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_FIL = 8 * 1024 * 1024  # samma gräns som i elevens Läxspelet
@@ -196,7 +198,9 @@ class Klass:
                            "foralder": e.get("foralder") or {}, "rapport": e.get("rapport") if self.d["inst"].get("rapport") else None,
                            "statistik": e.get("statistik") if self.d["inst"].get("statistik") else None,
                            "veckobrev_nya": e.get("veckobrev_nya", 0), "har_schema": bool(e.get("schema")) and bool(self.d["inst"].get("schema")),
-                           "studieteknik": e.get("studieteknik") if self.d["inst"].get("studieteknik") else None})
+                           "studieteknik": e.get("studieteknik") if self.d["inst"].get("studieteknik") else None,
+                           "lappar": (e.get("lappar") or [])[-10:] if self.d["inst"].get("lapp") else [],
+                           "samtal": e.get("samtal") if self.d["inst"].get("samtal") else None})
         mott = {e["id"]: set(e.get("mottagna") or []) for e in self.d["elever"]}
         material = []
         for m in self.d["material"][::-1]:
@@ -289,6 +293,23 @@ class Klass:
                         "rader": [str(x)[:200] for x in (r.get("rader") or [])][:20]} if isinstance(r, dict) else None
         e["statistik"] = svar["statistik"] if isinstance(svar.get("statistik"), dict) else None
         e["studieteknik"] = svar["studieteknik"] if isinstance(svar.get("studieteknik"), dict) else None
+        kanda_lappar = {x["id"] for x in e.get("lappar", [])}
+        for x in (svar.get("fran_foraldern") or [])[:20]:  # lappar och samtalsunderlag, godkända av föräldern
+            if not isinstance(x, dict) or not str(x.get("id") or "").isalnum():
+                continue
+            if x.get("typ") == "lapp" and x["id"] not in kanda_lappar and self.d["inst"].get("lapp"):
+                lp = {"id": str(x["id"])[:20], "tid": str(x.get("tid") or "")[:16], "namn": str(x.get("namn") or "")[:60], "text": str(x.get("text") or "")[:2000]}
+                e.setdefault("lappar", []).append(lp)
+                e["lappar"] = e["lappar"][-30:]
+                self.logga("lapp", f"Lapp från föräldern om {e['namn']}: {lp['text'][:300]}")
+            elif x.get("typ") == "samtal" and self.d["inst"].get("samtal") and (e.get("samtal") or {}).get("id") != x["id"]:
+                e["samtal"] = {"id": str(x["id"])[:20], "tid": str(x.get("tid") or "")[:16], "fran": str(x.get("fran") or "")[:10], "till": str(x.get("till") or "")[:10],
+                               "per_vecka": x.get("per_vecka") if isinstance(x.get("per_vecka"), (int, float)) else 0,
+                               "amnen": {str(k)[:40]: {"gjort": [str(t)[:300] for t in (v.get("gjort") or [])][:10], "svart": [str(t)[:300] for t in (v.get("svart") or [])][:6]}
+                                         for k, v in list((x.get("amnen") or {}).items())[:15] if isinstance(v, dict)},
+                               "battre": [str(t)[:200] for t in (x.get("battre") or [])][:8], "ovrigt": [str(t)[:200] for t in (x.get("ovrigt") or [])][:4],
+                               "ai": {k: [str(t)[:300] for t in ((x.get("ai") or {}).get(k) or [])][:4] for k in ("styrkor", "svart", "fragor")} if isinstance(x.get("ai"), dict) else None}
+                self.logga("samtal", f"Underlag till utvecklingssamtalet om {e['namn']} kom från föräldern.")
         sc = svar.get("schema")
         e["schema"] = [{k: str(x.get(k) or "")[:80] for k in ("start", "slut", "namn", "sal", "larare", "info")} | {"dag": int(x.get("dag") or 0), "ej": bool(x.get("ej"))}
                        for x in sc[:80] if isinstance(x, dict)] if isinstance(sc, list) else None

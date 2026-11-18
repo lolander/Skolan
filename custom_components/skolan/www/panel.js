@@ -745,6 +745,167 @@ const DJUR_STORY = {
   "🐲": "Guldraken är den ovanligaste draken av alla. Den sover på en hög av gyllene stjärnor som barn har tjänat genom åren. Bara den som pluggar troget får se den vakna.",
 };
 
+// ---------- Hjärngympa: frågorna i spelen (nivå 1-10) ----------
+const hjR = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const hjValj = (lista) => lista[Math.floor(Math.random() * lista.length)];
+const hjBlanda = (lista) => lista.map((x) => [Math.random(), x]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+const HJ_TID = { rakna: 45, folj: 45, farg: 30, udda: 40 }; // sekunder; Minnesrutan har ingen tid
+const HJ_TIDSSTRAFF = 2000; // fel svar kostar 2 sekunder
+
+function hjAlternativ(svar, n = 4) {
+  const alt = new Set([svar]);
+  const spann = Math.max(3, Math.round(Math.abs(svar) * 0.15));
+  let varv = 0;
+  while (alt.size < n && varv++ < 200) {
+    const d = svar + hjR(-spann, spann);
+    if (d !== svar && (svar < 0 || d >= 0)) alt.add(d);
+  }
+  return hjBlanda([...alt]);
+}
+
+const HJ_RAKNA = [ // index = nivå - 1
+  () => { const a = hjR(1, 9), b = hjR(1, 10 - a); return Math.random() < 0.5 ? [`${a} + ${b}`, a + b] : [`${a + b} − ${b}`, a]; },
+  () => { const a = hjR(2, 15), b = hjR(2, 20 - a > 1 ? 20 - a : 2); return Math.random() < 0.5 ? [`${a} + ${b}`, a + b] : [`${a + b} − ${a}`, b]; },
+  () => { const a = hjR(10, 70), b = hjR(5, 99 - a); return Math.random() < 0.5 ? [`${a} + ${b}`, a + b] : [`${a + b} − ${b}`, a]; },
+  () => { const a = hjValj([2, 3, 4, 5, 10]), b = hjR(1, 10); return [`${a} × ${b}`, a * b]; },
+  () => { const a = hjR(2, 10), b = hjR(2, 10); return Math.random() < 0.6 ? [`${a} × ${b}`, a * b] : [`${a * b} ÷ ${a}`, b]; },
+  () => { const a = hjR(12, 60) * 10, b = hjR(5, 40) * 10; return hjValj([[`${a} + ${b}`, a + b], [`${a + b} − ${b}`, a], [`${hjR(3, 9)} × ${hjR(11, 15)}`, null]]); },
+  () => { const a = hjR(12, 35), b = hjR(3, 9); return Math.random() < 0.6 ? [`${a} × ${b}`, a * b] : [`${a * b} ÷ ${b}`, a]; },
+  () => { const a = hjR(3, 9), b = hjR(3, 9), c = hjR(2, 20); return Math.random() < 0.5 ? [`${a} × ${b} + ${c}`, a * b + c] : [`${a} × ${b} − ${c}`, a * b - c]; },
+  () => { const a = hjR(2, 15), b = hjR(a + 1, 30), c = hjR(2, 6); return hjValj([[`${a} − ${b}`, a - b], [`−${a} + ${b}`, b - a], [`(${a} + ${c}) × ${c}`, (a + c) * c]]); },
+  () => { const p = hjValj([10, 20, 25, 50, 75]), b = hjR(2, 16) * (p === 25 || p === 75 ? 4 : 10); return Math.random() < 0.7 ? [`${p} % av ${b}`, (p * b) / 100] : (() => { const n = hjR(11, 15); return [`${n}²`, n * n]; })(); },
+];
+
+function hjRaknaFraga(niva) {
+  let [text, svar] = HJ_RAKNA[hjR(Math.max(1, niva - 2), niva) - 1]();
+  if (svar === null) { const m = /(\d+) × (\d+)/.exec(text); svar = Number(m[1]) * Number(m[2]); }
+  return { text, svar, alt: hjAlternativ(svar) };
+}
+
+const HJ_FOLJ = [ // index = nivå - 1: [talföljd, svaret]
+  () => { const a = hjR(1, 10), d = hjR(1, 2); return [[0, 1, 2, 3].map((i) => a + i * d), a + 4 * d]; },
+  () => { const a = hjR(1, 20), d = hjR(2, 5); return [[0, 1, 2, 3].map((i) => a + i * d), a + 4 * d]; },
+  () => { const a = hjR(30, 60), d = hjR(2, 6); return [[0, 1, 2, 3].map((i) => a - i * d), a - 4 * d]; },
+  () => { const a = hjR(1, 5); return [[0, 1, 2, 3].map((i) => a * 2 ** i), a * 16]; },
+  () => { const a = hjR(1, 9), u = hjR(3, 8), n = hjR(1, u - 1); const f = [a]; for (let i = 1; i < 6; i++) f.push(f[i - 1] + (i % 2 ? u : -n)); return [f.slice(0, 5), f[5]]; },
+  () => Math.random() < 0.5 ? (() => { const n = hjR(1, 5); return [[0, 1, 2, 3].map((i) => (n + i) ** 2), (n + 4) ** 2]; })() : (() => { const a = hjR(1, 3); return [[0, 1, 2, 3].map((i) => a * 3 ** i), a * 81]; })(),
+  () => { const f = [hjR(1, 5), hjR(1, 6)]; while (f.length < 6) f.push(f[f.length - 1] + f[f.length - 2]); return [f.slice(0, 5), f[5]]; },
+  () => { const a = hjR(1, 10), s = hjR(1, 3); const f = [a]; for (let i = 0; i < 5; i++) f.push(f[i] + s + i); return [f.slice(0, 5), f[5]]; },
+  () => { const a = hjR(1, 9), b = hjR(20, 40), d1 = hjR(2, 5), d2 = -hjR(1, 4); return [[a, b, a + d1, b + d2, a + 2 * d1], b + 2 * d2]; },
+  () => { const a = hjR(1, 4), t = hjValj([1, -1]); const f = [a]; for (let i = 0; i < 4; i++) f.push(f[i] * 2 + t); return [f.slice(0, 4), f[4]]; },
+];
+
+function hjFoljFraga(niva) {
+  const [f, svar] = HJ_FOLJ[hjR(Math.max(1, niva - 2), niva) - 1]();
+  return { text: `${f.join(", ")}, ?`, svar, alt: hjAlternativ(svar) };
+}
+
+const HJ_FARGER = [["röd", "#e53935"], ["blå", "#1e88e5"], ["grön", "#43a047"], ["gul", "#fdd835"], ["lila", "#8e24aa"], ["orange", "#fb8c00"]];
+
+function hjFargFraga(niva) {
+  const farger = HJ_FARGER.slice(0, niva <= 3 ? 4 : niva <= 6 ? 5 : 6);
+  const ord = hjValj(farger);
+  const krock = Math.random() < 0.5 + niva * 0.04;
+  const blck = krock ? hjValj(farger.filter((f) => f !== ord)) : ord;
+  const lage = niva >= 5 && Math.random() < 0.3 ? "ord" : "farg"; // vad ska man svara: ordet eller färgen?
+  const ratt = lage === "ord" ? ord : blck;
+  const alt = hjBlanda([ratt, ...hjBlanda(farger.filter((f) => f !== ratt)).slice(0, 3)]);
+  const altFarg = alt.map((f) => hjValj(farger.filter((x) => x !== f))[1]); // ordknapparna har "fel" färg
+  return { ord, blck, lage, svar: ratt[0], alt, altFarg, ordknappar: niva >= 7 };
+}
+
+const HJ_UDDA = [
+  [["🍎", "🚗"], ["🐶", "🌵"], ["⭐", "🍌"], ["🐱", "🚀"], ["⚽", "🌈"], ["🐟", "🎈"]],
+  [["🐶", "🐱"], ["🍎", "🍅"], ["🌕", "⚽"], ["🐸", "🐢"], ["🍋", "🍌"], ["🚗", "🚕"]],
+  [["😀", "😃"], ["🙂", "🙃"], ["🕐", "🕑"], ["🌑", "🌚"], ["❤️", "🧡"], ["🐻", "🐼"], ["😺", "😸"], ["🔵", "🟣"]],
+];
+
+function hjUddaFraga(niva) {
+  const sida = niva <= 2 ? 3 : niva <= 4 ? 4 : niva <= 7 ? 5 : 6;
+  const [vanlig, udda] = hjBlanda(hjValj(HJ_UDDA[niva <= 3 ? 0 : niva <= 6 ? 1 : 2]));
+  return { sida, vanlig, udda, plats: hjR(0, sida * sida - 1) };
+}
+
+const hjMinneStart = (niva) => 2 + Math.floor(niva / 3); // samma som minne_start i hjarngympa.py
+
+// ---------- widgetbilden ----------
+const WIDGETBILD_VER = 1; // höj när ritaDjur ändras så att alla bilder ritas om
+
+// CSS-filter (skimmer) som SVG-färgmatriser: CSS-filter i en SVG-bild fungerar inte överallt.
+function cssFilterMatris(css) {
+  const fler = (a, b) => { // a efter b, 4x5-matriser
+    const ut = [];
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) {
+      let v = c === 4 ? a[r * 5 + 4] : 0;
+      for (let k = 0; k < 4; k++) v += a[r * 5 + k] * (c === 4 ? (k === 3 ? 0 : b[k * 5 + 4]) : b[k * 5 + c]);
+      ut.push(v);
+    }
+    return ut;
+  };
+  const lin = (s, o) => [s, 0, 0, 0, o, 0, s, 0, 0, o, 0, 0, s, 0, o, 0, 0, 0, 1, 0];
+  const mat = {
+    saturate: (n) => [0.213 + 0.787 * n, 0.715 - 0.715 * n, 0.072 - 0.072 * n, 0, 0, 0.213 - 0.213 * n, 0.715 + 0.285 * n, 0.072 - 0.072 * n, 0, 0,
+      0.213 - 0.213 * n, 0.715 - 0.715 * n, 0.072 + 0.928 * n, 0, 0, 0, 0, 0, 1, 0],
+    "hue-rotate": (g) => {
+      const a = (g * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+      return [0.213 + c * 0.787 - s * 0.213, 0.715 - c * 0.715 - s * 0.715, 0.072 - c * 0.072 + s * 0.928, 0, 0,
+        0.213 - c * 0.213 + s * 0.143, 0.715 + c * 0.285 + s * 0.14, 0.072 - c * 0.072 - s * 0.283, 0, 0,
+        0.213 - c * 0.213 - s * 0.787, 0.715 - c * 0.715 + s * 0.715, 0.072 + c * 0.928 + s * 0.072, 0, 0, 0, 0, 0, 1, 0];
+    },
+    grayscale: (n) => mat.saturate(1 - Math.min(1, n)),
+    sepia: (n) => { n = Math.min(1, n); return [0.393 + 0.607 * (1 - n), 0.769 - 0.769 * (1 - n), 0.189 - 0.189 * (1 - n), 0, 0,
+      0.349 - 0.349 * (1 - n), 0.686 + 0.314 * (1 - n), 0.168 - 0.168 * (1 - n), 0, 0,
+      0.272 - 0.272 * (1 - n), 0.534 - 0.534 * (1 - n), 0.131 + 0.869 * (1 - n), 0, 0, 0, 0, 0, 1, 0]; },
+    brightness: (n) => lin(n, 0),
+    contrast: (n) => lin(n, 0.5 - 0.5 * n),
+    invert: (n) => lin(1 - 2 * n, n),
+  };
+  let m = lin(1, 0);
+  for (const [, fn, arg] of css.matchAll(/([a-z-]+)\(([-\d.]+)/g)) if (mat[fn]) m = fler(mat[fn](parseFloat(arg)), m);
+  return m.map((v) => +v.toFixed(4)).join(" ");
+}
+
+const WIDGET_GLOD = { // samma som .glod-is/.glod-eld/.glod-skugga i appen (rörliga effekter går inte i en bild)
+  is: [[0, 0, 8, "#4fc3f7"], [0, 0, 16, "#b3e5fc"]],
+  eld: [[0, 0, 8, "#ff5722"], [0, 0, 18, "#ffab00"]],
+  skugga: [[6, 6, 0, "rgba(0,0,0,.55)"]],
+};
+
+// Gör om appens SVG till en PNG (data-URL) på 300x300 px utan bakgrund.
+async function widgetPng(svg, variant, eff) {
+  let fe = "";
+  let in_ = "SourceGraphic";
+  if (variant) { fe += `<feColorMatrix in="SourceGraphic" type="matrix" values="${cssFilterMatris(variant.filter)}" result="f0"/>`; in_ = "f0"; }
+  (WIDGET_GLOD[eff?.glod] || []).forEach(([dx, dy, b, c], n) => {
+    // som drop-shadow, men byggd av enkla steg (fungerar i alla ritare)
+    fe += `<feGaussianBlur in="${in_}" stdDeviation="${b / 2}" result="b${n}"/><feOffset in="b${n}" dx="${dx}" dy="${dy}" result="o${n}"/>`
+      + `<feFlood flood-color="${c}"/><feComposite in2="o${n}" operator="in" result="s${n}"/>`
+      + `<feMerge result="g${n}"><feMergeNode in="s${n}"/><feMergeNode in="${in_}"/></feMerge>`;
+    in_ = `g${n}`;
+  });
+  svg = svg.replace('width="100%" height="100%"', 'width="300" height="300"')
+    .replace(/<g class="kropp[^"]*" style="transform-origin:100px 185px;transform:scale\(([\d.]+)\);[^"]*">/, (_, s) =>
+      `<g${fe ? ' filter="url(#wf)"' : ""}><g transform="translate(100 185) scale(${s}) translate(-100 -185)">`)
+    .replace(/(<svg[^>]*>)/, `$1${fe ? `<defs><filter id="wf" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">${fe}</filter></defs>` : ""}`);
+  // kroppsgruppen har nu två <g>: stäng den extra direkt efter den ursprungliga
+  const i = svg.indexOf("<g transform=\"translate(100 185)");
+  if (i >= 0) {
+    let djup = 0, j = i;
+    const re = /<g\b|<\/g>/g;
+    re.lastIndex = i;
+    let t;
+    while ((t = re.exec(svg))) { djup += t[0] === "</g>" ? -1 : 1; if (djup === 0) { j = t.index + 4; break; } }
+    svg = svg.slice(0, j) + "</g>" + svg.slice(j);
+  }
+  const img = new Image();
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  await img.decode();
+  const c = document.createElement("canvas");
+  c.width = c.height = 300;
+  c.getContext("2d").drawImage(img, 0, 0, 300, 300);
+  return c.toDataURL("image/png");
+}
+
 const DJUR_HUMOR = {
   glad: (n) => `😄 ${n} är mätt och glad!`,
   nojd: (n) => `🙂 ${n} väntar på dagens mat. Gör något i Läxspelet idag!`,
@@ -960,6 +1121,7 @@ class SkolanPanel extends HTMLElement {
         body = { ...fb, barn: this._fjarrInfo.barn, alla_barn: this._fjarrInfo.alla_barn, kan_valja: this._fjarrInfo.kan_valja, fjarr_hem: body.fjarr.hem };
       }
       this._s = body;
+      this._widgetBild();
       if (this._lankBok) {
         const a = (body.data.amnen || []).find((x) => (x.bocker || []).some((b) => b.id === this._lankBok));
         if (a) this._view = { name: "bok", amne: a.id, bok: this._lankBok };
@@ -1266,6 +1428,22 @@ class SkolanPanel extends HTMLElement {
       title = "📅 Läxspelet i kalendern";
       back = { name: "foralder" };
       body = this._plankalView();
+    } else if (v.name === "larare") {
+      title = `👩‍🏫 Till ${esc(s.namn)}s lärare`;
+      back = { name: "hem" };
+      body = this._larareView();
+    } else if (v.name === "utveckling") {
+      title = s.kan_valja ? `📈 ${esc(s.namn)}s utveckling` : "📈 Min utveckling";
+      back = { name: "hem" };
+      body = this._utvecklingView();
+    } else if (v.name === "intressen") {
+      title = s.kan_valja ? `💡 Det ${esc(s.namn)} gillar` : "💡 Det jag gillar";
+      back = v.lage ? null : { name: "hem" };
+      body = this._intresseView();
+    } else if (v.name === "hjarn") {
+      title = "🧠 Hjärngympa";
+      back = v.spel && !v.spel.slut ? null : { name: "hem" };
+      body = this._hjarnView();
     } else if (v.name === "matte") {
       title = "🔢 Mattemonster";
       back = { name: "hem" };
@@ -1854,9 +2032,39 @@ class SkolanPanel extends HTMLElement {
         ${d.art === "🐍" && !agg ? (() => { const dag = idagISO(), n = 1 + [...dag].reduce((s, c) => s + c.charCodeAt(0), 0) % 4; return `<div class="small">🌙 ${esc(d.namn)} äter mardrömmar! I natt: ${"😋".repeat(n)} ${n} st. Extra stark (×1,5) i Sömnträsket och Spökslottet.</div>`; })() : ""}
         ${d.nasta ? `<div class="progress"><div style="width:${Math.min(100, Math.round((d.intjanat / d.nasta) * 100))}%"></div></div>
         <div class="small muted">${kvar} ⭐ kvar tills ${esc(d.namn)} växer</div>` : `<div class="small">👑 ${esc(d.namn)} är en legend!</div>`}
-        <div class="djur-knappar"><button class="mini butik-knapp" id="open-hjalp">📚 Plugga med ${esc(d.namn)}</button><button class="mini butik-knapp" id="open-fraga">💬 Fråga ${esc(d.namn)}</button>${this._s.kan_valja ? "" : `<button class="mini butik-knapp" id="open-fokus">⏱️ Fokus</button>`}<button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-album">🃏 Album${this._s.kort ? ` ${this._s.kort.antal}/${this._s.kort.totalt}` : ""}</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button></div>
+        <div class="djur-knappar"><button class="mini butik-knapp" id="open-hjalp">📚 Plugga med ${esc(d.namn)}</button><button class="mini butik-knapp" id="open-fraga">💬 Fråga ${esc(d.namn)}</button>${this._s.kan_valja ? "" : `<button class="mini butik-knapp" id="open-fokus">⏱️ Fokus</button>`}<button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-album">🃏 Album${this._s.kort ? ` ${this._s.kort.antal}/${this._s.kort.totalt}` : ""}</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button>${this._s.kan_valja || !this._s.hjarn ? "" : `<button class="mini butik-knapp" id="open-hjarn">🧠 Hjärngympa${this._s.hjarn.klar ? " ✅" : ""}</button>`}</div>
         <button class="mini butik-knapp" id="open-widget">📱 ${this._s.kan_valja ? `${esc(this._s.namn)}s husdjur` : "Husdjuret"} på hemskärmen</button>
       </div></div>`;
+  }
+
+  // Hemskärmswidgeten: appen ritar husdjuret precis som här (storlek, form, skimmer, glöd, saker)
+  // i alla fyra humören och sparar bilderna på servern. Bara när något har ändrats.
+  async _widgetBild() {
+    const s = this._s, d = s?.meriter?.djur;
+    if (!d || this._fjarrAktiv) return;
+    const sak = (id) => (s.djurbutik || []).find((x) => x.id === id);
+    const agg = d.steg === 0, pa = d.pa || {};
+    const bg = pa.bakgrund ? sak(pa.bakgrund) : null;
+    const eff = pa.effekt && !agg ? sak(pa.effekt) : null;
+    const hatt = pa.hatt && !agg ? sak(pa.hatt) : null;
+    const kompis = pa.kompis && !agg ? sak(pa.kompis) : null;
+    const variant = d.variant ? (s.varianter || []).find((v) => v.id === d.variant) : null;
+    const opt = { hatt, kompis, eff, deko: bg?.deko, krona: d.steg >= 5 && !hatt, form: d.form };
+    const sig = JSON.stringify([WIDGETBILD_VER, d.art, d.steg, d.form?.id, variant?.id, hatt?.id, kompis?.id, eff?.id, bg?.deko]);
+    const nyckel = `${s.barn}|${sig}`;
+    if (this._widgetSig === nyckel) return;
+    this._widgetSig = nyckel;
+    try {
+      const fraga = await this._f("/api/skolan/widgetbild", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: s.barn, sig }) });
+      if (!fraga.ok || !(await fraga.json()).behov) return;
+      const bilder = {};
+      for (const h of ["glad", "nojd", "hungrig", "ledsen"]) bilder[h] = await widgetPng(ritaDjur(d.art, h, d.steg, opt), variant, eff);
+      const res = await this._f("/api/skolan/widgetbild", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: s.barn, sig, art: d.art, agg, bilder }) });
+      if (!res.ok) throw new Error(res.statusText);
+    } catch (e) {
+      this._widgetSig = null; // försök igen nästa gång
+      console.warn("Läxspelet: widgetbild", e);
+    }
   }
 
   // Djuret ritat som en bild: bakgrund, kropp med humör-ansikte, saker på rätt plats. stor = i butiken
@@ -2124,6 +2332,350 @@ class SkolanPanel extends HTMLElement {
       <div class="fraga-forslag">${[1, 2, 3].map((n) => `<button class="mini ${v.niva === n ? "primary" : ""}" data-mm-niva="${n}">${"⭐".repeat(n)} Nivå ${n}</button>`).join("")}</div>
       <div class="small muted">Ditt rekord här: ${rek[`${v.typ}:${v.niva}`] || 0} rätt</div>
       <div class="actions"><button class="primary" id="mm-start">▶️ Starta</button></div>`;
+  }
+
+  // Skrivkravet: utan skrivövning på några dagar väntar stjärnorna från hjärngympa och intressen
+  _skrivkravRad(k) {
+    if (!k || k.ok || this._s.kan_valja) return "";
+    return `<div class="card skrivkrav"><b>✍️ Dags för en skrivövning!</b>
+      <div class="small">${k.senast ? `Du skrev senast för mer än ${k.dagar - 1} dagar sedan.` : "Du har inte gjort någon skrivövning än."} Stjärnorna du tjänar här sparas tills du har gjort ett Pennuppdrag eller en övning i Skrivverkstaden.${k.vantar ? ` <b>${k.vantar} ⭐ väntar på dig!</b>` : ""}</div>
+      <div class="actions"><button class="mini primary" data-meny='{"name":"penna"}'>🖊️ Pennuppdrag</button><button class="mini" data-meny='{"name":"skriva"}'>✍️ Skrivverkstaden</button></div></div>`;
+  }
+
+  _vantarRad(n) {
+    return `<div class="lar-beloning vantar">✍️ ${n} ⭐ väntar. Du får dem när du har gjort en skrivövning!</div>`;
+  }
+
+  // ---------- Till läraren (föräldrar) ----------
+  _larareView() {
+    const v = this._view, s = this._s;
+    if (!v.d && !v.hamtar) {
+      v.hamtar = true;
+      this._f(`/api/skolan/larare?barn=${encodeURIComponent(s.barn)}`).then((r) => r.json()).then((d) => { v.d = d; v.text = d.lapp?.aktuell ? d.lapp.text : ""; v.hamtar = false; this._render(); }).catch(() => { v.hamtar = false; });
+    }
+    const d = v.d;
+    if (!d) return `<p class="muted">Laddar…</p>`;
+    const lp = d.lapp || {};
+    const viaApp = (f) => d.kan[f] ? `<button class="mini primary" data-lr="${f}_skicka">🏫 Skicka via lärarappen${d.larare ? ` till ${esc(d.larare)}` : ""}</button>` : "";
+    const lapp = `<div class="card hjalp-kort"><div class="djur-rubrik">✉️ Veckans lapp: det som var svårt</div>
+      <div class="small muted">En kort lapp till läraren om det ${esc(s.namn)} har tyckt varit svårt, så att läraren kan ta upp det igen. Varje fredag kl. 15 skriver AI:n ett utkast om något var svårt, och du får en notis. Inget skickas utan att du gör det.</div>
+      ${lp.aktuell && lp.status === "skickad" ? `<div class="lar-beloning">✅ Veckans lapp är skickad.</div>` : ""}
+      <textarea id="lr-text" class="bk-in" rows="7" maxlength="2000" placeholder="Tryck på ✍️ Skriv utkast, eller skriv själv.">${esc(v.text || "")}</textarea>
+      <div class="actions">
+        <button class="mini" data-lr="lapp_ny" ${v.jobbar ? "disabled" : ""}>${v.jobbar === "lapp_ny" ? "⏳ Skriver…" : "✍️ Skriv utkast (senaste veckan)"}</button>
+        ${viaApp("lapp")}
+        <button class="mini" data-lr-dela="lapp">📋 Kopiera</button>
+        <button class="mini" data-lr-mejl="lapp">📧 Mejla</button>
+        ${lp.aktuell && lp.status !== "skickad" ? `<button class="mini ghost" data-lr="lapp_klar">✅ Jag har skickat den</button>` : ""}
+      </div></div>`;
+    const samtal = `<div class="card hjalp-kort"><div class="djur-rubrik">🗣️ Underlag till utvecklingssamtalet</div>
+      <div class="small muted">En sida med vad ${esc(s.namn)} har övat på de senaste 8 veckorna, ämne för ämne, vad som är svårt och vad som har blivit bättre. Skriv ut, spara som PDF eller ta med på mobilen. Inga stjärnor, husdjur eller känslor.</div>
+      <div class="actions">
+        <button class="mini primary" id="lr-samtal">📄 Öppna underlaget</button>
+        <button class="mini" data-lr="samtal_ai" ${v.jobbar ? "disabled" : ""}>${v.jobbar === "samtal_ai" ? "⏳ Skriver…" : d.samtal_ai ? "🔁 Skriv om sammanfattningen" : "🤖 Lägg till sammanfattning med AI"}</button>
+        ${d.samtal_ai ? `<button class="mini ghost" data-lr="samtal_utan_ai">Ta bort sammanfattningen</button>` : ""}
+        ${viaApp("samtal")}
+      </div>
+      ${d.samtal_ai ? `<div class="small">✅ Sammanfattningen (styrkor, det som är svårt, frågor till läraren) finns med i underlaget.</div>` : ""}</div>`;
+    const omai = `<div class="card hjalp-kort"><div class="djur-rubrik">🤖 Berätta för läraren om AI:n</div>
+      <div class="small muted">Ett kort meddelande om att AI:n i Läxspelet aldrig ger svaren, bara ledtrådar. Ändra gärna innan du skickar.</div>
+      <textarea id="lr-omai" class="bk-in" rows="9">${esc(v.omai ?? d.om_ai)}</textarea>
+      <div class="actions"><button class="mini" data-lr-dela="omai">📋 Kopiera</button><button class="mini" data-lr-mejl="omai">📧 Mejla</button></div></div>`;
+    const mejl = `<div class="card hjalp-kort"><div class="djur-rubrik">📧 Lärarens e-post</div>
+      <div class="int-egen"><input id="lr-mejl" class="bk-in" type="email" value="${esc(d.mejl)}" placeholder="larare@skolan.se"><button class="mini" id="lr-mejl-spara">💾</button></div>
+      <div class="small muted">Används av 📧 Mejla, som öppnar din egen mejlapp. Flera adresser: skilj med komma.</div></div>`;
+    const skickat = d.skickat.length ? `<div class="small muted">Skickat via lärarappen: ${d.skickat.map((x) => `${x.typ === "lapp" ? "✉️" : "🗣️"} ${esc(x.tid.slice(0, 10))}`).join(" · ")} (läraren får det vid nästa synk)</div>` : "";
+    return `${lapp}${samtal}${omai}${mejl}${skickat}`;
+  }
+
+  // ---------- Min utveckling ----------
+  _utvecklingView() {
+    const v = this._view, s = this._s, du = !s.kan_valja;
+    if (!v.d && !v.hamtar) {
+      v.hamtar = true;
+      this._f(`/api/skolan/utveckling?barn=${encodeURIComponent(s.barn)}`).then((r) => r.json()).then((d) => { v.d = d; v.hamtar = false; this._render(); }).catch(() => { v.hamtar = false; });
+    }
+    const d = v.d;
+    if (!d) return `<p class="muted">Räknar…</p>`;
+    const datum = (x) => new Date(x).toLocaleDateString("sv-SE", { day: "numeric", month: "long" });
+    const tal = (x, m) => `${x}${m.enhet === "%" ? " %" : m.enhet ? ` ${m.enhet}` : ""}`;
+    const kort = d.matt.map((m) => {
+      if (!m.klar) return `<div class="ut-kort"><div class="ut-rubrik">${m.ikon} ${esc(m.namn)}</div>
+        <div class="ut-rad"><span class="ut-da">Hittills: <b>${tal(m.da, m)}</b></span></div>
+        <div class="small muted">Jämförelsen börjar ${datum(m.fran)}. Fortsätt så får du se hur mycket bättre du blir!</div></div>`;
+      const max = Math.max(m.da, m.nu, 1);
+      return `<div class="ut-kort ${m.battre ? "battre" : ""}"><div class="ut-rubrik">${m.ikon} ${esc(m.namn)}${m.battre ? " 📈" : ""}</div>
+        <div class="ut-staplar"><div><span class="small muted">Då</span><div class="ut-stapel da" style="width:${Math.round((m.da / max) * 100)}%"></div><b>${tal(m.da, m)}</b></div>
+        <div><span class="small muted">Nu</span><div class="ut-stapel nu" style="width:${Math.round((m.nu / max) * 100)}%"></div><b>${tal(m.nu, m)}</b></div></div>
+        ${m.forklaring ? `<div class="small muted">${esc(m.forklaring)}</div>` : ""}</div>`;
+    }).join("");
+    const battre = d.battre.length;
+    return `<p class="small">${du ? "Här ser du hur mycket bättre du har blivit. Vi jämför dina första två veckor med de senaste två." : `Hur ${esc(s.namn)} har utvecklats: de första två veckorna jämfört med de senaste två.`}</p>
+      ${battre ? `<div class="lar-beloning">📈 ${du ? "Du har" : `${esc(s.namn)} har`} blivit bättre på ${battre} ${battre === 1 ? "sak" : "saker"}!</div>` : ""}
+      ${kort || `<p class="muted">Inget att visa än. Gör några läxor och spel, så börjar vi mäta.</p>`}
+      ${d.totalt.length ? `<h3>🏅 Det här har ${du ? "du" : esc(s.namn)} gjort hittills</h3><div class="ut-totalt">${d.totalt.map((t) => `<div><span>${t.ikon}</span><b>${t.antal}</b><span class="small">${esc(t.text)}</span></div>`).join("")}</div>` : ""}`;
+  }
+
+  // ---------- Det jag gillar ----------
+  _intresseView() {
+    const v = this._view, s = this._s, barn = !s.kan_valja;
+    if (!v.d && !v.hamtar) {
+      v.hamtar = true;
+      this._f(`/api/skolan/intressen?barn=${encodeURIComponent(s.barn)}`).then((r) => r.json()).then((d) => { v.d = d; v.val = v.val || [...d.status.lista]; v.hamtar = false; this._render(); }).catch(() => { v.hamtar = false; });
+    }
+    const d = v.d;
+    if (!d) return `<p class="muted">Laddar…</p>`;
+    const st = d.status;
+    if (v.lage === "lastal" && d.lastal) return this._lastalView(d.lastal);
+    if (v.lage === "las" && d.las) return this._lasOmView(d.las);
+    const valda = v.val || [];
+    const egna = valda.filter((x) => !st.forslag.includes(x));
+    const andrat = JSON.stringify(valda) !== JSON.stringify(st.lista);
+    const valj = `<div class="card hjalp-kort"><div class="djur-rubrik">💡 ${barn ? "Vad gillar du?" : `Vad gillar ${esc(s.namn)}?`}</div>
+      <div class="small muted">Välj upp till ${st.max}. Då handlar lästal, texter, skrivuppdrag och husdjurets exempel om sådant ${barn ? "du" : "barnet"} gillar.</div>
+      <div class="fraga-forslag">${[...st.forslag, ...egna].map((x) => `<button class="mini ${valda.includes(x) ? "primary" : ""}" data-int="${esc(x)}">${esc(x)}</button>`).join("")}</div>
+      <div class="int-egen"><input id="int-egen" class="bk-in" maxlength="30" placeholder="Något annat? Skriv här"><button class="mini" id="int-lagg">➕</button></div>
+      ${andrat ? `<div class="actions"><button class="primary" id="int-spara">💾 Spara</button></div>` : ""}</div>`;
+    if (!barn) return valj;
+    const vald = (st.lista.includes(v.amne) ? v.amne : "") || "";
+    const amnen = st.lista.length > 1 ? `<div class="fraga-forslag"><button class="mini ${!vald ? "primary" : ""}" data-int-amne="">🎲 Slumpa</button>${st.lista.map((x) => `<button class="mini ${vald === x ? "primary" : ""}" data-int-amne="${esc(x)}">${esc(x)}</button>`).join("")}</div>` : "";
+    const akt = st.lista.length ? `<div class="card hjalp-kort"><div class="djur-rubrik">🎯 Öva på det du gillar</div>
+      <div class="small muted">AI:n skriver nya uppgifter på din nivå varje gång. Klara en: +${st.belonung} ⭐ (en gång per dag var) och sviten räknas.</div>
+      ${amnen}
+      <div class="int-akt">
+        <button data-int-ny="lastal" ${v.skapar ? "disabled" : ""}><span class="hj-ikon">🧮</span><b>Lästal</b><span class="small muted">5 mattetal om det du gillar${st.lastal_klar ? " ✅" : ""}</span></button>
+        <button data-int-ny="las" ${v.skapar ? "disabled" : ""}><span class="hj-ikon">📖</span><b>Läs och svara</b><span class="small muted">En kort text + 3 frågor${st.las_klar ? " ✅" : ""}</span></button>
+      </div>
+      ${v.skapar ? `<p class="muted center">✍️ AI:n skriver… (några sekunder)</p>` : ""}
+      ${d.lastal && !d.lastal.res ? `<button class="mini" data-int-oppna="lastal">↩️ Fortsätt med lästalen om ${esc(d.lastal.amne)}</button>` : ""}
+      ${d.las && !d.las.res ? `<button class="mini" data-int-oppna="las">↩️ Fortsätt läsa om ${esc(d.las.amne)}</button>` : ""}
+      <div class="small muted">${st.kvar} nya uppgifter kvar idag.</div></div>` : "";
+    return `${this._skrivkravRad(st.skrivkrav)}${akt}${valj}`;
+  }
+
+  _lastalView(lt) {
+    const v = this._view, res = lt.res, svar = v.svar || (v.svar = []);
+    return `<div class="small muted">🧮 Lästal om ${esc(lt.amne)}</div>
+      ${lt.uppg.map((u, i) => {
+        const r = res?.rader[i];
+        return `<div class="card hjalp-kort lastal ${r ? (r.ratt ? "ratt" : "fel") : ""}"><div><b>${i + 1}.</b> ${esc(u.text)}</div>
+          <div class="int-svar"><input class="bk-in" inputmode="numeric" data-lt="${i}" value="${esc(r ? r.gissning ?? "" : svar[i] ?? "")}" ${res ? "disabled" : ""} placeholder="Svar">${u.enhet ? `<span>${esc(u.enhet)}</span>` : ""}
+          ${r ? (r.ratt ? "✅" : `❌ Rätt svar: <b>${r.svar}</b>`) : ""}</div></div>`;
+      }).join("")}
+      ${res ? `<div class="lar-beloning">${res.ratt} av ${res.av} rätt!${res.p ? ` +${res.p} ⭐` : ""}</div>${res.vantar ? this._vantarRad(this._view.d.status.belonung) : ""}<div class="actions"><button class="primary" id="int-tillbaka">Klar</button></div>`
+        : `<div class="small muted">Räkna gärna på papper. Hälften rätt räcker för att bli klar.</div><div class="actions"><button class="primary" id="lt-ratta">✅ Rätta</button><button class="ghost" id="int-tillbaka">Senare</button></div>`}`;
+  }
+
+  _lasOmView(x) {
+    const v = this._view, res = x.res, svar = v.svar || (v.svar = []);
+    return `<div class="card hjalp-kort las-om"><h3>${esc(x.rubrik)}</h3>${x.text.split(/\n\n+/).map((p) => `<p>${esc(p)}</p>`).join("")}</div>
+      ${x.fragor.map((f, i) => {
+        const r = res?.rader[i];
+        return `<div class="card hjalp-kort"><b>${i + 1}. ${esc(f.fraga)}</b><div class="las-alt">${f.alt.map((a, j) => {
+          const kl = r ? (j === r.svar ? "ratt" : j === r.gissning ? "fel" : "") : svar[i] === j ? "vald" : "";
+          return `<button class="${kl}" data-lo="${i}:${j}" ${res ? "disabled" : ""}>${esc(a)}</button>`;
+        }).join("")}</div></div>`;
+      }).join("")}
+      ${x.skrivfraga ? (() => {
+        const sk = res?.skriv || v.skrivRes;
+        return `<div class="card hjalp-kort"><b>✍️ ${esc(x.skrivfraga)}</b>
+          <div class="small muted">Svara med egna ord i hela meningar. Glöm inte stor bokstav och punkt!</div>
+          <textarea id="lo-skriv" class="bk-in" rows="4" maxlength="1500" ${res ? "disabled" : ""} placeholder="Skriv ditt svar här…">${esc(res?.skriv?.svar ?? v.skriv ?? "")}</textarea>
+          ${sk ? `<div class="small">${sk.ok ? "✅" : "✏️"} ${sk.bra ? `${esc(sk.bra)} ` : ""}${sk.tips ? `<b>${esc(sk.tips)}</b>` : ""}</div>` : ""}</div>`;
+      })() : ""}
+      ${res ? `<div class="lar-beloning">${res.ratt} av ${res.av} rätt!${res.p ? ` +${res.p} ⭐` : ""}</div>${res.vantar ? this._vantarRad(v.d.status.belonung) : ""}<div class="actions"><button class="primary" id="int-tillbaka">Klar</button></div>`
+        : `<div class="actions"><button class="primary" id="lo-ratta" ${svar.filter((x) => x !== undefined).length < x.fragor.length ? "disabled" : ""}>${v.ratter ? "⏳ Rättar…" : "✅ Rätta"}</button><button class="ghost" id="int-tillbaka">Senare</button></div>`}`;
+  }
+
+  async _intresseAct(body) {
+    const v = this._view;
+    const res = await this._f("/api/skolan/intressen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...body }) });
+    const x = await res.json();
+    if (!res.ok) throw new Error(x.message || res.statusText);
+    if (v.d) {
+      v.d.status = x.status;
+      if (x.lastal) v.d.lastal = x.lastal;
+      if (x.las) v.d.las = x.las;
+    }
+    this._s.intressen = x.status;
+    return x;
+  }
+
+  // ---------- Hjärngympa ----------
+  _hjarnView() {
+    const v = this._view, s = this._s, h = s.hjarn, barn = !s.kan_valja;
+    if (!h) return `<p class="muted">Hjärngympan laddas…</p>`;
+    if (!v.d && !v.hamtar) {
+      v.hamtar = true;
+      this._f(`/api/skolan/hjarngympa?barn=${encodeURIComponent(s.barn)}`).then((r) => r.json()).then((d) => { v.d = d; v.hamtar = false; this._render(); }).catch(() => { v.hamtar = false; });
+    }
+    const sp = v.spel;
+    if (sp && !sp.slut) return this._hjarnSpel(sp);
+    const info = (id) => h.spel[id];
+    let res = "";
+    if (sp?.slut) {
+      const r = sp.res;
+      const nastaDaglig = h.dagens.find((x) => !x.klar);
+      res = `<div class="card hjalp-kort center hj-res"><div class="big">${info(sp.spel).ikon}</div>
+        <div class="score">${sp.spel === "minne" ? `${sp.raw} i rad` : `${sp.raw} rätt`}</div>
+        ${r ? `${sp.daglig ? `<div class="hj-poang">${r.p} / 100 poäng</div>` : ""}
+          ${r.nytt ? `<div class="lar-beloning">🏆 Nytt personbästa!</div>` : ""}
+          ${r.ny_niva ? `<div class="small">${r.ny_niva > r.niva ? `⬆️ Bra jobbat! ${esc(info(sp.spel).namn)} blir svårare: nivå ${r.ny_niva}.` : `⬇️ Nästa gång blir ${esc(info(sp.spel).namn)} lite lättare: nivå ${r.ny_niva}.`}</div>` : ""}
+          ${r.stjarnor ? `<div class="lar-beloning">🧠 Dagens hjärngympa klar! +${r.stjarnor} ⭐</div>` : ""}${r.vantar ? `<div class="small">🧠 Dagens hjärngympa klar!</div>${this._vantarRad(h.belonung)}` : ""}` : sp.fel ? `<div class="small">${esc(sp.fel)}</div>` : `<div class="small muted">Sparar…</div>`}
+        <div class="actions" style="justify-content:center">${sp.daglig && nastaDaglig ? `<button class="primary" data-hj-start="${nastaDaglig.id}" data-hj-daglig="1">▶️ Nästa: ${info(nastaDaglig.id).ikon} ${esc(info(nastaDaglig.id).namn)}</button>` : ""}
+          ${!sp.daglig ? `<button class="primary" data-hj-start="${sp.spel}">🔁 En gång till</button>` : ""}<button class="ghost" id="hj-klar">Klar</button></div></div>`;
+    }
+    const dagRader = h.dagens.map((x) => `<div class="hj-dag ${x.klar ? "klar" : ""}"><span class="hj-ikon">${info(x.id).ikon}</span><span><b>${esc(info(x.id).namn)}</b><br><span class="small muted">Nivå ${h.niva[x.id]}</span></span><span>${x.klar ? `✅ ${x.p} p` : ""}</span></div>`).join("");
+    const nasta = h.dagens.find((x) => !x.klar);
+    const dagKort = `<div class="card hjalp-kort"><div class="djur-rubrik">📅 Dagens hjärngympa</div>
+      <div class="small muted">Tre korta spel. Klara alla: +${h.belonung} ⭐ och sviten räknas. Spelen anpassar sig efter dig: går det bra blir det svårare.</div>
+      ${dagRader}
+      ${h.klar ? `<div class="lar-beloning">✅ Klart för idag: ${h.summa} av 300 poäng</div>` : barn ? `<div class="actions"><button class="primary stor-las" data-hj-start="${nasta.id}" data-hj-daglig="1">▶️ ${h.dagens.some((x) => x.klar) ? "Fortsätt" : "Starta"}</button></div>` : ""}</div>`;
+    const friKort = h.klar && barn ? `<div class="card hjalp-kort"><div class="djur-rubrik">🎮 Fritt spel</div>
+      <div class="small muted">Spela hur mycket du vill! Det ger inga stjärnor, men du kan slå ditt personbästa.</div>
+      <div class="hj-fri">${Object.entries(h.spel).map(([id, x]) => `<button data-hj-start="${id}"><span class="hj-ikon">${x.ikon}</span>${esc(x.namn)}<span class="small muted">🏆 ${h.basta[id] || 0}</span></button>`).join("")}</div></div>` : "";
+    const d = v.d;
+    const DAG = ["mån", "tis", "ons", "tor", "fre", "lör", "sön"];
+    const tavling = d && d.rader.length > 1 ? `<div class="card hjalp-kort"><div class="djur-rubrik">🏆 Syskonkampen</div>
+      <div class="small muted">Samma spel för alla, men varje spel är anpassat efter var och en. Poängen räknas mot din egen nivå, så alla har lika stor chans. Den som har mest poäng när alla spelat klart vinner dagen.</div>
+      <table class="hj-tabell"><tr><th></th>${d.dagar.map((x, i) => `<th class="${x === d.idag ? "idag" : ""}">${DAG[i]}</th>`).join("")}<th>👑</th></tr>
+      ${d.rader.map((r) => `<tr><td><b>${esc(r.namn)}</b></td>${r.vecka.map((p, i) => {
+        const basta = d.rader.filter((x) => x.vecka[i] !== null).length >= 2 && p !== null && p === Math.max(...d.rader.map((x) => x.vecka[i] ?? -1));
+        return `<td class="${d.dagar[i] === d.idag ? "idag" : ""}">${p === null ? (d.dagar[i] === d.idag && r.idag ? `<span class="muted">${r.idag}…</span>` : "·") : `${basta ? "👑" : ""}${p}`}</td>`;
+      }).join("")}<td><b>${r.vinster}</b></td></tr>`).join("")}</table>
+      <div class="small muted">👑 = vann dagen. Veckan börjar om på måndag.</div></div>` : "";
+    return `${res}${this._skrivkravRad(h.skrivkrav)}${dagKort}${friKort}${tavling}`;
+  }
+
+  _hjarnSpel(sp) {
+    const kvar = sp.slutTid ? Math.max(0, Math.ceil((sp.slutTid - Date.now()) / 1000)) : null;
+    const topp = `<div class="rekord-topp">${kvar !== null ? `<span class="rek-tid ${kvar <= 5 ? "bradskande" : ""}" id="hj-tid">${kvar}</span>` : `<span>${"❤️".repeat(sp.liv)}${"🤍".repeat(2 - sp.liv)}</span>`}<span class="rek-poang">${sp.spel === "minne" ? `🧠 ${sp.basta} i rad` : `✅ ${sp.raw}`}</span><span class="muted small">Nivå ${sp.niva}</span></div>`;
+    const q = sp.q;
+    if (sp.spel === "rakna" || sp.spel === "folj") {
+      return `${topp}<div class="small muted center">${sp.spel === "folj" ? "Vilket tal kommer sedan?" : "Räkna snabbt!"}</div>
+        <div class="rek-fraga ${sp.flash || ""}">${esc(q.text)}</div>
+        <div class="rek-alt">${q.alt.map((x, i) => `<button data-hj-svar="${i}" class="${sp.flash && x === q.svar ? "ratt" : ""}">${x}</button>`).join("")}</div>`;
+    }
+    if (sp.spel === "farg") {
+      return `${topp}<div class="hj-lage ${q.lage}">${q.lage === "ord" ? "Vad STÅR det?" : "Vilken FÄRG har ordet?"}</div>
+        <div class="rek-fraga hj-fargord ${sp.flash || ""}" style="color:${q.blck[1]}">${q.ord[0].toUpperCase()}</div>
+        <div class="rek-alt">${q.alt.map((f, i) => q.ordknappar
+          ? `<button data-hj-svar="${i}" class="hj-fargknapp-ord" style="color:${q.altFarg[i]}">${f[0].toUpperCase()}</button>`
+          : `<button data-hj-svar="${i}" class="hj-fargknapp" style="background:${f[1]}" aria-label="${f[0]}"></button>`).join("")}</div>`;
+    }
+    if (sp.spel === "udda") {
+      return `${topp}<div class="small muted center">Hitta den som inte är som de andra!</div>
+        <div class="hj-rutnat ${sp.flash || ""}" style="grid-template-columns:repeat(${q.sida},1fr)">${Array.from({ length: q.sida * q.sida }, (_, i) => `<button data-hj-ruta="${i}">${i === q.plats ? q.udda : q.vanlig}</button>`).join("")}</div>`;
+    }
+    // Minnesrutan
+    const n = sp.sida * sp.sida;
+    return `${topp}<div class="small muted center">${sp.fas === "visa" ? `👀 Titta noga… (${sp.langd} rutor)` : `👆 Tryck i samma ordning! (${sp.idx} av ${sp.langd})`}</div>
+      <div class="hj-minne ${sp.flash || ""}" style="grid-template-columns:repeat(${sp.sida},1fr)">${Array.from({ length: n }, (_, i) => `<button data-hj-minne="${i}" class="${sp.lit === i ? "lit" : ""}" ${sp.fas !== "svara" ? "disabled" : ""}></button>`).join("")}</div>`;
+  }
+
+  _hjarnNyFraga(sp) {
+    sp.flash = null;
+    sp.q = sp.spel === "rakna" ? hjRaknaFraga(sp.niva) : sp.spel === "folj" ? hjFoljFraga(sp.niva) : sp.spel === "farg" ? hjFargFraga(sp.niva) : hjUddaFraga(sp.niva);
+  }
+
+  _hjarnStart(spel, daglig) {
+    const h = this._s.hjarn;
+    clearInterval(this._hjTimer);
+    clearTimeout(this._hjVisa);
+    const sp = { spel, daglig, niva: h.niva[spel], raw: 0 };
+    this._view.spel = sp;
+    if (spel === "minne") {
+      Object.assign(sp, { sida: sp.niva <= 3 ? 3 : 4, langd: hjMinneStart(sp.niva), liv: 2, basta: 0 });
+      this._hjarnMinneVisa(sp);
+    } else {
+      sp.slutTid = Date.now() + HJ_TID[spel] * 1000;
+      this._hjarnNyFraga(sp);
+      this._hjTimer = setInterval(() => {
+        if (this._view.spel !== sp) return clearInterval(this._hjTimer);
+        const kvar = Math.max(0, Math.ceil((sp.slutTid - Date.now()) / 1000));
+        const el = this.shadowRoot.querySelector("#hj-tid");
+        if (el) { el.textContent = kvar; el.classList.toggle("bradskande", kvar <= 5); }
+        if (kvar <= 0 && !sp.slut) this._hjarnSlut(sp);
+      }, 200);
+    }
+    this._render();
+  }
+
+  // Minnesrutan: visa följden en ruta i taget, sedan får barnet trycka
+  _hjarnMinneVisa(sp) {
+    const n = sp.sida * sp.sida;
+    sp.seq = [];
+    while (sp.seq.length < sp.langd) { const x = hjR(0, n - 1); if (x !== sp.seq[sp.seq.length - 1]) sp.seq.push(x); }
+    sp.fas = "visa"; sp.idx = 0; sp.lit = null; sp.flash = null;
+    const tak = Math.max(350, 750 - sp.niva * 35);
+    let i = 0;
+    const steg = () => {
+      if (this._view.spel !== sp) return;
+      if (i >= sp.seq.length * 2) { sp.fas = "svara"; sp.lit = null; this._render(); return; }
+      sp.lit = i % 2 === 0 ? sp.seq[i / 2] : null;
+      i++;
+      this._render();
+      this._hjVisa = setTimeout(steg, i % 2 ? tak : 180);
+    };
+    this._hjVisa = setTimeout(steg, 700);
+  }
+
+  _hjarnSvar(ratt) {
+    const sp = this._view.spel;
+    if (!sp || sp.slut || sp.flash) return;
+    if (ratt) sp.raw++;
+    else sp.slutTid -= HJ_TIDSSTRAFF;
+    sp.flash = ratt ? "ratt-flash" : "fel-flash";
+    this._render();
+    setTimeout(() => { if (!sp.slut && this._view.spel === sp) { this._hjarnNyFraga(sp); this._render(); } }, ratt ? 150 : 500);
+  }
+
+  _hjarnMinneTryck(i) {
+    const sp = this._view.spel;
+    if (!sp || sp.slut || sp.fas !== "svara") return;
+    if (sp.seq[sp.idx] === i) {
+      sp.idx++;
+      sp.lit = i;
+      if (sp.idx === sp.langd) {
+        sp.basta = sp.raw = sp.langd;
+        sp.fas = "klar"; sp.flash = "ratt-flash";
+        this._render();
+        if (sp.langd >= hjMinneStart(sp.niva) + 8) return this._hjarnSlut(sp);
+        sp.langd++;
+        this._hjVisa = setTimeout(() => this._hjarnMinneVisa(sp), 700);
+        return;
+      }
+      this._render();
+      setTimeout(() => { if (sp.lit === i) { sp.lit = null; this._render(); } }, 200);
+      return;
+    }
+    sp.liv--;
+    sp.fas = "klar"; sp.flash = "fel-flash"; sp.lit = null;
+    this._render();
+    if (sp.liv <= 0) return setTimeout(() => this._hjarnSlut(sp), 600);
+    this._hjVisa = setTimeout(() => this._hjarnMinneVisa(sp), 900); // samma längd, ny följd
+  }
+
+  async _hjarnSlut(sp) {
+    clearInterval(this._hjTimer);
+    clearTimeout(this._hjVisa);
+    sp.slut = true;
+    this._render();
+    if (this._s.kan_valja) return;
+    try {
+      const res = await this._f("/api/skolan/extra", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barn: this._s.barn, op: "hjarn", spel: sp.spel, raw: sp.raw, daglig: !!sp.daglig }) });
+      const x = await res.json();
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      sp.res = x;
+      this._s.hjarn = x.status;
+      if (this._view.spel === sp) this._view.d = null; // hämta syskonkampen igen
+      if (x.stjarnor) this._fx({ text: "🧠 HJÄRNGYMPA KLAR!", sub: `+${x.stjarnor} ⭐`, emojis: ["🧠", "⭐", "✨"], antal: 26, konfetti: true });
+      else if (x.nytt) this._fx({ text: "🏆 PERSONBÄSTA!", emojis: ["🏆", "✨"], antal: 16 });
+    } catch (e) {
+      sp.fel = `Kunde inte spara: ${e.message || e}`;
+    }
+    this._render();
   }
 
   // ---------- Läsflyt ----------
@@ -2722,6 +3274,10 @@ class SkolanPanel extends HTMLElement {
         barn && (s.syskonlista || (Array.isArray(s.syskon) ? s.syskon : [])).length && l({ name: "syskon" }, "🤝", "Förhör ditt syskon"),
         l({ name: "lasflyt" }, "📖", "Läsflyt"),
         barn && l({ name: "matte" }, "🔢", "Mattemonster"),
+        l({ name: "hjarn" }, "🧠", `Hjärngympa${barn && s.hjarn && !s.hjarn.klar ? " 🆕" : ""}`),
+        l({ name: "intressen" }, "💡", barn ? "Det jag gillar" : "Det barnet gillar"),
+        l({ name: "utveckling" }, "📈", barn ? "Min utveckling" : "Utveckling"),
+        !barn && l({ name: "larare" }, "👩‍🏫", "Till läraren"),
       ])}
       ${grupp("Skriva", [
         l({ name: "penna" }, "🖊️", "Pennuppdrag"),
@@ -3965,6 +4521,28 @@ class SkolanPanel extends HTMLElement {
         `Svara rätt på så många glosor du hinner på 60 sekunder. Fel svar kostar 3 sekunder.`,
         `Slå ditt eget rekord: ${p(5)} (en gång per glosläxa och dag)`,
         `Minst 5 rätt räknas för sviten och dagens utmaning.`,
+      ])}
+
+      ${kort("🧠", "Hjärngympa", [
+        `Varje dag finns tre korta hjärnspel, samma för alla. Klara alla tre: ${p(10)} och sviten räknas.`,
+        `Spelen anpassar sig efter dig. Får du full pott blir spelet svårare nästa dag, och går det tungt blir det lite lättare.`,
+        `Varje spel ger 0–100 poäng mot din egen nivå. I <b>Syskonkampen</b> vinner den med mest poäng när alla har spelat klart.`,
+        `När dagens spel är klara kan du spela fritt hur mycket du vill. Det ger inga stjärnor, men du kan slå ditt personbästa 🏆.`,
+      ])}
+
+      ${kort("💡", "Det jag gillar", [
+        `Välj upp till 5 saker du gillar. Då skriver AI:n lästal, texter och skrivuppdrag om dem, och husdjuret använder dem i sina exempel.`,
+        `🧮 <b>Lästal</b>: 5 mattetal på din nivå. Hälften rätt: ${p(3)} (en gång per dag)`,
+        `📖 <b>Läs och svara</b>: en kort text, 3 frågor och en skrivfråga som du svarar på med egna ord. Minst 2 rätt och ett godkänt skrivsvar: ${p(3)} (en gång per dag)`,
+      ])}
+
+      ${kort("✍️", "Skriv då och då!", [
+        `Gör en skrivövning minst var 4:e dag: ett Pennuppdrag eller en övning i Skrivverkstaden.`,
+        `Har det gått längre än så sparas stjärnorna från Hjärngympan och Det jag gillar. Du får dem direkt när du har skrivit igen.`,
+      ])}
+
+      ${kort("📈", "Min utveckling", [
+        `Se hur mycket bättre du har blivit: dina första två veckor jämfört med de senaste två. Den 1:a varje månad får du en notis om det du har blivit bäst på.`,
       ])}
 
       ${kort("🎟️", "Läxpasset", [
@@ -7285,6 +7863,7 @@ class SkolanPanel extends HTMLElement {
     on("#sk-kopiera", () => navigator.clipboard?.writeText(this._s.skola?.lank || "").then(() => { this._msg = { type: "ok", text: "Klasslänken är kopierad 📋" }; this._render(); }));
     r.querySelectorAll("[data-rep]").forEach((b) => b.addEventListener("click", () => { const [am, gl] = b.dataset.rep.split("|"); this._go({ name: "glosor", amne: am, glosor: gl }); }));
     on("#open-fokus", () => this._go({ name: "fokus" }));
+    on("#open-hjarn", () => this._go({ name: "hjarn" }));
     on("#fd-spara", async () => { if (await this._act("fodelsedag_satt", { datum: $("#fd-datum")?.value || "" })) this._msg = { type: "ok", text: "🎂 Födelsedagen är sparad." }; this._render(); });
     on("#fd-oppna", async () => {
       if (await this._act("fodelsedag_hamta", {})) {
@@ -7638,6 +8217,104 @@ class SkolanPanel extends HTMLElement {
         this._render();
         setTimeout(() => { sp.flash = null; sp.q = this._matteFraga(v.typ, v.niva); this._render(); }, ratt ? 150 : 600);
       }));
+    }
+    // Till läraren
+    if (v.name === "larare") {
+      const lrAct = async (op, extra = {}) => {
+        v.jobbar = op; this._render();
+        try {
+          const res = await this._f("/api/skolan/larare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, op, text: v.text, ...extra }) });
+          const x = await res.json();
+          if (!res.ok) throw new Error(x.message || res.statusText);
+          v.d = x;
+          if (op === "lapp_ny") v.text = x.lapp.text;
+          this._msg = { type: "ok", text: { lapp_skicka: "✉️ Lappen skickas till läraren vid nästa synk.", samtal_skicka: "🗣️ Underlaget skickas till läraren vid nästa synk.", lapp_klar: "✅ Markerad som skickad.", samtal_ai: "🤖 Sammanfattningen är klar. Öppna underlaget för att läsa den.", mejl: "Sparat." }[op] || null };
+          if (!this._msg.text) this._msg = null;
+        } catch (e) { this._msg = { type: "error", text: e.message || String(e) }; }
+        v.jobbar = null; this._render();
+      };
+      $("#lr-text")?.addEventListener("input", (e) => { v.text = e.target.value; });
+      $("#lr-omai")?.addEventListener("input", (e) => { v.omai = e.target.value; });
+      r.querySelectorAll("[data-lr]").forEach((b) => b.addEventListener("click", () => lrAct(b.dataset.lr)));
+      on("#lr-mejl-spara", () => lrAct("mejl", { mejl: $("#lr-mejl")?.value || "" }));
+      const textFor = (k) => (k === "lapp" ? v.text : v.omai ?? v.d?.om_ai) || "";
+      r.querySelectorAll("[data-lr-dela]").forEach((b) => b.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(textFor(b.dataset.lrDela)); this._msg = { type: "ok", text: "Kopierat! Klistra in i skolans app eller ett mejl. 📋" }; } catch (e) { this._msg = { type: "error", text: "Kunde inte kopiera." }; }
+        this._render();
+      }));
+      r.querySelectorAll("[data-lr-mejl]").forEach((b) => b.addEventListener("click", () => {
+        const k = b.dataset.lrMejl;
+        const amne = k === "lapp" ? `${this._s.namn}: det som har varit svårt den här veckan` : `Läxspelet och AI hemma hos ${this._s.namn}`;
+        window.open(`mailto:${encodeURIComponent(v.d?.mejl || "").replace(/%2C/g, ",")}?subject=${encodeURIComponent(amne)}&body=${encodeURIComponent(textFor(k))}`, "_blank");
+      }));
+      on("#lr-samtal", async () => {
+        const w = window.open("", "_blank");
+        try {
+          const res = await this._hass.callWS({ type: "auth/sign_path", path: `/api/skolan/samtal?barn=${encodeURIComponent(this._s.barn)}`, expires: 300 });
+          if (w) w.location.href = res.path; else window.location.href = res.path;
+        } catch (e) { w?.close(); this._msg = { type: "error", text: `Kunde inte öppna underlaget: ${e.message || e}` }; this._render(); }
+      });
+    }
+    // Det jag gillar
+    if (v.name === "intressen") {
+      const fel = (e) => { this._msg = { type: "error", text: e.message || String(e) }; this._render(); };
+      r.querySelectorAll("[data-int]").forEach((b) => b.addEventListener("click", () => {
+        const x = b.dataset.int, val = v.val || (v.val = []);
+        if (val.includes(x)) v.val = val.filter((y) => y !== x);
+        else if (val.length < (v.d?.status.max || 5)) val.push(x);
+        else { this._msg = { type: "error", text: `Du kan välja högst ${v.d.status.max}. Ta bort något först.` }; }
+        this._render();
+      }));
+      on("#int-lagg", () => {
+        const t = ($("#int-egen")?.value || "").trim();
+        if (!t) return;
+        v.val = v.val || [];
+        if (!v.val.includes(t) && v.val.length < (v.d?.status.max || 5)) v.val.push(t);
+        this._render();
+      });
+      on("#int-spara", async () => {
+        try { await this._intresseAct({ op: "satt", lista: v.val }); v.val = [...v.d.status.lista]; this._msg = { type: "ok", text: "Sparat! 💡" }; this._render(); } catch (e) { fel(e); }
+      });
+      r.querySelectorAll("[data-int-amne]").forEach((b) => b.addEventListener("click", () => { v.amne = b.dataset.intAmne; this._render(); }));
+      r.querySelectorAll("[data-int-ny]").forEach((b) => b.addEventListener("click", async () => {
+        const typ = b.dataset.intNy;
+        v.skapar = true; this._render();
+        try { await this._intresseAct({ op: `${typ}_ny`, amne: v.amne || null }); v.lage = typ; v.svar = []; } catch (e) { this._msg = { type: "error", text: e.message || String(e) }; }
+        v.skapar = false; this._render();
+        this.shadowRoot.querySelector(".content")?.scrollTo?.(0, 0);
+      }));
+      r.querySelectorAll("[data-int-oppna]").forEach((b) => b.addEventListener("click", () => { v.lage = b.dataset.intOppna; v.svar = []; this._render(); }));
+      on("#int-tillbaka", () => { v.lage = null; v.svar = []; v.skriv = ""; v.skrivRes = null; this._render(); });
+      r.querySelectorAll("[data-lt]").forEach((inp) => inp.addEventListener("input", () => { (v.svar || (v.svar = []))[Number(inp.dataset.lt)] = inp.value; }));
+      on("#lt-ratta", async () => {
+        try { const x = await this._intresseAct({ op: "lastal_svar", svar: v.svar || [] }); v.d.lastal.res = x.res; if (x.res.p) this._fx({ text: "🧮 SNYGGT RÄKNAT!", sub: `+${x.res.p} ⭐`, emojis: ["🧮", "⭐"], antal: 20 }); this._render(); } catch (e) { fel(e); }
+      });
+      r.querySelectorAll("[data-lo]").forEach((b) => b.addEventListener("click", () => { const [i, j] = b.dataset.lo.split(":").map(Number); (v.svar || (v.svar = []))[i] = j; this._render(); }));
+      $("#lo-skriv")?.addEventListener("input", (e) => { v.skriv = e.target.value; });
+      on("#lo-ratta", async () => {
+        if (v.ratter) return;
+        v.ratter = true; this._render();
+        try {
+          const x = await this._intresseAct({ op: "las_svar", svar: v.svar || [], skrivsvar: v.skriv || "" });
+          v.ratter = false;
+          if (x.res.om) { v.skrivRes = x.res.skriv; this._msg = { type: "error", text: "Skrivsvaret behöver bli lite bättre. Läs tipset och försök igen! ✏️" }; }
+          else { v.d.las.res = x.res; v.skrivRes = null; if (x.res.p) this._fx({ text: "📖 BRA LÄST OCH SKRIVET!", sub: `+${x.res.p} ⭐`, emojis: ["📖", "✍️", "⭐"], antal: 20 }); }
+          this._render();
+        } catch (e) { v.ratter = false; fel(e); }
+      });
+    }
+    // Hjärngympa
+    if (v.name === "hjarn") {
+      r.querySelectorAll("[data-hj-start]").forEach((b) => b.addEventListener("click", () => this._hjarnStart(b.dataset.hjStart, !!b.dataset.hjDaglig)));
+      on("#hj-klar", () => { v.spel = null; this._render(); });
+      r.querySelectorAll("[data-hj-svar]").forEach((b) => b.addEventListener("click", () => {
+        const sp = v.spel, q = sp?.q;
+        if (!q) return;
+        const val = q.alt[Number(b.dataset.hjSvar)];
+        this._hjarnSvar(sp.spel === "farg" ? val[0] === q.svar : val === q.svar);
+      }));
+      r.querySelectorAll("[data-hj-ruta]").forEach((b) => b.addEventListener("click", () => this._hjarnSvar(Number(b.dataset.hjRuta) === v.spel?.q?.plats)));
+      r.querySelectorAll("[data-hj-minne]").forEach((b) => b.addEventListener("click", () => this._hjarnMinneTryck(Number(b.dataset.hjMinne))));
     }
     // Läsflyt
     if (v.name === "lasflyt") {
@@ -9385,6 +10062,34 @@ const CSS = `
   .rek-alt { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .rek-alt button { font-size:18px; padding:18px 8px; border-radius:14px; border:none; background:var(--secondary-background-color); color:var(--primary-text-color); cursor:pointer; min-height:70px; }
   .rek-alt button.ratt { background:#4fc98a; color:#fff; }
+  .skrivkrav { border-left:5px solid #ff9800; background:rgba(255,152,0,.1); } .lar-beloning.vantar { background:rgba(255,152,0,.15); }
+  .ut-kort { padding:12px; border-radius:14px; background:var(--card-background-color); margin-bottom:10px; box-shadow:var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.12)); } .ut-kort.battre { border-left:5px solid #4fc98a; }
+  .ut-rubrik { font-weight:700; margin-bottom:6px; } .ut-staplar > div { display:grid; grid-template-columns:34px 1fr auto; align-items:center; gap:8px; margin:4px 0; }
+  .ut-stapel { height:14px; border-radius:7px; min-width:4px; } .ut-stapel.da { background:#b0bec5; } .ut-stapel.nu { background:#4fc98a; }
+  .ut-totalt { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:8px; } .ut-totalt > div { display:flex; flex-direction:column; align-items:center; padding:10px; border-radius:12px; background:var(--secondary-background-color); text-align:center; } .ut-totalt b { font-size:22px; }
+  .int-egen { display:flex; gap:6px; margin-top:8px; } .int-egen input { flex:1; }
+  .int-akt { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:8px 0; } .int-akt button { display:flex; flex-direction:column; align-items:center; gap:2px; padding:12px 6px; border-radius:14px; border:none; background:var(--secondary-background-color); color:var(--primary-text-color); cursor:pointer; }
+  .int-svar { display:flex; align-items:center; gap:8px; margin-top:8px; } .int-svar input { width:110px; font-size:18px; }
+  .lastal.ratt { border-left:5px solid #4fc98a; } .lastal.fel { border-left:5px solid #f44336; }
+  .las-om p { line-height:1.6; font-size:17px; }
+  .las-alt { display:grid; gap:6px; margin-top:8px; } .las-alt button { text-align:left; padding:10px 12px; border-radius:10px; border:2px solid transparent; background:var(--secondary-background-color); color:var(--primary-text-color); cursor:pointer; font-size:15px; }
+  .las-alt button.vald { border-color:var(--primary-color); } .las-alt button.ratt { background:#4fc98a; color:#fff; } .las-alt button.fel { background:#f44336; color:#fff; }
+  .hj-dag { display:flex; align-items:center; gap:10px; padding:8px 4px; border-bottom:1px solid var(--divider-color); } .hj-dag > span:nth-child(2) { flex:1; }
+  .hj-dag.klar { opacity:.75; } .hj-ikon { font-size:28px; }
+  .hj-fri { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; margin-top:8px; }
+  .hj-fri button { display:flex; flex-direction:column; align-items:center; gap:2px; padding:10px 6px; border-radius:14px; border:none; background:var(--secondary-background-color); color:var(--primary-text-color); cursor:pointer; font-size:14px; }
+  .hj-poang { font-size:20px; font-weight:700; margin:4px 0; }
+  .hj-tabell { width:100%; border-collapse:collapse; margin:8px 0; font-size:14px; text-align:center; } .hj-tabell td, .hj-tabell th { padding:5px 2px; } .hj-tabell td:first-child { text-align:left; }
+  .hj-tabell .idag { background:rgba(255,193,7,.18); border-radius:6px; }
+  .hj-lage { text-align:center; font-weight:800; font-size:18px; margin-bottom:6px; } .hj-lage.ord { color:#8e24aa; }
+  .hj-fargord { font-size:44px; letter-spacing:2px; background:#fafafa; }
+  .hj-fargknapp { min-height:80px !important; border:3px solid rgba(0,0,0,.15) !important; }
+  .hj-fargknapp-ord { font-size:22px !important; font-weight:800; background:#fafafa !important; }
+  .hj-rutnat, .hj-minne { display:grid; gap:6px; max-width:420px; margin:10px auto; border-radius:14px; padding:6px; transition:background .15s; }
+  .hj-rutnat button { aspect-ratio:1; font-size:clamp(20px,7vw,34px); border:none; border-radius:10px; background:var(--secondary-background-color); cursor:pointer; padding:0; }
+  .hj-minne button { aspect-ratio:1; border:none; border-radius:12px; background:var(--secondary-background-color); cursor:pointer; transition:background .1s, transform .1s; }
+  .hj-minne button.lit { background:#ffb300; transform:scale(1.05); box-shadow:0 0 14px #ffb300; }
+  .hj-rutnat.ratt-flash, .hj-minne.ratt-flash { background:#4fc98a; } .hj-rutnat.fel-flash, .hj-minne.fel-flash { background:#f44336; }
   .insp-ruta { background:var(--secondary-background-color); border-radius:12px; padding:12px; margin:8px 0; display:flex; flex-direction:column; gap:8px; }
   .insp-rad { display:flex; align-items:center; gap:8px; font-size:16px; }
   .insp-prick { width:14px; height:14px; border-radius:50%; background:#db4437; animation:puls 1s ease-in-out infinite; }

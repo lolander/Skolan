@@ -24,7 +24,7 @@ from homeassistant.util import dt as dt_util
 
 from . import meriter
 
-PA = False  # dolt tills vidare; True visar lärare och klass i appen
+PA = True  # visar lärare och klass i appen
 VAG = "/api/skolan/klass/"
 FUNKTIONER = {
     "veckobrev": ("📬", "Veckobrev från läraren", "Lärarens veckobrev hamnar i din inkorg. Du godkänner innan läxorna läggs in."),
@@ -36,6 +36,8 @@ FUNKTIONER = {
     "schema": ("🗓️", "Schemat till läraren", "Läraren ser den digitala kopian av schemat som Läxspelet har läst av (lektioner, salar och lärare)."),
     "studieteknik": ("🧠", "Studieteknik till läraren", "Läraren ser hur ditt barn pluggar: pluggplaner och hur de följs, vad som är svårt, svaga punkter, skrivandet och AI:ns tankar om studietekniken. Inga stjärnor, husdjur eller jämförelser."),
     "riktlinjer": ("📝", "Riktlinjer från läraren till AI:n", "Läraren kan skicka riktlinjer per ämne (t.ex. metod, begrepp eller hur mycket hjälp) som AI:n följer, så att den hjälper på samma sätt som läraren. De hamnar i din inkorg och du godkänner först."),
+    "lapp": ("✉️", "Lappar till läraren", "Du kan skicka en kort lapp om vad ditt barn har tyckt varit svårt, så att läraren kan ta upp det igen. Du läser och godkänner varje lapp innan den skickas."),
+    "samtal": ("🗣️", "Underlag till utvecklingssamtalet", "Du kan skicka underlaget till utvecklingssamtalet till läraren. Du väljer själv när, och ser exakt vad som skickas."),
     "material": ("📎", "Prov och studiematerial från läraren", "Läraren kan skicka provresultat, studiematerial och klassens schema (PDF eller foto). Det hamnar i din inkorg och du godkänner innan något läggs in."),
 }
 KLASSBOSS_BELONING = 30
@@ -67,12 +69,15 @@ def las(mapp: Path) -> dict:
     s.setdefault("klass", None)  # klassens läge från lärarappen
     s.setdefault("mejl_skickat", "")
     s.setdefault("grupper", [])  # från läraren: [{id, namn, uppgift, datum, medlemmar: [namn], klar}]
+    s.setdefault("utgaende", [])  # till läraren, godkänt av föräldern: [{id, typ: lapp|samtal, tid, ...}]
+    s.setdefault("lapp", {})  # veckans lapp: {vecka, text, status: utkast|skickad}
     return s
 
 
 def spara(mapp: Path, s: dict) -> None:
     s["inkorg"] = s["inkorg"][-MAX_INKORG:]
     s["mottagna"] = s.get("mottagna", [])[-300:]
+    s["utgaende"] = s.get("utgaende", [])[-30:]
     tmp = _fil(mapp).with_suffix(".tmp")
     tmp.write_text(json.dumps(s, ensure_ascii=False), "utf-8")
     tmp.replace(_fil(mapp))
@@ -395,6 +400,7 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
             "statistik": statistik(data) if aktiv(s, "statistik") else None,
             "studieteknik": studieteknik if aktiv(s, "studieteknik") else None,
             "schema": [{k: x.get(k) for k in ("dag", "start", "slut", "namn", "sal", "larare", "info", "ej")} for x in data.get("lektioner", [])][:80] if aktiv(s, "schema") else None,
+            "fran_foraldern": [x for x in s.get("utgaende", []) if aktiv(s, x["typ"])][-20:],
             "mottagna": s["mottagna"][-100:], "_filer": filer}
 
 
