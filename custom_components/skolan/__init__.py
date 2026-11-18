@@ -161,7 +161,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -913,7 +913,7 @@ class StateView(HomeAssistantView):
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
-                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
+                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
@@ -1291,6 +1291,58 @@ COACH_PROMPT = (
     "strikthet är mild, lagom eller strang; text är föräldrarnas önskemål i en kort mening eller två (ta med det som redan gäller om det fortfarande stämmer).\n"
     'Svara ENDAST med JSON: {{"svar": "...", "onskemal": null}} eller {{"svar": "...", "onskemal": {{"strikthet": "lagom", "text": "..."}}}}'
 )
+
+
+HANDSTIL_PROMPT = (
+    "Du är en snäll och kunnig lärare i handstil för ett barn{alder} i en svensk skola. Bilden visar barnets handstil{vad}. "
+    "Bedöm bara handstilen, inte stavning eller innehåll: bokstävernas form (t.ex. rund a, o, d, g), att de sitter på linjen, "
+    "rätt höjd (små bokstäver lika höga, långa bokstäver som l, h, k, d, b högre, g, j, p, y går ner under linjen), jämna mellanrum mellan bokstäver och ord, och hur lätt det är att läsa. "
+    "Var uppmuntrande och konkret, anpassat till åldern. Om bilden inte visar handstil: poang 0 och säg det vänligt i bra.\n"
+    'Svara ENDAST med JSON: {{"poang": 0-100, "bra": ["1–2 saker som är bra"], "tips": ["1–3 konkreta tips, t.ex. \'stäng ringen i a\'"], '
+    '"ova": ["högst 4 bokstäver som behöver övas, som enskilda tecken"], "pepp": "en kort peppande mening"}}'
+)
+
+
+class HandstilView(HomeAssistantView):
+    """Handstil: AI bedömer en bild (ritad i appen eller ett foto av papper)."""
+
+    url = "/api/skolan/handstil"
+    name = "api:skolan:handstil"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        form = await request.post()
+        try:
+            body = json.loads(str(form.get("json") or "{}"))
+            bilder = await _ta_emot_filer(hass, form, "handstil")
+        except ValueError as err:
+            return self.json_message(str(err), 400)
+        try:
+            barn = _barn_for(hass, request, body.get("barn"))
+            foralder = _ar_foralder(hass, request)
+            path = _dir(hass, barn)
+            data = await hass.async_add_executor_job(_load, path)
+            ar = fraga.alder(data)
+            text = re.sub(r"\s+", " ", str(body.get("text") or "")).strip()[:120]
+            typ = "foto" if body.get("typ") == "foto" else "skriv"
+            prompt = HANDSTIL_PROMPT.format(alder=f" ({ar} år)" if ar else "", vad=f". Barnet skulle skriva: \"{text}\"" if text else "")
+            try:
+                x = _parse_json(await _ai_las(hass, bilder[:1], prompt, "Läxspelet handstil"))
+                poang = max(0, min(100, int(x.get("poang") or 0)))
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Läxspelet: handstil misslyckades: %s", err)
+                return self.json_message("AI:n kunde inte titta på bilden just nu. Försök igen om en stund.", 503)
+            lista = lambda k, n: [str(v)[:160] for v in (x.get(k) or []) if str(v).strip()][:n]  # noqa: E731
+            ut = {"poang": poang, "bra": lista("bra", 2), "tips": lista("tips", 3), "ova": [str(v)[:2] for v in (x.get("ova") or [])][:4],
+                  "pepp": str(x.get("pepp") or "")[:200], "p": 0}
+            if not foralder and poang > 0:
+                async with hass.data[DOMAIN]["locks"][barn]:
+                    data = await hass.async_add_executor_job(_load, path)
+                    ut["p"] = meriter.handstil_klar(data, typ, poang, text or "(foto)", {"ova": ut["ova"], "tips": ut["tips"][:2]})
+                    await hass.async_add_executor_job(_save, path, data)
+            return self.json(ut)
+        finally:
+            await hass.async_add_executor_job(lambda: [p.unlink(missing_ok=True) for p in bilder])
 
 
 class PlanView(HomeAssistantView):
@@ -1823,6 +1875,10 @@ def _apply(data: dict, body: dict) -> list[str]:
         if dag >= u["datum"]:
             raise ValueError("Pluggdagen måste vara före provet.")
         meriter.prov_studiedag(data, u, dag)
+        return []
+    if op == "handstil_klar":  # spårövning (bara barnet själv; föräldrar kan prova utan att det sparas)
+        if body.get("_barn"):
+            meriter.handstil_klar(data, "spara", int(body.get("poang") or 0), str(body.get("text") or ""))
         return []
     if op == "skolinfo_bort":
         i = str(body.get("id") or "")

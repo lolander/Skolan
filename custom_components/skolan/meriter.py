@@ -2505,6 +2505,44 @@ def hjalp_ratt(data: dict, u: dict | None = None) -> dict:
     return {**hjalp_status(data), "pass_klart": h["ratt"] % HJALP_RATT == 0, "p_ny": p, "studiedag": studiedag}
 
 
+# ---------- handstil ----------
+P_HANDSTIL_SPAR = 2  # ⭐ per spårövning med minst 60 poäng
+HANDSTIL_SPAR_MAX = 8  # spårövningar per dag som ger ⭐
+P_HANDSTIL_AI = 5  # ⭐ för AI-bedömd handstil (skriv själv eller foto), en gång per dag
+HANDSTIL_TYPER = {"spara": "Spåra", "skriv": "Skriv själv", "foto": "Foto"}
+
+
+def handstil_klar(data: dict, typ: str, poang: int, text: str, extra: dict | None = None) -> int:
+    """Spara en handstilsövning och ge ⭐. Returnerar ⭐."""
+    typ = typ if typ in HANDSTIL_TYPER else "spara"
+    poang = max(0, min(100, int(poang)))
+    idag = dt_util.now().date().isoformat()
+    lista = data.setdefault("handstil", [])
+    lista.append({"tid": dt_util.now().isoformat(timespec="minutes"), "typ": typ, "poang": poang, "text": str(text or "")[:60], **(extra or {})})
+    del lista[:-300]
+    p = 0
+    if typ == "spara":
+        if poang >= 60:
+            for n in range(1, HANDSTIL_SPAR_MAX + 1):
+                if ge(data, P_HANDSTIL_SPAR, f"✍️ Spårade {str(text)[:20]} ({poang} p)", f"handstil:{idag}:{n}", "✍️"):
+                    p = P_HANDSTIL_SPAR
+                    break
+    elif ge(data, P_HANDSTIL_AI, f"✍️ Handstil bedömd ({poang} p)", f"handstil_ai:{idag}", "✍️"):
+        p = P_HANDSTIL_AI
+    if p or poang >= 60:
+        aktiv(data, idag)
+        _rakna(data, "handstil")
+    return p
+
+
+def handstil_status(data: dict) -> dict:
+    lista = data.get("handstil", [])
+    idag = dt_util.now().date().isoformat()
+    ai = [x for x in lista if x["typ"] != "spara"]
+    return {"senaste": lista[-30:], "idag": sum(1 for x in lista if x["tid"][:10] == idag),
+            "ova": (ai[-1].get("ova") if ai else []) or []}
+
+
 # ---------- glosstrid: rätt svar på glosor blir attacker mot kartans monster ----------
 GS_SKADA = 1  # grundskada per rätt svar (× husdjurets kraft, × 2 vid kombo)
 GS_KOMBO = 5  # så många rätt i rad ger dubbel skada

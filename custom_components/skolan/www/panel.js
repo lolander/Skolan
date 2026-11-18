@@ -1232,6 +1232,10 @@ class SkolanPanel extends HTMLElement {
       title = `💬 Fråga ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "hem" };
       body = this._fragaView();
+    } else if (v.name === "handstil") {
+      title = "✍️ Öva handstil";
+      back = { name: "hem" };
+      body = this._handstilView();
     } else if (v.name === "djurstory") {
       title = `📖 ${v.art} Story`;
       back = { name: v.fran || "djurbutik" };
@@ -1958,6 +1962,143 @@ class SkolanPanel extends HTMLElement {
         <div class="djur-val">${nya.map((a) => `<button data-djur-story="${a}" class="rit-val med-element">${ritaDjur(a, "glad", 2)}<span class="el">${elIkon(a)}</span></button>`).join("")}</div>`;
       })()}
       ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
+  }
+
+  // ---------- öva handstil ----------
+  _hsLista() {
+    const v = this._view;
+    const sma = "abcdefghijklmnopqrstuvwxyzåäö".split("");
+    if (v.kalla === "versaler") return sma.map((l) => `${l.toUpperCase()}${l} ${l.toUpperCase()}${l}`);
+    if (v.kalla === "siffror") return "0123456789".split("").map((n) => `${n} ${n} ${n} ${n}`);
+    if (v.kalla === "ord") {
+      const ord = [...new Set((this._s.data.amnen || []).flatMap((a) => (a.glosor || []).flatMap((g) => (g.par || []).map((p) => String(p[0] || "").trim())))
+        .filter((w) => w && w.length <= 14 && /^[a-zåäöéü' -]+$/i.test(w)))];
+      return ord.length ? ord : ["hej", "skola", "läxa", "glass", "hund", "vänner", "måndag", "äventyr"];
+    }
+    if (v.kalla === "egen") return [v.egen || "Skriv något"];
+    const ova = (this._s.handstil?.ova || []).map((x) => String(x).toLowerCase()).filter((x) => sma.includes(x));
+    return [...ova, ...sma.filter((l) => !ova.includes(l))].map((l) => `${l} ${l} ${l} ${l}`);
+  }
+
+  _handstilView() {
+    const v = this._view, s = this._s;
+    v.lage = v.lage || "spara"; v.kalla = v.kalla || "gemener"; v.i = v.i || 0;
+    const lista = this._hsLista(), text = lista[v.i % lista.length];
+    const LAGE = { spara: "✏️ Spåra", skriv: "📝 Skriv själv", foto: "📷 Fota papper" };
+    const KALLA = { gemener: "a b c", versaler: "Aa Bb", siffror: "1 2 3", ord: "Ord", egen: "Egen text" };
+    const hist = (s.handstil?.senaste || []).slice(-12);
+    const res = v.res;
+    const stj = (p) => (p >= 88 ? "⭐⭐⭐" : p >= 75 ? "⭐⭐" : p >= 60 ? "⭐" : "💪");
+    return `<div class="hjalp-lagen">${Object.entries(LAGE).map(([k, t]) => `<button class="mini ${v.lage === k ? "primary" : ""}" data-hs-lage="${k}">${t}</button>`).join("")}</div>
+      ${v.lage !== "foto" ? `<div class="hjalp-lagen">${Object.entries(KALLA).map(([k, t]) => `<button class="mini ${v.kalla === k ? "primary" : ""}" data-hs-kalla="${k}">${t}</button>`).join("")}</div>
+        ${v.kalla === "egen" ? `<div class="pg-ny"><input id="hs-egen" maxlength="20" value="${esc(v.egen || "")}" placeholder="Skriv ett ord eller en kort mening"><button class="mini" id="hs-egen-ok">OK</button></div>` : ""}
+        ${(s.handstil?.ova || []).length && v.kalla === "gemener" ? `<div class="small">🎯 Öva extra på: <b>${s.handstil.ova.map(esc).join(", ")}</b> (de kommer först)</div>` : ""}
+        <div class="small muted">${v.lage === "spara" ? "Följ de prickade bokstäverna med fingret eller en penna. Börja uppifrån!" : "Skriv av texten på linjerna. AI:n tittar på formen, höjden och mellanrummen."}</div>
+        ${v.lage === "skriv" ? `<div class="hs-forebild">${esc(text)}</div>` : ""}
+        <canvas id="hs-canvas" class="hs-canvas"></canvas>
+        <div class="actions" style="margin-top:8px"><button class="ghost" id="hs-bak">←</button><button class="ghost" id="hs-sudda">🧽 Sudda</button><button class="primary" id="hs-klar" ${this._busy ? "disabled" : ""}>✔️ Klar</button><button class="ghost" id="hs-fram">→</button></div>
+        <div class="small muted">${(v.i % lista.length) + 1} av ${lista.length}</div>`
+      : `<div class="card hjalp-kort"><p>Skriv på ett vanligt papper, gärna med linjer, och fota det. AI:n berättar vad som är bra och vad du kan öva på.</p>
+        <label class="primary upload">📷 Fota min handstil<input type="file" id="hs-foto" accept="image/*" hidden></label>${this._busy ? `<p class="small muted">AI:n tittar på din handstil…</p>` : ""}</div>`}
+      ${res ? `<div class="card hjalp-kort hs-res"><div class="score">${res.poang} p ${stj(res.poang)}</div>${res.p ? `<div class="lar-beloning">+${res.p} ⭐</div>` : ""}
+        ${res.pepp ? `<p>${esc(res.pepp)}</p>` : ""}${res.bra?.length ? `<div>👍 ${res.bra.map(esc).join(" ")}</div>` : ""}
+        ${res.tips?.length ? `<ul class="lista">${res.tips.map((t) => `<li>💡 ${esc(t)}</li>`).join("")}</ul>` : ""}
+        ${res.ova?.length ? `<div class="small">🎯 Öva på: <b>${res.ova.map(esc).join(", ")}</b></div>` : ""}</div>` : ""}
+      ${hist.length ? `<h3>📈 ${s.kan_valja ? `${esc(s.namn)}s` : "Din"} utveckling</h3><div class="hs-hist">${hist.map((x) => `<div class="hs-stapel" title="${esc(x.tid.slice(0, 10))} · ${esc(x.text)} · ${x.poang} p"><div style="height:${Math.max(4, x.poang)}%" class="${x.typ}"></div><span>${x.typ === "spara" ? "✏️" : x.typ === "foto" ? "📷" : "📝"}</span></div>`).join("")}</div>
+        <div class="small muted">✏️ spåra · 📝 skriv själv · 📷 foto. Spåra med minst 60 p ger +2 ⭐ (8 per dag), AI-bedömning +5 ⭐ en gång per dag.</div>` : ""}`;
+  }
+
+  _hsGeo(ctx, W, H, text) {
+    const fam = '"Andika", "Comic Sans MS", "Segoe Print", system-ui, sans-serif';
+    let size = 120;
+    ctx.font = `${size}px ${fam}`;
+    const w = ctx.measureText(text).width || 1;
+    size = Math.min(size, Math.floor(size * (W - 30) / w));
+    ctx.font = `${size}px ${fam}`;
+    const m = (t) => ctx.measureText(t);
+    const asc = m("lhk").actualBoundingBoxAscent || size * 0.75, xh = m("xsz").actualBoundingBoxAscent || size * 0.5, desc = m("gjpy").actualBoundingBoxDescent || size * 0.25;
+    const base = Math.round((H - (asc + desc)) / 2 + asc);
+    return { font: `${size}px ${fam}`, x: Math.round((W - ctx.measureText(text).width) / 2), base, top: base - asc, mid: base - xh, bot: base + desc };
+  }
+
+  async _hsKoppla() {
+    const v = this._view, c = this.shadowRoot.querySelector("#hs-canvas");
+    if (!c) return;
+    if (!document.querySelector("#skolan-andika")) {
+      const l = document.createElement("link");
+      l.id = "skolan-andika"; l.rel = "stylesheet"; l.href = "https://fonts.googleapis.com/css2?family=Andika&display=swap";
+      document.head.appendChild(l);
+    }
+    try { await Promise.race([document.fonts.load('80px "Andika"'), new Promise((r) => setTimeout(r, 1500))]); } catch (e) { /* reservtypsnitt */ }
+    const W = c.clientWidth || 340, H = 220, dpr = window.devicePixelRatio || 1;
+    c.width = W * dpr; c.height = H * dpr; c.style.height = `${H}px`;
+    const ctx = c.getContext("2d");
+    ctx.scale(dpr, dpr);
+    const lista = this._hsLista(), text = lista[v.i % lista.length];
+    const geo = this._hsGeo(ctx, W, H, text);
+    v.drag = v.drag || [];
+    v.geo = { ...geo, W, H, text };
+    const linje = (y, farg, bredd, streck) => { ctx.beginPath(); ctx.setLineDash(streck || []); ctx.strokeStyle = farg; ctx.lineWidth = bredd; ctx.moveTo(8, y); ctx.lineTo(W - 8, y); ctx.stroke(); ctx.setLineDash([]); };
+    const pen = (x) => { x.strokeStyle = "#1a237e"; x.lineWidth = 7; x.lineCap = "round"; x.lineJoin = "round"; };
+    const rita = () => {
+      ctx.fillStyle = "#fffdf7"; ctx.fillRect(0, 0, W, H);
+      linje(geo.top, "#90caf9", 1.5); linje(geo.mid, "#bbdefb", 1.5, [8, 6]); linje(geo.base, "#1e88e5", 2.5); linje(geo.bot, "#90caf9", 1.5);
+      if (v.lage === "spara") {
+        ctx.font = geo.font; ctx.fillStyle = "#eceff1"; ctx.fillText(text, geo.x, geo.base);
+        ctx.setLineDash([2, 5]); ctx.strokeStyle = "#90a4ae"; ctx.lineWidth = 2; ctx.strokeText(text, geo.x, geo.base); ctx.setLineDash([]);
+      }
+      pen(ctx);
+      v.drag.forEach((st) => { ctx.beginPath(); st.forEach(([a, b], i) => (i ? ctx.lineTo(a, b) : ctx.moveTo(a, b))); if (st.length === 1) ctx.lineTo(st[0][0] + 0.1, st[0][1]); ctx.stroke(); });
+    };
+    rita();
+    this._hsRita = rita;
+    let ner = false;
+    const pos = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    c.onpointerdown = (e) => { e.preventDefault(); ner = true; c.setPointerCapture(e.pointerId); v.drag.push([pos(e)]); v.res = null; rita(); };
+    c.onpointermove = (e) => {
+      if (!ner) return;
+      const st = v.drag[v.drag.length - 1], p = pos(e), q = st[st.length - 1];
+      st.push(p); pen(ctx); ctx.beginPath(); ctx.moveTo(q[0], q[1]); ctx.lineTo(p[0], p[1]); ctx.stroke();
+    };
+    c.onpointerup = c.onpointercancel = () => { ner = false; };
+  }
+
+  _hsPoang() {
+    const v = this._view, g = v.geo, { W, H, text } = g;
+    const mk = () => { const o = document.createElement("canvas"); o.width = W; o.height = H; const x = o.getContext("2d"); x.font = g.font; return x; };
+    const gx = mk(); gx.fillText(text, g.x, g.base);
+    const tx = mk(); tx.fillText(text, g.x, g.base); tx.lineWidth = 16; tx.lineJoin = "round"; tx.strokeText(text, g.x, g.base);
+    const drag = (x, w) => { x.lineWidth = w; x.lineCap = "round"; x.lineJoin = "round"; v.drag.forEach((st) => { x.beginPath(); st.forEach(([a, b], i) => (i ? x.lineTo(a, b) : x.moveTo(a, b))); if (st.length === 1) x.lineTo(st[0][0] + 0.1, st[0][1]); x.stroke(); }); };
+    const dx = mk(); drag(dx, 7);
+    const ddx = mk(); drag(ddx, 22);
+    const A = (x) => x.getImageData(0, 0, W, H).data, G = A(gx), T = A(tx), D = A(dx), DD = A(ddx);
+    let nD = 0, inT = 0, nG = 0, tack = 0;
+    for (let i = 3; i < G.length; i += 4) {
+      if (D[i] > 40) { nD++; if (T[i] > 40) inT++; }
+      if (G[i] > 100) { nG++; if (DD[i] > 40) tack++; }
+    }
+    if (!nD || !nG) return 0;
+    return Math.round(100 * Math.sqrt((inT / nD) * (tack / nG)));
+  }
+
+  async _hsSkicka(fil, typ) {
+    this._busy = true;
+    this._render();
+    try {
+      const v = this._view, fd = new FormData();
+      fd.append("json", JSON.stringify({ barn: this._s.barn, typ, text: typ === "skriv" ? v.geo?.text : "" }));
+      fd.append("file", fil, fil.name || "handstil.png");
+      const res = await this._hass.fetchWithAuth("/api/skolan/handstil", { method: "POST", body: fd });
+      const x = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      v.res = x;
+      if (x.p) this._fx({ text: "✍️ FIN HANDSTIL!", sub: `+${x.p} ⭐`, emojis: ["✍️", "⭐", "📝"], antal: 20, farg: "#5c6bc0" });
+      await this._load(this._s.barn);
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+    }
+    this._busy = false;
+    this._render();
   }
 
   // Föräldrasidan: barnets husdjur med statistik.
@@ -3242,6 +3383,11 @@ class SkolanPanel extends HTMLElement {
         `<b>📅 Pluggplan:</b> tryck på ett prov eller en provboss och välj Pluggplan. Svara på några frågor (vad som ingår, vad du kan, hur mycket tid du har, hur du pluggar bäst) så gör AI:n en plan bara för dig. Varje klar del ger +3 ⭐ och skadar provbossen.`,
         `<b>🧪 Övningsprov:</b> ett prov på ditt material, +10 ⭐. <b>🔁 Svaga punkter:</b> det du svarar fel på kommer tillbaka efter 1, 3 och 7 dagar tills det sitter.`,
         `<b>📋 Dagens läxlista</b> på startsidan visar vad du ska göra idag och i vilken ordning.`,
+      ])}
+
+      ${kort("✍️", "Öva handstil", [
+        `Tryck på <b>✍️ Öva handstil</b> under Ämnen. <b>✏️ Spåra</b>: följ de prickade bokstäverna, minst 60 poäng ger +2 ⭐ (8 gånger per dag).`,
+        `<b>📝 Skriv själv</b> eller <b>📷 Fota papper</b>: AI:n tittar på formen, höjden och mellanrummen och ger tips, +5 ⭐ en gång per dag.`,
       ])}
 
       ${kort("🏠", "Husdjurets rum", [
@@ -5051,6 +5197,7 @@ class SkolanPanel extends HTMLElement {
       <button class="info-lank" id="open-info">ℹ️ Så funkar meriter och tävlingen ›</button>
       ${this._uppdragLista()}
       <h3>📚 Ämnen</h3>
+      <button class="row" id="open-handstil"><span>✍️ <b>Öva handstil</b><br><span class="muted small">Spåra bokstäver, skriv själv eller fota ditt papper${this._s.handstil?.idag ? ` · ${this._s.handstil.idag} övningar idag` : ""}</span></span><span>›</span></button>
       <button class="row" id="open-lektioner"><span>🗓️ <b>${this._s.kan_valja ? `${esc(this._s.namn)}s schema` : "Mitt schema"}</b><br><span class="muted small">${this._s.kan_valja ? (this._s.lektioner?.length ? "Lektionerna i veckan" : "Fota schemat så läser AI:n av lektioner och ämnen") : this._s.lektioner?.length ? "Dina lektioner i veckan, sök och skriv ut" : "Be mamma eller pappa fota ditt schema"}</span></span><span>›</span></button>
       <div class="grid">
         ${amnen
@@ -6615,6 +6762,34 @@ class SkolanPanel extends HTMLElement {
     on("#dl-fokus", () => this._go({ name: "fokus" }));
     on("#open-rapport", () => this._go({ name: "rapport" }));
     on("#open-coach", () => this._go({ name: "coach" }));
+    on("#open-handstil", () => this._go({ name: "handstil" }));
+    if (v.name === "handstil") {
+      this._hsKoppla();
+      const nytt = () => { v.drag = []; v.res = null; };
+      r.querySelectorAll("[data-hs-lage]").forEach((b) => b.addEventListener("click", () => { v.lage = b.dataset.hsLage; nytt(); this._render(); }));
+      r.querySelectorAll("[data-hs-kalla]").forEach((b) => b.addEventListener("click", () => { v.kalla = b.dataset.hsKalla; v.i = 0; nytt(); this._render(); }));
+      const egen = () => { v.egen = ($("#hs-egen")?.value || "").trim().slice(0, 20); v.i = 0; nytt(); this._render(); };
+      on("#hs-egen-ok", egen);
+      $("#hs-egen")?.addEventListener("keydown", (e) => { if (e.key === "Enter") egen(); });
+      on("#hs-sudda", () => { nytt(); this._hsRita?.(); this._render(); });
+      on("#hs-fram", () => { v.i = (v.i || 0) + 1; nytt(); this._render(); });
+      on("#hs-bak", () => { v.i = Math.max(0, (v.i || 0) - 1); nytt(); this._render(); });
+      on("#hs-klar", async () => {
+        if (!v.drag?.length) { this._msg = { type: "error", text: "Skriv något först! ✍️" }; return this._render(); }
+        if (v.lage === "spara") {
+          const p = this._hsPoang();
+          v.res = { poang: p, pepp: p >= 88 ? "Wow, superfint! 🌟" : p >= 75 ? "Jättebra! Nästan perfekt." : p >= 60 ? "Bra! Försök följa linjen lite noggrannare." : "Bra försök! Följ de prickade linjerna och börja uppifrån.", p: 0 };
+          if (!this._s.kan_valja && await this._act("handstil_klar", { poang: p, text: v.geo.text })) {
+            if (p >= 60) this._fx({ text: p >= 88 ? "✍️ PERFEKT!" : "✍️ BRA!", sub: `${p} poäng`, emojis: ["✍️", "⭐"], antal: 14, farg: "#5c6bc0" });
+          }
+          return this._render();
+        }
+        const c = this.shadowRoot.querySelector("#hs-canvas");
+        const blob = await new Promise((ok) => c.toBlob(ok, "image/png"));
+        await this._hsSkicka(new File([blob], "handstil.png", { type: "image/png" }), "skriv");
+      });
+      $("#hs-foto")?.addEventListener("change", async (e) => { const f = e.target.files?.[0]; if (f) await this._hsSkicka(f, "foto"); });
+    }
     if (v.name === "coach") {
       const sync = () => { if (v.o) v.o.text = $("#coach-onsk")?.value ?? v.o.text; };
       r.querySelectorAll("[data-coach-str]").forEach((b) => b.addEventListener("click", () => { sync(); v.o.strikthet = b.dataset.coachStr; this._render(); }));
@@ -7792,6 +7967,13 @@ const CSS = `
   .pd-text { flex:1; min-width:0; }
   .pd-tankar { border-left:5px solid #7e57c2; }
   .story-bild { width:200px; height:200px; margin:0 auto; }
+  .hs-canvas { width:100%; height:220px; touch-action:none; border-radius:12px; box-shadow:var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.15)); background:#fffdf7; display:block; margin-top:8px; cursor:crosshair; }
+  .hs-forebild { font-family:"Andika", "Comic Sans MS", system-ui, sans-serif; font-size:30px; text-align:center; margin:8px 0 0; }
+  .hs-res { text-align:center; margin-top:10px; min-height:0; }
+  .hs-hist { display:flex; gap:4px; align-items:flex-end; height:90px; margin:6px 0; }
+  .hs-stapel { flex:1; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; font-size:10px; }
+  .hs-stapel div { width:100%; border-radius:4px 4px 0 0; background:#7986cb; }
+  .hs-stapel div.foto { background:#4db6ac; } .hs-stapel div.skriv { background:#ffb74d; }
   .hd-rad { display:block; cursor:default; }
   .hd-rad summary { display:flex; align-items:center; gap:10px; cursor:pointer; list-style:none; }
   .hd-rad summary::-webkit-details-marker { display:none; }
