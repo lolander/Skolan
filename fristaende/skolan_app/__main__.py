@@ -46,6 +46,18 @@ def _ikon(port: int, styr: dict) -> None:
     bild = Image.open(server.WEBB / "bilder" / "ikon-64.png")
 
     def avsluta(ikon, _item=None):
+        if os.name == "nt":  # varna: mobilerna och det andra hemmet tappar kontakten
+            try:
+                import ctypes
+
+                svar = ctypes.windll.user32.MessageBoxW(
+                    0, "Om du avslutar Läxspelet kan barnens mobiler (och ett kopplat hem) inte nå det förrän det startas igen.\n\n"
+                    "Att stänga webbläsaren räcker för att bara stänga fönstret. Läxspelet fortsätter då i bakgrunden.\n\n"
+                    "Vill du ändå avsluta Läxspelet helt?", "Avsluta Läxspelet?", 0x4 | 0x30 | 0x100 | 0x40000)
+                if svar != 6:  # 6 = Ja; Nej är förvalt
+                    return
+            except Exception:  # noqa: BLE001
+                pass
         app, loop = styr.get("app"), styr.get("loop")
         if app and loop:
             app.avsluta = True
