@@ -1700,6 +1700,7 @@ class SkolanPanel extends HTMLElement {
         ${d.bastis && !agg ? (() => { const k = (this._s.djurbutik || []).find((x) => x.id === d.pa?.kompis);
           return k ? `<div class="bastis-bricka">💞 ${esc(d.namn)} och ${k.ikon} ${esc(k.namn)} är bästisar!</div>` : ""; })() : ""}
         <div class="small">${agg ? `Ägget kläcks om ${kvar} ⭐. Gör läxor för att värma det!` : DJUR_HUMOR[d.humor](esc(d.namn))}</div>
+        ${d.art === "🐍" && !agg ? (() => { const dag = idagISO(), n = 1 + [...dag].reduce((s, c) => s + c.charCodeAt(0), 0) % 4; return `<div class="small">🌙 ${esc(d.namn)} äter mardrömmar! I natt: ${"😋".repeat(n)} ${n} st. Extra stark (×1,5) i Sömnträsket och Spökslottet.</div>`; })() : ""}
         ${d.nasta ? `<div class="progress"><div style="width:${Math.min(100, Math.round((d.intjanat / d.nasta) * 100))}%"></div></div>
         <div class="small muted">${kvar} ⭐ kvar tills ${esc(d.namn)} växer</div>` : `<div class="small">👑 ${esc(d.namn)} är en legend!</div>`}
         <div class="djur-knappar"><button class="mini butik-knapp" id="open-hjalp">📚 Plugga med ${esc(d.namn)}</button><button class="mini butik-knapp" id="open-fraga">💬 Fråga ${esc(d.namn)}</button>${this._s.kan_valja ? "" : `<button class="mini butik-knapp" id="open-fokus">⏱️ Fokus</button>`}<button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-album">🃏 Album${this._s.kort ? ` ${this._s.kort.antal}/${this._s.kort.totalt}` : ""}</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button></div>

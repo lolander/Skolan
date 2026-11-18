@@ -2169,6 +2169,14 @@ DJUR_ELEMENT = {
 }
 ELEMENT_DALIG = {"eld": "is", "is": "eld", "vatten": "eld", "natur": "blixt", "blixt": "vatten", "kraft": "natur"}
 PASSFORM_BRA, PASSFORM_DALIG = 1.25, 0.75
+# Snake (🐍, Emils gosorm) äter mardrömmar: extra stark mot monstren i mardrömsvärldarna.
+MARDROMS_VARLDAR = ("trask", "slott")
+SNAKE_MARDROM = 1.5
+
+
+def mardrommar_i_natt(dag: str) -> int:
+    """Hur många mardrömmar Snake åt i natt (1–4, samma hela dagen)."""
+    return 1 + sum(ord(c) for c in dag) % 4
 
 
 def djur_element(art: str | None) -> dict:
@@ -2264,6 +2272,8 @@ def _attack_varde(data: dict, at: dict, mon: dict) -> tuple[int, bool]:
     if h.get("typ") == at["typ"] or (h["id"] == "boss" and mon.get("boss")):
         skada *= 1.5
     skada *= passform((m.get("djur") or {}).get("art"), at["typ"])
+    if (m.get("djur") or {}).get("art") == "🐍" and (mon.get("varld") or {}).get("id") in MARDROMS_VARLDAR:
+        skada *= SNAKE_MARDROM  # Snake äter mardrömmar
     if at.get("ladd"):
         skada *= LADD_BOSS  # laddattacker slår extra hårt mot bossen
     svag = mon.get("svag") == at["typ"] or bool(at.get("per_dag") and mon.get("svag"))  # regnbågen: alla monster är svaga

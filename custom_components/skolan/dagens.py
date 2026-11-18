@@ -275,6 +275,15 @@ def prat(data: dict) -> str:
     k = m.get("karta")
     if k and k.get("hp") and k["hp"] - k.get("skada", 0) <= k["hp"] * 0.2:
         lista.append("Monstret är nästan besegrat! Lite till! ⚔️")
+    if d.get("art") == "🐍":  # Snake äter mardrömmar
+        n = meriter.mardrommar_i_natt(idag.isoformat())
+        mardrom = [f"Mums! I natt åt jag {n} mardröm{'mar' if n > 1 else ''}. Du kan sova lugnt! 😋🌙",
+                   "Jag håller vakt i natt. Inga mardrömmar kommer förbi mig! 🐍🌙",
+                   "Mardrömmar smakar lite som lakrits. Med salt! 😝",
+                   "Ju mer du pluggar, desto större mardrömmar orkar jag äta! 💪🌙"]
+        if dt_util.now().hour < 12:
+            return mardrom[0]
+        lista += mardrom[1:]
     if not lista or random.random() < 0.25:
         lista.append(random.choice(FAKTA + PEPP[:5]))
     return random.choice(lista)
