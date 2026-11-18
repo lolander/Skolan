@@ -121,7 +121,7 @@ class App:
     def rutter(self) -> None:
         r = self.app.router
         r.add_get("/", lambda _r: web.HTTPFound("/skolan"))
-        for vag in ("/skolan", "/app/installning", "/app/koppla"):
+        for vag in ("/skolan", "/app/installning", "/app/koppla", "/app/in"):
             r.add_get(vag, self.sida)
         r.add_get("/sw.js", self.statisk("sw.js", "application/javascript", "no-cache"))
         r.add_get("/manifest.webmanifest", self.statisk("manifest.webmanifest", "application/manifest+json"))
@@ -130,6 +130,8 @@ class App:
         r.add_get("/app/start", self.start_info)
         r.add_post("/app/login", self.login)
         r.add_post("/app/logout", self.logout)
+        r.add_post("/app/kopplingskod", self.kopplingskod)
+        r.add_post("/app/login_kod", self.login_kod)
         r.add_post("/app/installera", self.installera)
         r.add_post("/app/signera", self.signera)
         r.add_get("/app/installningar", self.hamta_installningar)
@@ -189,6 +191,32 @@ class App:
         body = await request.json()
         try:
             token = self.konto.logga_in(str(body.get("id") or ""), str(body.get("pin") or ""))
+        except ValueError as err:
+            return web.json_response({"message": str(err)}, status=400)
+        svar = web.json_response({"token": token})
+        svar.set_cookie(COOKIE, token, max_age=180 * 86400, httponly=True, samesite="Lax",
+                        secure=request.headers.get("X-Forwarded-Proto") == "https" or request.secure)
+        return svar
+
+    async def kopplingskod(self, request: web.Request) -> web.Response:
+        """Förälder: QR-kod som loggar in en telefon direkt som barnet."""
+        self.kraver_foralder(request)
+        body = await request.json()
+        try:
+            kod = self.konto.kopplingskod(str(body.get("id") or ""))
+        except ValueError as err:
+            return web.json_response({"message": str(err)}, status=400)
+        lokala = lokala_adresser(self.port)
+        return web.json_response({
+            "lokal": f"{lokala[0]}/app/in?kod={kod}" if lokala else None,
+            "fjarr": f"{self.tunnel.adress}/app/in?kod={kod}" if self.tunnel.adress else None,
+            "minuter": self.konto.KOD_SEK // 60,
+        })
+
+    async def login_kod(self, request: web.Request) -> web.Response:
+        body = await request.json()
+        try:
+            token = self.konto.logga_in_kod(str(body.get("kod") or ""))
         except ValueError as err:
             return web.json_response({"message": str(err)}, status=400)
         svar = web.json_response({"token": token})

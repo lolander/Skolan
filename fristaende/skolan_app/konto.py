@@ -127,11 +127,34 @@ class Konto:
             fel.append(nu)
             raise ValueError("Fel PIN-kod.")
         self._fel.pop(pid, None)
+        return self._ny_token(pid)
+
+    def _ny_token(self, pid: str) -> str:
+        nu = time.time()
         token = secrets.token_urlsafe(32)
         self.tokens = {t: x for t, x in self.tokens.items() if x.get("tid", 0) > nu - TOKEN_DAGAR * 86400}
         self.tokens[token] = {"id": pid, "tid": nu}
         self._skriv(self.tokenfil, self.tokens)
         return token
+
+    # Kopplingskod: en förälder visar en QR-kod som loggar in en telefon som en viss person (gäller 15 minuter, en gång).
+    KOD_SEK = 15 * 60
+
+    def kopplingskod(self, pid: str) -> str:
+        if not self.person(pid):
+            raise ValueError("Personen finns inte.")
+        nu = time.time()
+        self._koder = {k: v for k, v in getattr(self, "_koder", {}).items() if v[1] > nu}
+        kod = secrets.token_urlsafe(18)
+        self._koder[kod] = (pid, nu + self.KOD_SEK)
+        return kod
+
+    def logga_in_kod(self, kod: str) -> str:
+        koder = getattr(self, "_koder", {})
+        pid, giltig = koder.pop(kod, (None, 0))
+        if not pid or time.time() > giltig or not self.person(pid):
+            raise ValueError("Länken är för gammal eller redan använd. Be en förälder visa en ny QR-kod.")
+        return self._ny_token(pid)
 
     def logga_ut(self, token: str) -> None:
         if self.tokens.pop(token, None):

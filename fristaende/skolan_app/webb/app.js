@@ -27,6 +27,7 @@ async function start() {
   try { info = await api("/app/start"); } catch (e) { return visaFel("Kan inte nå Läxspelet på datorn. Är den igång?"); }
   const vag = location.pathname;
   if (!info.installerad) return info.fran_datorn ? forstaStart() : visaFel("Läxspelet är inte inställd än. Starta den på familjens dator först.");
+  if (vag === "/app/in") return loggaInMedKod(new URLSearchParams(location.search).get("kod"));
   if (vag === "/app/koppla" && info.adresser) return koppla(info);
   if (!info.anvandare) return valjPerson(info);
   if (vag === "/app/installning") return info.anvandare.is_admin ? installning(info) : (location.href = "/skolan");
@@ -73,6 +74,38 @@ function pin(info, person) {
     else if (e.key === "Enter") skicka();
   };
   $("#tillbaka").addEventListener("click", () => { document.onkeydown = null; valjPerson(info); });
+}
+
+// Telefon kopplad av en förälder: QR-länken loggar in direkt (en gång, 15 minuter).
+async function loggaInMedKod(kod) {
+  rot.innerHTML = `<div class="mitt"><h1>📚 Läxspelet</h1><p>Loggar in…</p></div>`;
+  try {
+    const d = await api("/app/login_kod", { kod });
+    sparaToken(d.token);
+    rot.innerHTML = `<div class="mitt"><h1>🎉 Klart!</h1><div class="kort"><p>Den här telefonen är nu inloggad. Lägg Läxspelet på hemskärmen så hittar du det lätt:</p>
+      <p class="liten"><b>iPhone:</b> tryck Dela ⬆️ → Lägg till på hemskärmen.<br><b>Android:</b> tryck ⋮ → Installera app eller Lägg till på startskärmen.</p></div>
+      <button class="primar" onclick="location.href='/skolan'">Starta Läxspelet</button></div>`;
+    history.replaceState(null, "", "/skolan");
+  } catch (e) { visaFel(e.message); }
+}
+
+function kopplaTelefon(id, namn) {
+  const ruta = document.createElement("div");
+  ruta.className = "overlay";
+  ruta.innerHTML = `<div class="kort overlay-kort"><h2 style="margin-top:0">📱 Koppla en telefon till ${esc(namn)}</h2><p>Hämtar QR-kod…</p></div>`;
+  document.body.appendChild(ruta);
+  const stang = () => ruta.remove();
+  ruta.addEventListener("click", (e) => { if (e.target === ruta) stang(); });
+  api("/app/kopplingskod", { id }).then((d) => {
+    const qr = (u) => `<img class="qr" src="/app/qr.svg?text=${encodeURIComponent(u)}" alt="QR-kod">`;
+    ruta.querySelector(".overlay-kort").innerHTML = `<h2 style="margin-top:0">📱 Koppla en telefon till ${esc(namn)}</h2>
+      <p class="liten">Öppna kameran på ${esc(namn)}s telefon och skanna koden. Då blir telefonen inloggad som ${esc(namn)} direkt, utan PIN-kod. Koden fungerar en gång i ${d.minuter} minuter.</p>
+      ${d.lokal ? `<h3>🏠 Hemma (samma wifi)</h3>${qr(d.lokal)}` : ""}
+      ${d.fjarr ? `<h3>🌍 Överallt</h3>${qr(d.fjarr)}<p class="liten">Använd den här om telefonen inte är på hemmets wifi. Den behövs också för notiser på iPhone.</p>` : `<p class="liten">Vill du att telefonen ska fungera utanför hemmet? Slå på Fjärråtkomst under ⚙️ Inställningar.</p>`}
+      <button class="primar" id="ov-ny">🔄 Ny kod</button> <button id="ov-stang">Stäng</button>`;
+    ruta.querySelector("#ov-stang").addEventListener("click", stang);
+    ruta.querySelector("#ov-ny").addEventListener("click", () => { stang(); kopplaTelefon(id, namn); });
+  }).catch((e) => { ruta.querySelector(".overlay-kort").innerHTML = `<p class="fel">${esc(e.message)}</p><button id="ov-stang">Stäng</button>`; ruta.querySelector("#ov-stang").addEventListener("click", stang); });
 }
 
 async function loggaUt() {
@@ -268,6 +301,14 @@ async function visaSkolan(info) {
       throw new Error("Stöds inte i fristående läge");
     },
     themes: { darkMode: matchMedia("(prefers-color-scheme: dark)").matches },
+    // Bara i fristående läge: panelen visar kontoknapp och "Koppla en telefon".
+    fristaende: {
+      namn: u.name, admin: u.is_admin,
+      byt: () => loggaUt(),
+      loggaUt: () => { if (confirm(`Logga ut ${u.name}?`)) loggaUt(); },
+      installningar: () => { location.href = "/app/installning"; },
+      kopplaTelefon: (id, namn) => kopplaTelefon(id, namn),
+    },
   };
   el.narrow = false;
   rot.innerHTML = "";
@@ -278,9 +319,8 @@ async function visaSkolan(info) {
   v.innerHTML = `${nyVer ? `<button title="Ny version" onclick="location.href='/app/installning'">🆕 ${esc(info.uppdatering.senaste)}</button>` : ""}
     ${u.is_admin ? `<button title="Inställningar" onclick="location.href='/app/installning'">⚙️</button>` : ""}
     ${"PushManager" in window && Notification.permission !== "granted" ? `<button id="v-notis" title="Slå på notiser">🔔</button>` : ""}
-    <button id="v-ut" title="Byt person">👤 ${esc(u.name)}</button>`;
+    `;
   document.body.appendChild(v);
-  v.querySelector("#v-ut").addEventListener("click", () => { if (confirm(`Logga ut ${u.name}?`)) loggaUt(); });
   v.querySelector("#v-notis")?.addEventListener("click", async (e) => {
     try { await slaPaNotiser(); e.target.remove(); alert("Notiser påslagna! 🔔"); } catch (err) { alert(err.message); }
   });

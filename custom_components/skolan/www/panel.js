@@ -1430,7 +1430,12 @@ class SkolanPanel extends HTMLElement {
         <button id="menu" class="icon" style="display:${this._narrow && !this._last ? "inline-flex" : "none"}" title="Meny">☰</button>
         ${back ? `<button id="back" class="icon" title="Tillbaka">←</button>` : ""}
         <div class="title">${title}</div>
+        ${this._hass?.fristaende ? `<button id="fs-konto" class="fs-konto" title="Byt person eller logga ut">👤 ${esc(this._hass.fristaende.namn || "")}</button>` : ""}
       </div>
+      ${this._fsMeny && this._hass?.fristaende ? `<div class="fs-meny">
+        <button id="fs-byt">🔄 Byt person</button>
+        ${this._hass.fristaende.admin ? `<button id="fs-inst">⚙️ Inställningar</button>` : ""}
+        <button id="fs-ut">🚪 Logga ut</button></div>` : ""}
       <div class="content">
         ${barnVal}
         ${this._msg ? `<div class="msg ${this._msg.type}">${esc(this._msg.text)}</div>` : ""}
@@ -3667,6 +3672,7 @@ class SkolanPanel extends HTMLElement {
         ${this._hejaropForalder()}
         <button class="row foralder-knapp" id="open-lektioner" style="margin-top:4px"><span>🗓️ <b>Schema</b><br><span class="muted small">Fota ${esc(s.namn)}s lektionsschema så läser AI:n av lektioner och ämnen</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-kalender" style="margin-top:4px"><span>📅 <b>Skolkalendrar</b><br><span class="muted small">${s.kalender ? `${s.kalender.antal} händelser för ${esc(s.namn)} · ` : ""}Koppla in skolans kalender: länk, Home Assistant, webbsida, fil eller foto</span></span><span>›</span></button>
+        ${this._hass?.fristaende ? `<button class="row foralder-knapp" id="fs-koppla" style="margin-top:4px"><span>📱 <b>Koppla en telefon till ${esc(s.namn)}</b><br><span class="muted small">Visa en QR-kod. ${esc(s.namn)} skannar den med sin telefon och är inloggad direkt, utan PIN-kod.</span></span><span>›</span></button>` : ""}
         <button class="row foralder-knapp" id="open-coach" style="margin-top:4px"><span>🧠 <b>Studiecoach</b><br><span class="muted small">Påverka hur ${esc(s.namn)}s pluggplaner görs (t.ex. hur strikta) och prata med AI:n om studietaktiken</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-rapport" style="margin-top:4px"><span>📊 <b>Veckorapport</b><br><span class="muted small">Vad ${esc(s.namn)} har pluggat, vad som är svårt, AI:ns tankar om studietaktiken och frågor till middagen</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
@@ -6952,6 +6958,11 @@ class SkolanPanel extends HTMLElement {
     on("#dl-fokus", () => this._go({ name: "fokus" }));
     on("#open-rapport", () => this._go({ name: "rapport" }));
     on("#open-coach", () => this._go({ name: "coach" }));
+    on("#fs-konto", () => { this._fsMeny = !this._fsMeny; this._render(); });
+    on("#fs-byt", () => this._hass.fristaende.byt());
+    on("#fs-ut", () => this._hass.fristaende.loggaUt());
+    on("#fs-inst", () => this._hass.fristaende.installningar());
+    on("#fs-koppla", () => this._hass.fristaende.kopplaTelefon(this._s.barn, this._s.namn));
     on("#open-handstil", () => this._go({ name: "handstil" }));
     on("#open-skriva", () => this._go({ name: "skriva" }));
     on("#open-penna", () => this._go({ name: "penna", fran: v.name === "skriva" ? "skriva" : "hem" }));
@@ -8213,6 +8224,9 @@ const CSS = `
   .pd-text { flex:1; min-width:0; }
   .pd-tankar { border-left:5px solid #7e57c2; }
   .story-bild { width:200px; height:200px; margin:0 auto; }
+  .fs-konto { margin-left:auto; background:rgba(255,255,255,.2); color:inherit; border:none; border-radius:16px; padding:6px 12px; font-size:14px; cursor:pointer; white-space:nowrap; }
+  .fs-meny { position:fixed; top:58px; right:10px; z-index:20; display:flex; flex-direction:column; background:var(--card-background-color, #fff); border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,.25); overflow:hidden; }
+  .fs-meny button { background:none; border:none; text-align:left; padding:12px 18px; font-size:15px; color:var(--primary-text-color); cursor:pointer; } .fs-meny button:hover { background:rgba(0,0,0,.06); }
   .penna-kort { min-height:0; border-left:6px solid #3949ab; }
   .penna-trappa { display:grid; grid-template-columns:repeat(6, 1fr); gap:4px; margin:4px 0 6px; }
   .pt-steg { text-align:center; padding:6px 2px; border-radius:10px; background:var(--divider-color, #e0e0e0); font-size:10px; line-height:1.2; opacity:.6; }
