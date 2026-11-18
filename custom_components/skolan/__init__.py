@@ -39,7 +39,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import dagens, fraga, meriter, plugg, schemavy, skola, tillsammans, vanner
+from . import dagens, fraga, meriter, plugg, schemavy, skola, skriv, tillsammans, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -161,7 +161,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -913,7 +913,7 @@ class StateView(HomeAssistantView):
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
-                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
+                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "skriv": skriv.status(data, fraga.alder(data)), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
@@ -1301,6 +1301,152 @@ HANDSTIL_PROMPT = (
     'Svara ENDAST med JSON: {{"poang": 0-100, "bra": ["1–2 saker som är bra"], "tips": ["1–3 konkreta tips, t.ex. \'stäng ringen i a\'"], '
     '"ova": ["högst 4 bokstäver som behöver övas, som enskilda tecken"], "pepp": "en kort peppande mening"}}'
 )
+
+
+SKRIV_TEMAN = ["en rolig dag i skolan", "ett äventyr i skogen", "ett husdjur som kan prata", "en resa till månen", "en snöig vinterdag", "ett hemligt rum",
+               "en fotbollsmatch", "en dag på stranden", "en robot som blir kompis", "ett mystiskt paket", "en drake som är rädd för mörker", "en utflykt med klassen"]
+TECKEN_PROMPT = (
+    "Skriv en kort, rolig text på svenska som ett barn{alder} ska öva skiljetecken på. Tema: {tema}.\n"
+    "Nivå: {niva_namn}. {niva_info}\n"
+    "Regler: 4–7 meningar, ord som passar åldern. Texten ska vara helt korrekt med rätt stora bokstäver. "
+    "Använd BARA dessa tecken: {tecken} (varje tecken minst en gång om det går){repliker}. Inga citattecken, parenteser, siffror eller förkortningar. "
+    "Gärna några namn (stor bokstav).\n"
+    'Svara ENDAST med JSON: {{"text": "..."}}'
+)
+STYCKEN_PROMPT = (
+    "Skriv en kort text på svenska för ett barn{alder} som ska öva på styckeindelning. Tema: {tema}. "
+    "3–4 stycken med 2–4 meningar var. Varje nytt stycke ska börja av ett tydligt skäl: ny tid, ny plats, nytt delämne eller att någon ny börjar prata. "
+    'Svara ENDAST med JSON: {{"rubrik": "...", "stycken": [["mening 1", "mening 2"], ["..."]], "varfor": ["kort förklaring till barnet varför stycke 2 börjar där", "... stycke 3", "..."]}}'
+)
+FRITT_UPPGIFT_PROMPT = (
+    "Hitta på EN rolig skrivuppgift på svenska för ett barn{alder}. Den ska gå att skriva på 10–20 minuter. "
+    "Barnet behöver mest öva på: {fokus}. Välj en uppgift där det kommer till nytta (t.ex. en berättelse med repliker för talstreck, en text i flera delar för stycken). "
+    'Svara ENDAST med JSON: {{"uppgift": "själva uppgiften i 1–2 meningar", "tips": ["2–3 korta tips om hur man gör, särskilt om {fokus}"]}}'
+)
+FRITT_BEDOM_PROMPT = (
+    "Du är en snäll och skicklig svensklärare. Ett barn{alder} har skrivit en text. Uppgiften var: {uppgift}\n"
+    "BARNETS TEXT:\n\"\"\"{text}\"\"\"\n{forra}"
+    "Ge feedback på SKRIVANDET så att barnet blir tryggt och bra på att uttrycka sig. Bedöm 0–100: tecken (punkt, frågetecken, utropstecken, komma, talstreck), "
+    "stor (stor bokstav i början av meningar och på namn), mellanrum (mellanslag efter tecken och mellan ord), stycken (nytt stycke vid ny tid, plats eller händelse), "
+    "struktur (början, mitten och slut), ordval (beskrivande och varierade ord), meningar (variation i längd och hur de börjar). "
+    "Säg 2 saker som är bra. Ge 2–3 konkreta tips och citera kort det ställe det gäller. Skriv INTE om texten och skriv inga nya meningar åt barnet; barnet ska rätta själv. "
+    "Stavning nämns bara kort om samma fel återkommer. Anpassa till åldern och var uppmuntrande.\n"
+    'Svara ENDAST med JSON: {{"poang": 0-100, "omraden": {{"tecken": 0, "stor": 0, "mellanrum": 0, "stycken": 0, "struktur": 0, "ordval": 0, "meningar": 0}}, '
+    '"bra": ["..."], "tips": [{{"tips": "...", "citat": "kort citat ur texten"}}], "battre": "vad som blivit bättre sedan förra versionen, annars tom", "pepp": "en kort peppande mening"}}'
+)
+
+
+class SkrivView(HomeAssistantView):
+    """Skrivverkstad: teckenövning, styckeövning och fritt skrivande med AI-feedback."""
+
+    url = "/api/skolan/skriv"
+    name = "api:skolan:skriv"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest
+        barn = _barn_for(hass, request, body.get("barn"))
+        foralder = _ar_foralder(hass, request)
+        path = _dir(hass, barn)
+        lock = hass.data[DOMAIN]["locks"][barn]
+        data = await hass.async_add_executor_job(_load, path)
+        ar = fraga.alder(data)
+        alder = f" ({ar} år)" if ar else ""
+        op = body.get("op")
+        d = meriter._m(data).get("djur") or {}
+        tema = random.choice(SKRIV_TEMAN + ([f"husdjuret {d['namn']} {d['art']}"] if d.get("namn") else []))
+
+        async def ai(prompt: str, uppgift: str) -> dict:
+            try:
+                x = _parse_json(await _ai_text(hass, prompt, uppgift))
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Läxspelet: skrivverkstad: %s", err)
+                raise web.HTTPServiceUnavailable(text=json.dumps({"message": "AI:n svarar inte just nu. Försök igen om en stund."}), content_type="application/json") from err
+            if not isinstance(x, dict):
+                raise web.HTTPServiceUnavailable(text=json.dumps({"message": "AI:n svarade konstigt. Försök igen."}), content_type="application/json")
+            return x
+
+        async def spara(fn):
+            async with lock:
+                dd = await hass.async_add_executor_job(_load, path)
+                ut = fn(dd)
+                await hass.async_add_executor_job(_save, path, dd)
+                return ut
+
+        try:
+            if op == "tecken_ny":
+                n = skriv.niva(data, ar)
+                nv = skriv.NIVAER[n]
+                x = await ai(TECKEN_PROMPT.format(alder=alder, tema=tema, niva_namn=nv["namn"], niva_info=nv["info"], tecken=" ".join(nv["tecken"]),
+                                                  repliker=" och talstreck (–) först i repliker" if n >= 4 else ""), "Läxspelet skrivövning")
+                text = re.sub(r"\s+", " ", str(x.get("text") or "")).strip()[:900]
+                if len(text.split()) < 8:
+                    return self.json_message("AI:n skrev för kort text. Försök igen.", 503)
+                ov = {**skriv.ovning_tecken(text, n), "id": skriv.ny_id(), "typ": "tecken", "niva": n}
+                await spara(lambda dd: skriv._s(dd).__setitem__("aktiv", ov))
+                return self.json({"id": ov["id"], "typ": "tecken", "visa": ov["visa"], "niva": n, "niva_namn": nv["namn"], "niva_info": nv["info"]})
+            if op == "stycken_ny":
+                x = await ai(STYCKEN_PROMPT.format(alder=alder, tema=tema), "Läxspelet styckeövning")
+                st = [[re.sub(r"\s+", " ", str(m)).strip()[:300] for m in s_ if str(m).strip()] for s_ in (x.get("stycken") or []) if isinstance(s_, list)]
+                st = [s_ for s_ in st if s_][:5]
+                if len(st) < 2:
+                    return self.json_message("AI:n kunde inte göra någon text. Försök igen.", 503)
+                meningar, starter = [], []
+                for s_ in st:
+                    if meningar:
+                        starter.append(len(meningar))
+                    meningar += s_
+                ov = {"id": skriv.ny_id(), "typ": "stycken", "rubrik": str(x.get("rubrik") or "")[:80], "meningar": meningar, "starter": starter,
+                      "varfor": [str(v)[:200] for v in (x.get("varfor") or [])][:5]}
+                await spara(lambda dd: skriv._s(dd).__setitem__("aktiv", ov))
+                return self.json({"id": ov["id"], "typ": "stycken", "rubrik": ov["rubrik"], "meningar": meningar})
+            if op == "ratta":
+                ov = skriv._s(data).get("aktiv") or {}
+                if ov.get("id") != body.get("id"):
+                    return self.json_message("Övningen är för gammal. Gör en ny!", 400)
+                if ov["typ"] == "tecken":
+                    res = skriv.ratta_tecken(ov, str(body.get("svar") or "")[:3000])
+                else:
+                    res = {**skriv.ratta_stycken(ov, body.get("val") or []), "meningar": ov["meningar"], "varfor": ov.get("varfor", [])}
+
+                def _r(dd):
+                    skriv._s(dd).pop("aktiv", None)
+                    if foralder:
+                        return 0
+                    return skriv.spara_resultat(dd, ov["typ"], res["poang"], res["omraden"], ar, ov.get("rubrik") or ov.get("text", "")[:40])
+                res["p"] = await spara(_r)
+                return self.json(res)
+            if op == "fritt_uppgift":
+                st = skriv.status(data, ar)["omraden"]
+                svagast = sorted(st.items(), key=lambda kv: kv[1]["snitt"])[:1]
+                fokus = svagast[0][1]["namn"].lower() if svagast else "punkt och stor bokstav"
+                x = await ai(FRITT_UPPGIFT_PROMPT.format(alder=alder, fokus=fokus), "Läxspelet skrivuppgift")
+                return self.json({"uppgift": str(x.get("uppgift") or "")[:300], "tips": [str(t)[:200] for t in (x.get("tips") or [])][:3], "fokus": fokus})
+            if op == "fritt_bedom":
+                text = str(body.get("text") or "").strip()[:4000]
+                if len(text.split()) < 15:
+                    return self.json_message("Skriv lite mer först, minst ett par meningar.", 400)
+                forra = str(body.get("forra") or "").strip()[:4000]
+                x = await ai(FRITT_BEDOM_PROMPT.format(alder=alder, uppgift=str(body.get("uppgift") or "fritt skrivande")[:300], text=text,
+                                                       forra=f"FÖRRA VERSIONEN (jämför och säg vad som blivit bättre):\n\"\"\"{forra}\"\"\"\n" if forra else ""),
+                             "Läxspelet skrivfeedback")
+                omr = {k: max(0, min(100, int(v))) for k, v in (x.get("omraden") or {}).items() if k in skriv.OMRADEN and str(v).lstrip("-").isdigit()}
+                poang = max(0, min(100, int(x.get("poang") or 0))) if str(x.get("poang") or "0").isdigit() else round(sum(omr.values()) / max(1, len(omr)))
+                tips = [{"tips": str(t.get("tips") or "")[:240], "citat": str(t.get("citat") or "")[:160]} for t in (x.get("tips") or []) if isinstance(t, dict)][:3]
+                ut = {"poang": poang, "omraden": omr, "bra": [str(b)[:200] for b in (x.get("bra") or [])][:2], "tips": tips,
+                      "battre": str(x.get("battre") or "")[:300], "pepp": str(x.get("pepp") or "")[:200], "p": 0}
+                forra_p = body.get("forra_poang")
+                typ = "forbattrad" if forra and isinstance(forra_p, int) and poang > forra_p else "fritt"
+                if not foralder:
+                    ut["p"] = await spara(lambda dd: skriv.spara_resultat(dd, typ if typ == "forbattrad" else "fritt", poang, omr, ar, text[:40]))
+                return self.json(ut)
+        except web.HTTPException as err:
+            if err.content_type == "application/json":
+                return web.json_response(json.loads(err.text), status=err.status)
+            raise
+        return self.json_message("Okänd åtgärd.", 400)
 
 
 class HandstilView(HomeAssistantView):

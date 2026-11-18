@@ -1232,9 +1232,21 @@ class SkolanPanel extends HTMLElement {
       title = `💬 Fråga ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "hem" };
       body = this._fragaView();
+    } else if (v.name === "skriva") {
+      title = "✍️ Skrivverkstad";
+      back = { name: "hem" };
+      body = this._skrivaView();
+    } else if (v.name === "skrivovning") {
+      title = v.typ === "tecken" ? "🔤 Punkt & tecken" : "📑 Stycken";
+      back = { name: "skriva" };
+      body = this._skrivOvningView();
+    } else if (v.name === "skrivfritt") {
+      title = "📝 Skriv fritt";
+      back = { name: "skriva" };
+      body = this._skrivFrittView();
     } else if (v.name === "handstil") {
       title = "✍️ Öva handstil";
-      back = { name: "hem" };
+      back = { name: "skriva" };
       body = this._handstilView();
     } else if (v.name === "djurstory") {
       title = `📖 ${v.art} Story`;
@@ -1962,6 +1974,89 @@ class SkolanPanel extends HTMLElement {
         <div class="djur-val">${nya.map((a) => `<button data-djur-story="${a}" class="rit-val med-element">${ritaDjur(a, "glad", 2)}<span class="el">${elIkon(a)}</span></button>`).join("")}</div>`;
       })()}
       ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
+  }
+
+  // ---------- skrivverkstad ----------
+  async _skriv(op, args = {}) {
+    this._busy = true;
+    this._render();
+    try {
+      const res = await this._hass.fetchWithAuth("/api/skolan/skriv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, op, ...args }) });
+      const x = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      this._msg = null;
+      return x;
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+      return null;
+    } finally {
+      this._busy = false;
+      this._render();
+    }
+  }
+
+  _skrivaView() {
+    const s = this._s, st = s.skriv || {}, om = st.omraden || {};
+    const rad = (id, ikon, namn, info) => `<button class="row" id="${id}"><span>${ikon} <b>${namn}</b><br><span class="muted small">${info}</span></span><span>›</span></button>`;
+    const farg = (p) => (p >= 80 ? "#43a047" : p >= 60 ? "#fb8c00" : "#e53935");
+    return `<p class="small muted">Här övar du på att skriva så att andra förstår precis vad du menar: tecken, mellanrum, stycken och att berätta med egna ord.</p>
+      <div class="list">
+        ${rad("open-sk-tecken", "🔤", "Punkt & tecken", `Nivå ${st.niva || 1}: ${esc(st.niva_namn || "Punkt och stor bokstav")} · +3 ⭐`)}
+        ${rad("open-sk-stycken", "📑", "Stycken", "Var ska ett nytt stycke börja? · +3 ⭐")}
+        ${rad("open-sk-fritt", "📝", "Skriv fritt", "Skriv en egen text och få tips · +6 ⭐, förbättra +3 ⭐")}
+        ${rad("open-handstil", "✍️", "Handstil", "Spåra, skriv själv eller fota papper")}
+      </div>
+      ${Object.keys(om).length ? `<h3>📈 ${s.kan_valja ? `${esc(s.namn)}s` : "Din"} skrivning</h3><div class="sk-omr">${Object.values(om).map((o) => `<div class="sk-omr-rad"><span>${esc(o.namn)}</span><div class="sk-mat"><div style="width:${o.snitt}%;background:${farg(o.snitt)}"></div></div><b>${o.snitt}</b></div>`).join("")}</div>
+        <div class="small muted">Snittet av de senaste övningarna och texterna. Nivån i Punkt & tecken går upp när det går bra tre gånger i rad.</div>` : ""}`;
+  }
+
+  _skrivOvningView() {
+    const v = this._view, x = v.ov, res = v.res;
+    if (!x) return `<div class="card hjalp-kort center"><p>${v.typ === "tecken" ? `<b>${esc(this._s.skriv?.niva_namn || "")}</b><br>${esc(this._s.skriv?.niva_info || "")}` : "Läs texten och tryck på den mening där ett nytt stycke ska börja. Ett nytt stycke börjar när något byts: tid, plats, vem som pratar eller vad det handlar om."}</p>
+      <button class="primary" id="sk-ny" ${this._busy ? "disabled" : ""}>✨ Ge mig en text</button>${this._busy ? `<p class="small muted">AI:n skriver en text åt dig…</p>` : ""}</div>`;
+    if (x.typ === "tecken") {
+      if (res) return `<div class="card hjalp-kort center"><div class="score">${res.poang} %</div>${res.p ? `<div class="lar-beloning">+${res.p} ⭐</div>` : ""}
+          <div class="small">Tecken ${res.omraden.tecken} % · Stor bokstav ${res.omraden.stor} % · Mellanrum ${res.omraden.mellanrum} %</div></div>
+        <div class="card hjalp-kort sk-markerad">${res.rad.map((r) => r.status === "ratt" ? `<span class="sk-ok">${esc(r.ord)}</span>` : r.status === "fel" ? `<span class="sk-fel" title="Rätt: ${esc(r.vantat)}">${esc(r.ord)}<sup>${esc(r.vantat)}</sup></span>` : `<span class="sk-okant">${esc(r.ord)}</span>`).join(" ")}</div>
+        ${res.mellanrum_fel ? `<p class="small">⚠️ ${res.mellanrum_fel} ställen saknar mellanslag efter ett tecken eller har mellanslag före det. Efter punkt, komma och frågetecken kommer alltid ett mellanslag.</p>` : ""}
+        <details><summary class="small">Visa hela rätta texten</summary><p>${esc(res.facit)}</p></details>
+        <div class="actions"><button class="primary" id="sk-ny">✨ En ny text</button><button class="ghost" id="sk-hem">Klar</button></div>`;
+      return `<div class="small"><b>Nivå ${x.niva}: ${esc(x.niva_namn)}</b> · ${esc(x.niva_info)}</div>
+        <textarea id="sk-svar" class="sk-text" rows="8" spellcheck="false" autocapitalize="off" autocorrect="off">${esc(v.svar ?? x.visa)}</textarea>
+        <div class="small muted">Ändra i texten: sätt ut tecken och gör stora bokstäver där det behövs. Ändra inte orden.</div>
+        <div class="actions"><button class="primary" id="sk-ratta" ${this._busy ? "disabled" : ""}>✔️ Rätta</button><button class="ghost" id="sk-aterstall">↺ Börja om</button></div>`;
+    }
+    v.val = v.val || [];
+    if (res) {
+      const st = new Set(res.starter), mina = new Set(res.mina);
+      return `<div class="card hjalp-kort center"><div class="score">${res.poang} %</div>${res.p ? `<div class="lar-beloning">+${res.p} ⭐</div>` : ""}</div>
+        <div class="card hjalp-kort">${x.rubrik ? `<b>${esc(x.rubrik)}</b>` : ""}${res.meningar.map((m, i) => `${st.has(i) ? `<div class="sk-styckebryt">¶ nytt stycke ${mina.has(i) ? "✅" : "❌ (här skulle det börja)"}</div>` : mina.has(i) ? `<div class="sk-styckebryt fel">¶ inget nytt stycke här</div>` : ""}<span>${esc(m)} </span>`).join("")}</div>
+        ${res.varfor?.length ? `<ul class="lista">${res.varfor.map((w) => `<li>💡 ${esc(w)}</li>`).join("")}</ul>` : ""}
+        <div class="actions"><button class="primary" id="sk-ny">✨ En ny text</button><button class="ghost" id="sk-hem">Klar</button></div>`;
+    }
+    return `<div class="small">Tryck på den mening där ett <b>nytt stycke</b> ska börja. Tryck igen för att ångra.</div>
+      <div class="card hjalp-kort">${x.rubrik ? `<b>${esc(x.rubrik)}</b><br>` : ""}${x.meningar.map((m, i) => `<span class="sk-mening ${v.val.includes(i) ? "vald" : ""}" data-sk-m="${i}">${v.val.includes(i) ? "¶ " : ""}${esc(m)}</span> `).join("")}</div>
+      <div class="actions"><button class="primary" id="sk-ratta" ${this._busy ? "disabled" : ""}>✔️ Rätta</button></div>`;
+  }
+
+  _skrivFrittView() {
+    const v = this._view, res = v.res;
+    const ord = (v.text || "").trim().split(/\s+/).filter(Boolean).length;
+    const OMR = { tecken: "Punkt & tecken", stor: "Stor bokstav", mellanrum: "Mellanrum", stycken: "Stycken", struktur: "Början & slut", ordval: "Ordval", meningar: "Variation" };
+    const farg = (p) => (p >= 80 ? "#43a047" : p >= 60 ? "#fb8c00" : "#e53935");
+    return `<div class="card hjalp-kort">${v.uppgift ? `<b>📝 ${esc(v.uppgift)}</b>${v.tips?.length ? `<ul class="lista">${v.tips.map((t) => `<li class="small">💡 ${esc(t)}</li>`).join("")}</ul>` : ""}`
+        : `<p class="small">Skriv om vad du vill, eller få en skrivuppgift.</p>`}
+        <div class="actions" style="margin-top:6px"><button class="mini" id="sk-uppgift" ${this._busy ? "disabled" : ""}>🎲 ${v.uppgift ? "En annan uppgift" : "Ge mig en uppgift"}</button></div></div>
+      <textarea id="sk-fritt" class="sk-text" rows="12" placeholder="Skriv din text här. Tryck Enter två gånger för ett nytt stycke.">${esc(v.text || "")}</textarea>
+      <div class="small muted">${ord} ord${v.version ? ` · version ${v.version + 1}` : ""}</div>
+      <div class="actions"><button class="primary" id="sk-bedom" ${this._busy ? "disabled" : ""}>${v.version ? "📤 Skicka den förbättrade texten" : "📤 Få tips på min text"}</button></div>
+      ${this._busy ? `<p class="small muted">AI:n läser din text…</p>` : ""}
+      ${res ? `<div class="card hjalp-kort"><div class="score">${res.poang} p</div>${res.p ? `<div class="lar-beloning">+${res.p} ⭐</div>` : ""}
+        ${res.battre ? `<p>🌱 <b>Bättre än förra gången:</b> ${esc(res.battre)}</p>` : ""}
+        ${res.bra?.length ? res.bra.map((b) => `<div>👍 ${esc(b)}</div>`).join("") : ""}
+        ${res.tips?.length ? `<ul class="lista">${res.tips.map((t) => `<li>💡 ${esc(t.tips)}${t.citat ? `<br><span class="small muted">”${esc(t.citat)}”</span>` : ""}</li>`).join("")}</ul>` : ""}
+        <div class="sk-omr">${Object.entries(res.omraden || {}).map(([k, p]) => `<div class="sk-omr-rad"><span>${OMR[k] || k}</span><div class="sk-mat"><div style="width:${p}%;background:${farg(p)}"></div></div><b>${p}</b></div>`).join("")}</div>
+        ${res.pepp ? `<p>${esc(res.pepp)}</p>` : ""}<div class="small muted">Rätta i texten ovanför och skicka igen. Blir den bättre får du +3 ⭐.</div></div>` : ""}`;
   }
 
   // ---------- öva handstil ----------
@@ -3385,8 +3480,13 @@ class SkolanPanel extends HTMLElement {
         `<b>📋 Dagens läxlista</b> på startsidan visar vad du ska göra idag och i vilken ordning.`,
       ])}
 
+      ${kort("✍️", "Skrivverkstad", [
+        `Under Ämnen finns <b>✍️ Skrivverkstad</b>. <b>🔤 Punkt & tecken</b>: sätt ut punkt, stor bokstav och andra tecken i en text. Nivån går upp när det går bra. Minst 70 % ger +3 ⭐.`,
+        `<b>📑 Stycken</b>: tryck där ett nytt stycke ska börja. <b>📝 Skriv fritt</b>: skriv en egen text och få tips, +6 ⭐. Förbättra texten och skicka igen så får du +3 ⭐ till.`,
+      ])}
+
       ${kort("✍️", "Öva handstil", [
-        `Tryck på <b>✍️ Öva handstil</b> under Ämnen. <b>✏️ Spåra</b>: följ de prickade bokstäverna, minst 60 poäng ger +2 ⭐ (8 gånger per dag).`,
+        `Tryck på <b>✍️ Handstil</b> i Skrivverkstaden. <b>✏️ Spåra</b>: följ de prickade bokstäverna, minst 60 poäng ger +2 ⭐ (8 gånger per dag).`,
         `<b>📝 Skriv själv</b> eller <b>📷 Fota papper</b>: AI:n tittar på formen, höjden och mellanrummen och ger tips, +5 ⭐ en gång per dag.`,
       ])}
 
@@ -5197,7 +5297,7 @@ class SkolanPanel extends HTMLElement {
       <button class="info-lank" id="open-info">ℹ️ Så funkar meriter och tävlingen ›</button>
       ${this._uppdragLista()}
       <h3>📚 Ämnen</h3>
-      <button class="row" id="open-handstil"><span>✍️ <b>Öva handstil</b><br><span class="muted small">Spåra bokstäver, skriv själv eller fota ditt papper${this._s.handstil?.idag ? ` · ${this._s.handstil.idag} övningar idag` : ""}</span></span><span>›</span></button>
+      <button class="row" id="open-skriva"><span>✍️ <b>Skrivverkstad</b><br><span class="muted small">Punkt och tecken, stycken, egna texter och handstil${(this._s.handstil?.idag || 0) + (this._s.skriv?.idag || 0) ? ` · ${(this._s.handstil?.idag || 0) + (this._s.skriv?.idag || 0)} övningar idag` : ""}</span></span><span>›</span></button>
       <button class="row" id="open-lektioner"><span>🗓️ <b>${this._s.kan_valja ? `${esc(this._s.namn)}s schema` : "Mitt schema"}</b><br><span class="muted small">${this._s.kan_valja ? (this._s.lektioner?.length ? "Lektionerna i veckan" : "Fota schemat så läser AI:n av lektioner och ämnen") : this._s.lektioner?.length ? "Dina lektioner i veckan, sök och skriv ut" : "Be mamma eller pappa fota ditt schema"}</span></span><span>›</span></button>
       <div class="grid">
         ${amnen
@@ -6763,6 +6863,40 @@ class SkolanPanel extends HTMLElement {
     on("#open-rapport", () => this._go({ name: "rapport" }));
     on("#open-coach", () => this._go({ name: "coach" }));
     on("#open-handstil", () => this._go({ name: "handstil" }));
+    on("#open-skriva", () => this._go({ name: "skriva" }));
+    on("#open-sk-tecken", () => this._go({ name: "skrivovning", typ: "tecken" }));
+    on("#open-sk-stycken", () => this._go({ name: "skrivovning", typ: "stycken" }));
+    on("#open-sk-fritt", () => this._go({ name: "skrivfritt" }));
+    if (v.name === "skrivovning") {
+      on("#sk-ny", async () => { const x = await this._skriv(v.typ === "tecken" ? "tecken_ny" : "stycken_ny"); if (x) { v.ov = x; v.res = null; v.svar = null; v.val = []; this._render(); } });
+      on("#sk-hem", () => this._go({ name: "skriva" }));
+      $("#sk-svar")?.addEventListener("input", (e) => { v.svar = e.target.value; });
+      on("#sk-aterstall", () => { v.svar = null; this._render(); });
+      r.querySelectorAll("[data-sk-m]").forEach((b) => b.addEventListener("click", () => { const i = Number(b.dataset.skM); if (i === 0) return; v.val = v.val.includes(i) ? v.val.filter((y) => y !== i) : [...v.val, i]; this._render(); }));
+      on("#sk-ratta", async () => {
+        const x = await this._skriv("ratta", v.ov.typ === "tecken" ? { id: v.ov.id, svar: v.svar ?? v.ov.visa } : { id: v.ov.id, val: v.val });
+        if (x) {
+          v.res = x;
+          if (x.p) this._fx({ text: x.poang >= 90 ? "✍️ PERFEKT!" : "✍️ BRA SKRIVET!", sub: `${x.poang} % · +${x.p} ⭐`, emojis: ["✍️", "⭐", "📝"], antal: 18, farg: "#5c6bc0" });
+          await this._load(this._s.barn);
+          this._render();
+        }
+      });
+    }
+    if (v.name === "skrivfritt") {
+      $("#sk-fritt")?.addEventListener("input", (e) => { v.text = e.target.value; });
+      on("#sk-uppgift", async () => { const x = await this._skriv("fritt_uppgift"); if (x) { v.uppgift = x.uppgift; v.tips = x.tips; this._render(); } });
+      on("#sk-bedom", async () => {
+        const forra = v.forra, forraP = v.res?.poang;
+        const x = await this._skriv("fritt_bedom", { text: v.text || "", uppgift: v.uppgift || "", forra: forra || "", forra_poang: forraP ?? null });
+        if (x) {
+          v.res = x; v.forra = v.text; v.version = (v.version || 0) + 1;
+          if (x.p) this._fx({ text: "✍️ BRA SKRIVET!", sub: `+${x.p} ⭐`, emojis: ["✍️", "📝", "⭐", "💡"], antal: 22, farg: "#5c6bc0" });
+          await this._load(this._s.barn);
+          this._render();
+        }
+      });
+    }
     if (v.name === "handstil") {
       this._hsKoppla();
       const nytt = () => { v.drag = []; v.res = null; };
@@ -7967,6 +8101,16 @@ const CSS = `
   .pd-text { flex:1; min-width:0; }
   .pd-tankar { border-left:5px solid #7e57c2; }
   .story-bild { width:200px; height:200px; margin:0 auto; }
+  .sk-omr { display:flex; flex-direction:column; gap:6px; margin:8px 0; }
+  .sk-omr-rad { display:grid; grid-template-columns:120px 1fr 32px; align-items:center; gap:8px; font-size:13px; }
+  .sk-mat { height:10px; border-radius:6px; background:var(--divider-color, #e0e0e0); overflow:hidden; } .sk-mat div { height:100%; border-radius:6px; }
+  .sk-text { width:100%; box-sizing:border-box; font:inherit; font-size:17px; line-height:1.6; padding:10px; border-radius:12px; border:1px solid var(--divider-color); background:var(--card-background-color); color:var(--primary-text-color); margin-top:8px; }
+  .sk-markerad { line-height:2.2; font-size:16px; }
+  .sk-ok { color:#2e7d32; } .sk-okant { color:#757575; text-decoration:underline dotted; }
+  .sk-fel { color:#c62828; background:#ffebee; border-radius:4px; padding:0 2px; } .sk-fel sup { color:#2e7d32; font-weight:700; margin-left:2px; }
+  .sk-mening { cursor:pointer; border-radius:6px; padding:1px 2px; line-height:1.9; } .sk-mening:hover { background:#e3f2fd; }
+  .sk-mening.vald { background:#c5cae9; font-weight:600; }
+  .sk-styckebryt { margin:10px 0 2px; font-size:12px; font-weight:700; color:#3949ab; } .sk-styckebryt.fel { color:#c62828; }
   .hs-canvas { width:100%; height:220px; touch-action:none; border-radius:12px; box-shadow:var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.15)); background:#fffdf7; display:block; margin-top:8px; cursor:crosshair; }
   .hs-forebild { font-family:"Andika", "Comic Sans MS", system-ui, sans-serif; font-size:30px; text-align:center; margin:8px 0 0; }
   .hs-res { text-align:center; margin-top:10px; min-height:0; }
