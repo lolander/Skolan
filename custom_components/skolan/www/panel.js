@@ -778,6 +778,8 @@ const idagISO = () => {
 };
 const TYP_IKON = { prov: "📝", las: "📖", hogl: "🗣️", skriv: "✍️" };
 const TYP_NAMN = { prov: "Prov", las: "Läsläxa", hogl: "Högläsning", skriv: "Läxboken" };
+const FJARR_VYER = new Set(["state", "action", "glosstrid", "lar", "fraga", "hjalp", "plan", "handstil", "skriv", "penna", "upload", "fil", "ebok", "utskrift",
+  "forhor", "uppdrag", "veckobrev", "lektionsschema", "schema_sida", "uttal", "exempel", "inspelning"]);
 const PLAN_IKON = { las: "📖", forhor: "📝", ovningsprov: "🧪", repetera: "🔁", uppgifter: "✏️", glosor: "🗣️", sammanfatta: "🗒️", forklara: "🙋" };
 const VECKODAG = ["måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag"];
 const veckodag = (iso) => VECKODAG[(new Date(`${iso}T12:00:00`).getDay() + 6) % 7];
@@ -904,6 +906,20 @@ class SkolanPanel extends HTMLElement {
 
   // ---------- server ----------
 
+  // Barnets konto kan ligga i barnets andra hem: då går anropen dit (via /api/skolan/fjarr/…).
+  _apiUrl(url) {
+    const b = this._fjarrAktiv;
+    const m = b && /^\/api\/skolan\/([a-z_]+)(\?.*)?$/.exec(url);
+    if (!m || !FJARR_VYER.has(m[1])) return url;
+    const p = new URLSearchParams((m[2] || "").slice(1));
+    p.set("barn", b);
+    return `/api/skolan/fjarr/${m[1]}?${p}`;
+  }
+
+  _f(url, opt) {
+    return this._hass.fetchWithAuth(this._apiUrl(url), opt);
+  }
+
   async _load(barn) {
     // Länk från en notis: /skolan?barn=anna&forhor=abc öppnar förhöret direkt.
     if (!this._lankLast) {
@@ -928,11 +944,21 @@ class SkolanPanel extends HTMLElement {
       }
     }
     try {
+      const mal = barn || this._s?.barn;
+      if (this._fjarrAktiv && mal && mal !== this._fjarrAktiv) this._fjarrAktiv = null; // bytt till ett barn som finns här
       const q = barn ? `?barn=${encodeURIComponent(barn)}` : this._s ? `?barn=${encodeURIComponent(this._s.barn)}` : "";
-      const res = await this._hass.fetchWithAuth(`/api/skolan/state${q}`);
+      let res = await this._f(`/api/skolan/state${q}`);
       if (res.status === 403) throw new Error("Den här sidan är bara för barnen i Läxspelet och deras föräldrar.");
-      const body = await res.json();
+      let body = await res.json();
       if (!res.ok) throw new Error(body.message || res.statusText);
+      if (body.fjarr) { // kontot finns i barnets andra hem
+        this._fjarrInfo = body;
+        this._fjarrAktiv = body.fjarr.barn;
+        res = await this._f(`/api/skolan/state?barn=${encodeURIComponent(body.fjarr.barn)}`);
+        const fb = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(fb.message || `Det andra hemmet svarar inte (${res.status}).`);
+        body = { ...fb, barn: this._fjarrInfo.barn, alla_barn: this._fjarrInfo.alla_barn, kan_valja: this._fjarrInfo.kan_valja, fjarr_hem: body.fjarr.hem };
+      }
       this._s = body;
       if (this._lankBok) {
         const a = (body.data.amnen || []).find((x) => (x.bocker || []).some((b) => b.id === this._lankBok));
@@ -964,7 +990,7 @@ class SkolanPanel extends HTMLElement {
   // ---------- vänner (dolt tills vänservern finns: pa === false) ----------
   async _hamtaVanner() {
     try {
-      const res = await this._hass.fetchWithAuth(`/api/skolan/vanner?barn=${encodeURIComponent(this._s.barn)}`);
+      const res = await this._f(`/api/skolan/vanner?barn=${encodeURIComponent(this._s.barn)}`);
       const v = res.ok ? await res.json() : { pa: false };
       const fore = JSON.stringify(this._vanner || null);
       this._vanner = v.pa ? v : null;
@@ -975,7 +1001,7 @@ class SkolanPanel extends HTMLElement {
   async _vanOp(op, args = {}) {
     this._busy = true; this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/vanner", {
+      const res = await this._f("/api/skolan/vanner", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barn: this._s.barn, op, ...args }),
       });
@@ -1026,7 +1052,7 @@ class SkolanPanel extends HTMLElement {
     this._busy = true;
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/action", {
+      const res = await this._f("/api/skolan/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barn: this._s.barn, op, ...args }),
@@ -1057,7 +1083,7 @@ class SkolanPanel extends HTMLElement {
       fd.append("bok", v.bok);
       if (omslag) fd.append("omslag", omslag);
       for (const f of files) fd.append("file", f, f.name);
-      const res = await this._hass.fetchWithAuth("/api/skolan/upload", { method: "POST", body: fd });
+      const res = await this._f("/api/skolan/upload", { method: "POST", body: fd });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || res.statusText);
       this._nyData(body.data);
@@ -1077,7 +1103,7 @@ class SkolanPanel extends HTMLElement {
       const fd = new FormData();
       fd.append("barn", this._s.barn);
       fd.append("file", file, file.name);
-      const res = await this._hass.fetchWithAuth("/api/skolan/glosor_las", { method: "POST", body: fd });
+      const res = await this._f("/api/skolan/glosor_las", { method: "POST", body: fd });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || res.statusText);
       const v = this._view;
@@ -1096,7 +1122,7 @@ class SkolanPanel extends HTMLElement {
 
   async _blob(fil) {
     if (this._blobs[fil]) return this._blobs[fil];
-    const res = await this._hass.fetchWithAuth(
+    const res = await this._f(
       `/api/skolan/fil?barn=${encodeURIComponent(this._s.barn)}&fil=${encodeURIComponent(fil)}`
     );
     if (!res.ok) throw new Error("Kunde inte hämta filen");
@@ -1232,6 +1258,14 @@ class SkolanPanel extends HTMLElement {
       title = `💬 Fråga ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "hem" };
       body = this._fragaView();
+    } else if (v.name === "hem2") {
+      title = "🏡 Två hem";
+      back = { name: "foralder" };
+      body = this._hemView();
+    } else if (v.name === "backup") {
+      title = "💾 Backup och flytt";
+      back = { name: "foralder" };
+      body = this._backupView();
     } else if (v.name === "penna") {
       title = "🖊️ Pennuppdrag";
       back = { name: v.fran || "hem" };
@@ -1435,6 +1469,9 @@ class SkolanPanel extends HTMLElement {
       ${this._meny ? this._menyHtml() : ""}
       <div class="content">
         ${barnVal}
+        ${this._s?.fjarr_hem ? `<div class="msg ${this._s.offline ? "error" : "info"} fjarr-rad">${this._s.offline
+          ? `📴 ${esc(this._s.namn || "")}s konto finns i ${esc(this._s.fjarr_hem)}, som inte svarar just nu. Du ser en sparad kopia${typeof this._s.offline === "string" ? ` från ${esc(this._s.offline.replace("T", " "))}` : ""}. Ändringar går inte att spara förrän det hemmet är igång.`
+          : `🏠 ${esc(this._s.namn || "")}s konto finns i ${esc(this._s.fjarr_hem)}. Allt sparas där, så det är samma i båda hemmen.`}</div>` : ""}
         ${this._msg ? `<div class="msg ${this._msg.type}">${esc(this._msg.text)}</div>` : ""}
         ${body}
       </div>
@@ -1729,7 +1766,7 @@ class SkolanPanel extends HTMLElement {
     this._busy = true;
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/forhor", {
+      const res = await this._f("/api/skolan/forhor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barn: this._s.barn, op, ...args }),
@@ -1983,6 +2020,139 @@ class SkolanPanel extends HTMLElement {
       ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
   }
 
+  // ---------- barnets två hem ----------
+  _hemView() {
+    const v = this._view;
+    if (!v.d && !v.hamtar) {
+      v.hamtar = true;
+      this._hass.fetchWithAuth("/api/skolan/hemkoppling").then((r) => r.json()).then((d) => { v.d = d; v.hamtar = false; this._render(); }).catch(() => { v.hamtar = false; });
+    }
+    if (!v.d) return `<p class="muted">Hämtar…</p>`;
+    const datum = (x) => (x ? esc(String(x).replace("T", " ").slice(0, 16)) : "aldrig");
+    return `<div class="card hjalp-kort"><b>🏡 Bor barnet i två hem?</b>
+        <p class="small">Barnet har <b>ett</b> konto (läxor, husdjur, stjärnor) som finns i ett av hemmens Läxspelet, <b>hem-systemet</b>. Det andra hemmets Läxspelet kopplas dit, och då blir allt likadant i båda hemmen. Det spelar ingen roll om hemmen har Windows eller Home Assistant.</p>
+        <p class="small muted">Välj som hem-system det som är igång mest (Home Assistant är alltid igång). Det måste nås utanför hemmet: fjärråtkomst i Windows, eller Nabu Casa/egen adress i Home Assistant.</p></div>
+      ${v.d.barn.map((b) => `<div class="card hjalp-kort"><b>${esc(b.namn)}</b>
+        ${b.fjarr ? `<p>🏠 ${esc(b.namn)}s konto finns i <b>${esc(b.fjarr.hem)}</b>. Allt ${esc(b.namn)} gör här sparas där.</p>
+            <div class="small muted">Kopplad ${datum(b.fjarr.kopplad)} · senaste kontakt ${datum(b.fjarr.senast)}</div>
+            <div class="actions"><button class="ghost danger" data-hem-bort="${b.id}">Koppla bort</button></div>`
+          : `<p class="small"><b>Det här är ${esc(b.namn)}s hem-system.</b> Skapa en länk och skicka den till den andra föräldern, som klistrar in den i sitt Läxspelet.</p>
+            ${b.lankar.length ? `<ul class="lista">${b.lankar.map((l) => `<li>🔗 ${esc(l.namn)} <span class="small muted">· skapad ${datum(l.skapad)} · senast använd ${datum(l.senast)}</span> <button class="mini" data-hem-tabort="${b.id}|${l.token}">✕</button></li>`).join("")}</ul>` : ""}
+            <div class="pg-ny"><input id="hem-namn-${b.id}" placeholder="Vems hem? t.ex. Pappas hem" maxlength="40"><button class="mini primary" data-hem-skapa="${b.id}">🔗 Skapa länk</button></div>
+            ${v.lank?.barn === b.id ? `<div class="msg ok"><div class="small">Skicka den här länken till den andra föräldern (t.ex. i ett sms). Den ger tillgång till ${esc(b.namn)}s konto, så dela den bara med den andra föräldern.</div>
+              <textarea readonly class="bk-in hem-lank" rows="3">${esc(v.lank.lank)}</textarea>
+              <div class="actions"><button class="mini primary" id="hem-kopiera">📋 Kopiera</button></div>
+              ${this._hass?.fristaende ? `<img class="qr" style="width:200px;height:200px;background:#fff;padding:6px;border-radius:8px" src="/app/qr.svg?text=${encodeURIComponent(v.lank.lank)}" alt="">` : ""}</div>` : ""}
+            <details class="small" style="margin-top:8px"><summary>${esc(b.namn)}s konto finns i det andra hemmet</summary>
+              <p>Klistra in länken du fått från det andra hemmet. ${esc(b.namn)}s konto här används då inte längre (det som finns ligger kvar orört). Vill du flytta det hit först kan du använda 💾 Backup och flytt.</p>
+              <textarea id="hem-in-${b.id}" class="bk-in" rows="3" placeholder="LXS1.…"></textarea>
+              <div class="actions"><button class="primary" data-hem-koppla="${b.id}" ${this._busy ? "disabled" : ""}>🔗 Koppla</button></div></details>`}</div>`).join("")}
+      <div class="small muted">Byta hem-system? Gör en backup av barnet i det gamla, läs in den i det nya under 💾 Backup och flytt, och skapa sedan en ny länk därifrån.</div>`;
+  }
+
+  // ---------- backup och flytt (föräldrar) ----------
+  async _bk(op, args = {}) {
+    this._busy = true;
+    this._render();
+    try {
+      const res = await this._f("/api/skolan/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op, ...args }) });
+      const x = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      this._msg = null;
+      return x;
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+      return null;
+    } finally {
+      this._busy = false;
+      this._render();
+    }
+  }
+
+  _backupView() {
+    const v = this._view;
+    if (!v.d && !v.hamtar) {
+      v.hamtar = true;
+      this._f("/api/skolan/backup").then((r) => r.json()).then((d) => { v.d = d; v.hamtar = false; this._render(); }).catch(() => { v.hamtar = false; });
+    }
+    if (!v.d) return `<p class="muted">Hämtar…</p>`;
+    const { inst, barn } = v.d;
+    const ner = v.ner;
+    const inl = v.inl || {};
+    const lokala = inl.lokala || barn;
+    return `<div class="card hjalp-kort"><b>⬇️ Ladda ner en backup</b>
+        <p class="small muted">En fil med allt: läxor, glosor, fotade böcker, husdjur, stjärnor och historik. Spara den på ett säkert ställe, eller använd den för att flytta till ett annat Läxspelet (Windows eller Home Assistant).</p>
+        <div class="small">Vad <select id="bk-barn"><option value="alla">Hela familjen</option>${barn.map((b) => `<option value="${b.id}">Bara ${esc(b.namn)}</option>`).join("")}</select></div>
+        <input id="bk-losen" type="password" class="bk-in" placeholder="Lösenord (rekommenderas: krypterar filen)">
+        <div class="actions"><button class="primary" id="bk-skapa" ${this._busy ? "disabled" : ""}>💾 Skapa backup</button></div>
+        ${this._busy && v.skapar ? `<p class="small muted">Packar ihop… (kan ta en stund med många fotade sidor)</p>` : ""}
+        ${ner ? `<div class="msg ok">✅ Klar: <b>${esc(ner.fil)}</b> (${ner.mb} MB) <button class="mini primary" id="bk-hamta">⬇️ Ladda ner</button></div>` : ""}</div>
+
+      <div class="card hjalp-kort"><b>⬆️ Återställ eller flytta hit</b>
+        <p class="small muted">Läs in en backup från det här eller ett annat Läxspelet. Barnen måste finnas här först (lägg till dem i inställningarna). Det som fanns innan sparas undan, så inget försvinner.</p>
+        ${!inl.manifest ? `<label class="primary upload">📂 Välj backupfil<input type="file" id="bk-fil" accept=".zip,.laxspelet" hidden></label>
+          ${inl.procent != null ? `<div class="progress stor" style="margin-top:8px"><div style="width:${inl.procent}%"></div></div><div class="small">Laddar upp… ${inl.procent} %</div>` : ""}
+          ${inl.krypterad ? `<input id="bk-in-losen" type="password" class="bk-in" placeholder="Backupens lösenord"><div class="actions"><button class="primary" id="bk-oppna">🔓 Öppna</button></div>` : ""}`
+        : `<div class="small">Backup från <b>${esc(inl.manifest.kalla === "auto" ? "automatisk backup" : "Läxspelet")}</b> ${esc(inl.manifest.skapad)} (version ${esc(inl.manifest.version)})</div>
+          ${inl.manifest.barn.map((b) => `<div class="pg-omr"><span>${esc(b.namn)} i backupen blir</span><select data-bk-karta="${esc(b.id)}"><option value="">Hoppa över</option>${lokala.map((l) => `<option value="${l.id}" ${l.namn.toLowerCase() === b.namn.toLowerCase() ? "selected" : ""}>${esc(l.namn)} här</option>`).join("")}</select></div>`).join("")}
+          ${inl.manifest.barn.length > 1 ? `<label class="small"><input type="checkbox" id="bk-gem" checked> Ta med familjens gemensamma saker (skolkalendrar, syskonuppdrag)</label>` : ""}
+          <div class="actions"><button class="primary" id="bk-aterstall" ${this._busy ? "disabled" : ""}>♻️ Återställ</button><button class="ghost" id="bk-avbryt">Avbryt</button></div>`}</div>
+
+      <div class="card hjalp-kort"><b>🗜️ Krymp fotona</b>
+        <p class="small muted">Fotade boksidor från mobilen är stora (2–4 MB styck). Läxspelet kan göra dem ungefär 85–90 % mindre. Bilderna i boken finns kvar och texten går lika lätt att läsa, men backuper och flytt går mycket snabbare. Nya foton krymps automatiskt.</p>
+        ${(v.d.storlek || []).map((b) => `<div class="small">${esc(b.namn)}: <b>${b.mb} MB</b>${b.stora ? ` · ${b.stora} stora foton kan krympas` : " · ✅ redan krympt"}</div>`).join("")}
+        ${(v.d.storlek || []).some((b) => b.stora) ? `<div class="actions"><button class="primary" id="bk-krymp" ${this._busy ? "disabled" : ""}>🗜️ Krymp fotona nu</button></div>` : ""}
+        ${this._busy && v.krymper ? `<p class="small muted">Krymper… det kan ta någon minut.</p>` : ""}
+        ${v.krympt ? `<div class="msg ok">✅ ${Object.entries(v.krympt).map(([n, r]) => `${esc(n)}: ${r.fore_mb} MB → ${r.efter_mb} MB`).join(" · ")}</div>` : ""}</div>
+
+      <div class="card hjalp-kort"><b>☁️ Automatisk backup varje natt</b>
+        <p class="small muted">Varje natt kl. 03.15 sparas en krypterad backup av hela familjen. De ${inst.behall} senaste sparas, äldre tas bort.${inst.windows ? "" : " Home Assistants egna säkerhetskopior innehåller också Läxspelet."}</p>
+        <label class="small"><input type="checkbox" id="bk-auto" ${inst.auto ? "checked" : ""}> Slå på automatisk backup</label>
+        <div class="fraga-forslag" style="margin-top:8px"><button class="mini ${inst.mal === "mapp" ? "primary" : ""}" data-bk-mal="mapp">📁 Mapp</button><button class="mini ${inst.mal === "webdav" ? "primary" : ""}" data-bk-mal="webdav">☁️ Moln via WebDAV</button></div>
+        ${inst.mal === "mapp" ? `<input id="bk-mapp" class="bk-in" value="${esc(inst.mapp)}" placeholder="${esc(inst.std_mapp)}">
+          <div class="small muted">${inst.windows ? "Välj en mapp som ditt molnprogram synkar, t.ex. i OneDrive, Google Drive eller Dropbox på datorn. Då hamnar backupen i molnet automatiskt." : "En mapp i Home Assistant, t.ex. /share/laxspelet-backup. Den kommer med i Home Assistants säkerhetskopior."}</div>`
+        : `<input id="bk-wd-url" class="bk-in" value="${esc(inst.webdav.url)}" placeholder="https://… (WebDAV-adress)">
+          <input id="bk-wd-anv" class="bk-in" value="${esc(inst.webdav.anv)}" placeholder="Användarnamn">
+          <input id="bk-wd-losen" type="password" class="bk-in" placeholder="${inst.webdav.har_losen ? "Lösenordet är sparat (lämna tomt för att behålla)" : "Lösenord (ofta ett särskilt app-lösenord)"}">
+          <div class="small muted">Fungerar med t.ex. Nextcloud, Koofr (10 GB gratis), pCloud, Box och de flesta NAS (Synology, QNAP). Adressen hittar du i molntjänstens inställningar under WebDAV.</div>`}
+        <input id="bk-auto-losen" type="password" class="bk-in" placeholder="${inst.har_losen ? "Backuplösenordet är sparat (lämna tomt för att behålla)" : "Lösenord för backuperna (minst 6 tecken). Skriv upp det!"}">
+        <div class="small">Behåll <select id="bk-behall">${[3, 7, 14, 30].map((n) => `<option ${n === inst.behall ? "selected" : ""}>${n}</option>`).join("")}</select> backuper</div>
+        <div class="actions"><button class="primary" id="bk-spara">💾 Spara</button><button class="ghost" id="bk-nu" ${this._busy ? "disabled" : ""}>▶️ Gör en backup nu</button></div>
+        ${inst.senast ? `<div class="msg ${inst.senast.ok ? "ok" : "error"}">${inst.senast.ok ? "✅" : "⚠️"} ${esc(inst.senast.tid.replace("T", " "))}: ${esc(inst.senast.text)}</div>` : ""}
+        <div class="small muted">Utan lösenordet går backupen inte att läsa. Det skyddar barnens uppgifter i molnet, men glöm det inte.</div></div>`;
+  }
+
+  async _bkLaddaUpp(fil) {
+    const v = this._view, inl = (v.inl = { procent: 0 });
+    const id = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const BIT = 8 * 1024 * 1024;
+    try {
+      for (let n = 0, pos = 0; pos < fil.size || n === 0; n++, pos += BIT) {
+        const res = await this._f(`/api/skolan/backup?op=del&id=${id}&n=${n}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: fil.slice(pos, pos + BIT) });
+        if (!res.ok) throw new Error(`Uppladdningen avbröts (${res.status}).`);
+        inl.procent = Math.min(100, Math.round(((pos + BIT) / fil.size) * 100));
+        this._render();
+        if (pos + BIT >= fil.size) break;
+      }
+      inl.id = id;
+      inl.procent = null;
+      await this._bkOppna();
+    } catch (e) {
+      v.inl = null;
+      this._msg = { type: "error", text: e.message || String(e) };
+      this._render();
+    }
+  }
+
+  async _bkOppna(losen) {
+    const v = this._view, inl = v.inl;
+    const x = await this._bk("las", { id: inl.id, losen: losen || "" });
+    if (!x) return;
+    if (x.krypterad) { inl.krypterad = true; if (losen) this._msg = { type: "error", text: x.message }; }
+    else { inl.manifest = x.manifest; inl.lokala = x.lokala; inl.krypterad = false; }
+    this._render();
+  }
+
   // ---------- pennuppdrag: skriv för hand, fota, AI:n läser ----------
   _pennaKort() {
     const p = this._s.penna;
@@ -2049,9 +2219,9 @@ class SkolanPanel extends HTMLElement {
         const fd = new FormData();
         fd.append("json", JSON.stringify(json));
         fd.append("file", fil, fil.name || "penna.jpg");
-        res = await this._hass.fetchWithAuth("/api/skolan/penna", { method: "POST", body: fd });
+        res = await this._f("/api/skolan/penna", { method: "POST", body: fd });
       } else {
-        res = await this._hass.fetchWithAuth("/api/skolan/penna", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) });
+        res = await this._f("/api/skolan/penna", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) });
       }
       const x = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(x.message || res.statusText);
@@ -2072,7 +2242,7 @@ class SkolanPanel extends HTMLElement {
     this._busy = true;
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/skriv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, op, ...args }) });
+      const res = await this._f("/api/skolan/skriv", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, op, ...args }) });
       const x = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(x.message || res.statusText);
       this._msg = null;
@@ -2275,7 +2445,7 @@ class SkolanPanel extends HTMLElement {
       const v = this._view, fd = new FormData();
       fd.append("json", JSON.stringify({ barn: this._s.barn, typ, text: typ === "skriv" ? v.geo?.text : "" }));
       fd.append("file", fil, fil.name || "handstil.png");
-      const res = await this._hass.fetchWithAuth("/api/skolan/handstil", { method: "POST", body: fd });
+      const res = await this._f("/api/skolan/handstil", { method: "POST", body: fd });
       const x = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(x.message || res.statusText);
       v.res = x;
@@ -2323,6 +2493,8 @@ class SkolanPanel extends HTMLElement {
         l({ name: "coach" }, "🧠", "Studiecoach"),
         l({ name: "veckobrev" }, "📸", "Veckobrev"),
         l({ name: "kalender" }, "📅", "Skolkalendrar"),
+        l({ name: "hem2" }, "🏡", "Två hem"),
+        l({ name: "backup" }, "💾", "Backup och flytt"),
       ]) : ""}
       ${f ? grupp(`Konto · ${esc(f.namn || "")}`, [
         s.kan_valja && s.barn ? `<button id="fs-koppla-m">📱 Koppla en telefon till ${esc(s.namn)}</button>` : "",
@@ -2533,7 +2705,7 @@ class SkolanPanel extends HTMLElement {
     this._busy = true;
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/skola", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...body }) });
+      const res = await this._f("/api/skolan/skola", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...body }) });
       const svar = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(svar.message || res.statusText);
       if (!svar.forslag) this._s.skola = { ...this._s.skola, ...svar };
@@ -2613,7 +2785,7 @@ class SkolanPanel extends HTMLElement {
   // ---------- plugga ihop: pluggstund och glosduell ----------
   async _tillLoad() {
     try {
-      const res = await this._hass.fetchWithAuth(`/api/skolan/tillsammans?barn=${encodeURIComponent(this._s?.barn || "")}`);
+      const res = await this._f(`/api/skolan/tillsammans?barn=${encodeURIComponent(this._s?.barn || "")}`);
       if (!res.ok) return;
       this._till = await res.json();
       const jag = this._till.jag;
@@ -2628,7 +2800,7 @@ class SkolanPanel extends HTMLElement {
     this._busy = true;
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/tillsammans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...body }) });
+      const res = await this._f("/api/skolan/tillsammans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...body }) });
       const svar = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(svar.message || res.statusText);
       if (ok) this._msg = { type: "ok", text: ok };
@@ -2791,7 +2963,7 @@ class SkolanPanel extends HTMLElement {
       vanner: [...r.querySelectorAll("[data-lag-van]")].filter((x) => x.checked).map((x) => ({ kod: x.dataset.lagVan, barn: x.dataset.lagVanBarn })) };
     if (bort && !confirm("Ta bort laget?")) return;
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...args }) });
+      const res = await this._f("/api/skolan/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, ...args }) });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || res.statusText);
       this._lagRed = null;
@@ -3723,6 +3895,8 @@ class SkolanPanel extends HTMLElement {
         <button class="row foralder-knapp" id="open-kalender" style="margin-top:4px"><span>📅 <b>Skolkalendrar</b><br><span class="muted small">${s.kalender ? `${s.kalender.antal} händelser för ${esc(s.namn)} · ` : ""}Koppla in skolans kalender: länk, Home Assistant, webbsida, fil eller foto</span></span><span>›</span></button>
         ${this._hass?.fristaende ? `<button class="row foralder-knapp" id="fs-koppla" style="margin-top:4px"><span>📱 <b>Koppla en telefon till ${esc(s.namn)}</b><br><span class="muted small">Visa en QR-kod. ${esc(s.namn)} skannar den med sin telefon och är inloggad direkt, utan PIN-kod.</span></span><span>›</span></button>` : ""}
         <button class="row foralder-knapp" id="open-coach" style="margin-top:4px"><span>🧠 <b>Studiecoach och lärarens riktlinjer</b><br><span class="muted small">Påverka hur ${esc(s.namn)}s pluggplaner görs, lägg in hur läraren vill ha det och prata med AI:n om studietaktiken</span></span><span>›</span></button>
+        <button class="row foralder-knapp" id="open-hem2" style="margin-top:4px"><span>🏡 <b>Två hem</b><br><span class="muted small">Bor ${esc(s.namn)} i två hem? Koppla ihop hemmens Läxspelet så att kontot är detsamma i båda</span></span><span>›</span></button>
+        <button class="row foralder-knapp" id="open-backup" style="margin-top:4px"><span>💾 <b>Backup och flytt</b><br><span class="muted small">Ladda ner allt, automatisk backup till moln eller mapp, eller flytta till ett annat Läxspelet (Windows ↔ Home Assistant)</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-rapport" style="margin-top:4px"><span>📊 <b>Veckorapport</b><br><span class="muted small">Vad ${esc(s.namn)} har pluggat, vad som är svårt, AI:ns tankar om studietaktiken och frågor till middagen</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
         <h3 style="margin-top:4px">📅 Läxschema för ${esc(s.namn)}</h3>
@@ -4244,7 +4418,7 @@ class SkolanPanel extends HTMLElement {
     fd.append("id", this._insp?.uid || falt.id || "");
     for (const [k, val] of Object.entries(falt)) fd.append(k, val);
     if (bit) fd.append("file", bit, "del");
-    const res = await this._hass.fetchWithAuth("/api/skolan/inspelning", { method: "POST", body: fd });
+    const res = await this._f("/api/skolan/inspelning", { method: "POST", body: fd });
     return res.ok ? res.json() : null;
   }
 
@@ -4256,13 +4430,13 @@ class SkolanPanel extends HTMLElement {
     const L = (this._live = { uid, ljud, storlek: 0, pos: 0, text: "Ansluter…", forsta: true });
     this._render();
     const barn = this._s.barn;
-    const info = async () => (await this._hass.fetchWithAuth(`/api/skolan/inspelning?barn=${encodeURIComponent(barn)}&id=${encodeURIComponent(uid)}`)).json();
+    const info = async () => (await this._f(`/api/skolan/inspelning?barn=${encodeURIComponent(barn)}&id=${encodeURIComponent(uid)}`)).json();
     const hamta = async () => {
       if (this._live !== L) return;
       try {
         const x = await info();
         if (!x.fil) { L.text = "Ingen läser just nu."; L.slut = true; this._render(); return; }
-        const res = await this._hass.fetchWithAuth(`/api/skolan/fil?barn=${encodeURIComponent(barn)}&fil=${encodeURIComponent(x.fil)}&t=${Date.now()}`);
+        const res = await this._f(`/api/skolan/fil?barn=${encodeURIComponent(barn)}&fil=${encodeURIComponent(x.fil)}&t=${Date.now()}`);
         const blob = await res.blob();
         if (this._live !== L) return;
         if (blob.size > L.storlek && (L.forsta || ljud.paused || ljud.ended)) {
@@ -4322,7 +4496,7 @@ class SkolanPanel extends HTMLElement {
       fd.append("id", i.uid);
       fd.append("sek", String(i.sek));
       fd.append("file", i.blob, i.typ.includes("webm") ? "inspelning.webm" : "inspelning.m4a");
-      const res = await this._hass.fetchWithAuth("/api/skolan/inspelning", { method: "POST", body: fd });
+      const res = await this._f("/api/skolan/inspelning", { method: "POST", body: fd });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || res.statusText);
       this._nyData(body.data);
@@ -4464,7 +4638,7 @@ class SkolanPanel extends HTMLElement {
       const fd = new FormData();
       fd.append("barn", this._s.barn);
       (Array.isArray(filer) ? filer : [filer]).forEach((f) => fd.append("file", f, f.name));
-      const res = await this._hass.fetchWithAuth("/api/skolan/veckobrev", { method: "POST", body: fd });
+      const res = await this._f("/api/skolan/veckobrev", { method: "POST", body: fd });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || res.statusText);
       if (body.ord) body.ord.ord = body.ord.ord || [];
@@ -4482,7 +4656,7 @@ class SkolanPanel extends HTMLElement {
     this._busy = true;
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/uppdrag", {
+      const res = await this._f("/api/skolan/uppdrag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barn: this._s.barn, op, ...args }),
@@ -4644,8 +4818,8 @@ class SkolanPanel extends HTMLElement {
     this._render();
     try {
       const res = op instanceof FormData
-        ? await this._hass.fetchWithAuth("/api/skolan/kalendrar", { method: "POST", body: op })
-        : await this._hass.fetchWithAuth("/api/skolan/kalendrar", op ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(op) } : {});
+        ? await this._f("/api/skolan/kalendrar", { method: "POST", body: op })
+        : await this._f("/api/skolan/kalendrar", op ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(op) } : {});
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || res.statusText);
       this._kal = body;
@@ -4825,7 +4999,7 @@ class SkolanPanel extends HTMLElement {
       const fd = new FormData();
       fd.append("barn", this._s.barn);
       (Array.isArray(filer) ? filer : [filer]).forEach((f) => fd.append("file", f, f.name));
-      const res = await this._hass.fetchWithAuth("/api/skolan/lektionsschema", { method: "POST", body: fd });
+      const res = await this._f("/api/skolan/lektionsschema", { method: "POST", body: fd });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || res.statusText);
       this._view.f = body;
@@ -4898,7 +5072,7 @@ class SkolanPanel extends HTMLElement {
     f.tanker = true;
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/fraga", { method: "POST", headers: { "Content-Type": "application/json" },
+      const res = await this._f("/api/skolan/fraga", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barn: this._s.barn, text, historik: f.historik.slice(0, -1) }) });
       const x = await res.json();
       if (!res.ok) throw new Error(x.message || res.statusText);
@@ -4927,9 +5101,9 @@ class SkolanPanel extends HTMLElement {
         const fd = new FormData();
         fd.append("json", JSON.stringify(json));
         filer.forEach((f) => fd.append("file", f, f.name || "bild.jpg"));
-        res = await this._hass.fetchWithAuth("/api/skolan/plan", { method: "POST", body: fd });
+        res = await this._f("/api/skolan/plan", { method: "POST", body: fd });
       } else {
-        res = await this._hass.fetchWithAuth("/api/skolan/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) });
+        res = await this._f("/api/skolan/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) });
       }
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || res.statusText);
@@ -5095,7 +5269,7 @@ class SkolanPanel extends HTMLElement {
     c.tanker = true;
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/plan", { method: "POST", headers: { "Content-Type": "application/json" },
+      const res = await this._f("/api/skolan/plan", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barn: this._s.barn, op: "coach", text, historik: c.historik.slice(0, -1).map(({ vem, text }) => ({ vem, text })) }) });
       const x = await res.json();
       if (!res.ok) throw new Error(x.message || res.statusText);
@@ -5182,9 +5356,9 @@ class SkolanPanel extends HTMLElement {
         const fd = new FormData();
         fd.append("json", JSON.stringify(json));
         fd.append("file", bild, bild.name || "uppgift.jpg");
-        res = await this._hass.fetchWithAuth("/api/skolan/hjalp", { method: "POST", body: fd });
+        res = await this._f("/api/skolan/hjalp", { method: "POST", body: fd });
       } else {
-        res = await this._hass.fetchWithAuth("/api/skolan/hjalp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) });
+        res = await this._f("/api/skolan/hjalp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) });
       }
       const x = await res.json();
       if (!res.ok) throw new Error(x.message || res.statusText);
@@ -5236,7 +5410,7 @@ class SkolanPanel extends HTMLElement {
     v.tanker = true;
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/lar", { method: "POST", headers: { "Content-Type": "application/json" },
+      const res = await this._f("/api/skolan/lar", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barn: this._s.barn, amne: v.amne, glosor: v.glosor, i: v.i, text, historik: v.historik.slice(0, -1) }) });
       const x = await res.json();
       if (!res.ok) throw new Error(x.message || res.statusText);
@@ -5384,7 +5558,7 @@ class SkolanPanel extends HTMLElement {
     this._gsVantar = true;
     const i = gs.ordning[gs.pos], r = gs.r[gs.pos];
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/glosstrid", { method: "POST", headers: { "Content-Type": "application/json" },
+      const res = await this._f("/api/skolan/glosstrid", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barn: this._s.barn, amne: v.amne, glosor: v.glosor, i, r, svar }) });
       const x = await res.json();
       if (!res.ok) throw new Error(x.message || res.statusText);
@@ -5635,7 +5809,7 @@ class SkolanPanel extends HTMLElement {
   async _ebokStatus(bokId) {
     const v = this._view;
     try {
-      const res = await this._hass.fetchWithAuth(
+      const res = await this._f(
         `/api/skolan/ebok?bara_status=1&barn=${encodeURIComponent(this._s.barn)}&bok=${encodeURIComponent(bokId)}`
       );
       const body = await res.json();
@@ -5660,7 +5834,7 @@ class SkolanPanel extends HTMLElement {
   async _ebokStarta(gorOm) {
     const v = this._view;
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/ebok", {
+      const res = await this._f("/api/skolan/ebok", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barn: this._s.barn, amne: v.amne, bok: v.bok, gor_om: gorOm }),
@@ -5681,7 +5855,7 @@ class SkolanPanel extends HTMLElement {
     this._busy = true;
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth(
+      const res = await this._f(
         `/api/skolan/ebok?barn=${encodeURIComponent(this._s.barn)}&amne=${encodeURIComponent(v.amne)}&bok=${encodeURIComponent(v.bok)}`
       );
       const body = await res.json();
@@ -6081,7 +6255,7 @@ class SkolanPanel extends HTMLElement {
     delete this._exFel[nyckel];
     this._render();
     try {
-      const res = await this._hass.fetchWithAuth("/api/skolan/exempel", {
+      const res = await this._f("/api/skolan/exempel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barn: this._s.barn, amne, glosor: gid, i, ny }),
@@ -6464,7 +6638,7 @@ class SkolanPanel extends HTMLElement {
           sidor: idx.length ? idx.join(",") : "ingen",
           fram: val.has("fram") ? "1" : "0", bak: val.has("bak") ? "1" : "0",
         });
-        const res = await this._hass.callWS({ type: "auth/sign_path", path: `/api/skolan/utskrift?${q}`, expires: 120 });
+        const res = await this._hass.callWS({ type: "auth/sign_path", path: this._apiUrl(`/api/skolan/utskrift?${q}`), expires: 120 });
         if (w) w.location.href = res.path;
         else window.location.href = res.path;
         delete v.utskrift;
@@ -6616,7 +6790,7 @@ class SkolanPanel extends HTMLElement {
       Object.assign(v, { bok: e.target.value, kapitelLista: [], valda: [], fran: "", till: "" });
       if (v.bok) {
         try {
-          const res = await this._hass.fetchWithAuth(
+          const res = await this._f(
             `/api/skolan/ebok?barn=${encodeURIComponent(this._s.barn)}&amne=${encodeURIComponent(v.amne)}&bok=${encodeURIComponent(v.bok)}`
           );
           const body = await res.json();
@@ -6946,7 +7120,7 @@ class SkolanPanel extends HTMLElement {
       on("#ls-utskrift", async () => {
         const w = window.open("", "_blank"); // öppnas direkt i klicket så att det inte blockeras
         try {
-          const res = await this._hass.callWS({ type: "auth/sign_path", path: `/api/skolan/schema_sida?barn=${encodeURIComponent(this._s.barn)}`, expires: 300 });
+          const res = await this._hass.callWS({ type: "auth/sign_path", path: this._apiUrl(`/api/skolan/schema_sida?barn=${encodeURIComponent(this._s.barn)}`), expires: 300 });
           if (w) w.location.href = res.path; else window.location.href = res.path;
         } catch (e) { w?.close(); this._msg = { type: "error", text: `Kunde inte öppna schemat: ${e.message || e}` }; this._render(); }
       });
@@ -7013,6 +7187,73 @@ class SkolanPanel extends HTMLElement {
     on("#dl-fokus", () => this._go({ name: "fokus" }));
     on("#open-rapport", () => this._go({ name: "rapport" }));
     on("#open-coach", () => this._go({ name: "coach" }));
+    on("#open-backup", () => this._go({ name: "backup" }));
+    on("#open-hem2", () => this._go({ name: "hem2" }));
+    if (v.name === "hem2") {
+      const hk = async (body, ok) => {
+        this._busy = true; this._render();
+        try {
+          const res = await this._hass.fetchWithAuth("/api/skolan/hemkoppling", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          const x = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(x.message || res.statusText);
+          if (ok) this._msg = { type: "ok", text: ok };
+          return x;
+        } catch (e) { this._msg = { type: "error", text: e.message || String(e) }; return null; }
+        finally { this._busy = false; v.d = null; this._render(); }
+      };
+      r.querySelectorAll("[data-hem-skapa]").forEach((b) => b.addEventListener("click", async () => {
+        const id = b.dataset.hemSkapa;
+        const x = await hk({ op: "skapa", barn: id, namn: $(`#hem-namn-${id}`)?.value || "" });
+        if (x) { v.lank = { barn: id, lank: x.lank }; this._render(); }
+      }));
+      on("#hem-kopiera", async () => { try { await navigator.clipboard.writeText(v.lank.lank); this._msg = { type: "ok", text: "Länken är kopierad. 📋" }; } catch (e) { r.querySelector(".hem-lank")?.select(); } this._render(); });
+      r.querySelectorAll("[data-hem-tabort]").forEach((b) => b.addEventListener("click", () => { const [barn, token] = b.dataset.hemTabort.split("|"); if (confirm("Ta bort länken? Det andra hemmet tappar kopplingen.")) hk({ op: "ta_bort_lank", barn, token }, "Länken är borttagen."); }));
+      r.querySelectorAll("[data-hem-koppla]").forEach((b) => b.addEventListener("click", async () => {
+        const id = b.dataset.hemKoppla, lank = $(`#hem-in-${id}`)?.value || "";
+        if (!lank.trim()) return;
+        if (!confirm("Koppla? Barnets konto i det andra hemmet används då här också.")) return;
+        if (await hk({ op: "koppla", barn: id, lank }, "Kopplat! 🏡 Barnets konto hämtas nu från det andra hemmet.")) { this._fjarrAktiv = null; await this._load(this._s.barn); }
+      }));
+      r.querySelectorAll("[data-hem-bort]").forEach((b) => b.addEventListener("click", async () => { if (confirm("Koppla bort? Barnet använder då kontot här i det här hemmet igen.")) { await hk({ op: "koppla_bort", barn: b.dataset.hemBort }, "Bortkopplat."); this._fjarrAktiv = null; await this._load(this._s.barn); } }));
+    }
+    if (v.name === "backup") {
+      on("#bk-skapa", async () => {
+        v.skapar = true;
+        const x = await this._bk("skapa", { barn: $("#bk-barn").value, losen: $("#bk-losen").value });
+        v.skapar = false;
+        if (x) { v.ner = x; this._render(); }
+      });
+      on("#bk-hamta", async () => {
+        const w = window.open("", "_blank");
+        try {
+          const res = await this._hass.callWS({ type: "auth/sign_path", path: `/api/skolan/backup?hamta=${encodeURIComponent(v.ner.fil)}`, expires: 300 });
+          if (w) w.location.href = res.path; else window.location.href = res.path;
+        } catch (e) { w?.close(); this._msg = { type: "error", text: `Kunde inte ladda ner: ${e.message || e}` }; this._render(); }
+      });
+      $("#bk-fil")?.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) this._bkLaddaUpp(f); });
+      on("#bk-oppna", () => this._bkOppna($("#bk-in-losen")?.value || ""));
+      on("#bk-avbryt", () => { v.inl = null; this._render(); });
+      on("#bk-aterstall", async () => {
+        const karta = {};
+        r.querySelectorAll("[data-bk-karta]").forEach((s) => { if (s.value) karta[s.dataset.bkKarta] = s.value; });
+        if (!Object.keys(karta).length) { this._msg = { type: "error", text: "Välj minst ett barn att återställa." }; return this._render(); }
+        if (!confirm("Återställa? Det som finns här nu för de valda barnen ersätts (en kopia sparas undan).")) return;
+        const x = await this._bk("aterstall", { id: v.inl.id, karta, gemensamt: !!$("#bk-gem")?.checked });
+        if (x) { v.inl = null; this._msg = { type: "ok", text: `Klart! ${x.klara.length} barn är återställda. 🎉` }; await this._load(this._s.barn); this._render(); }
+      });
+      r.querySelectorAll("[data-bk-mal]").forEach((b) => b.addEventListener("click", () => { v.d.inst.mal = b.dataset.bkMal; this._render(); }));
+      const inst = () => ({ auto: $("#bk-auto").checked, mal: v.d.inst.mal, mapp: $("#bk-mapp")?.value, behall: Number($("#bk-behall").value), losen: $("#bk-auto-losen").value,
+        ...($("#bk-wd-url") ? { webdav_url: $("#bk-wd-url").value, webdav_anv: $("#bk-wd-anv").value, webdav_losen: $("#bk-wd-losen").value } : {}) });
+      on("#bk-krymp", async () => {
+        if (!confirm("Krympa alla stora foton? Bilderna blir mindre filer men ser likadana ut i appen. Det går inte att ångra (gör gärna en backup först).")) return;
+        v.krymper = true;
+        const x = await this._bk("krymp");
+        v.krymper = false;
+        if (x) { v.krympt = x.res; v.d = null; this._render(); }
+      });
+      on("#bk-spara", async () => { const x = await this._bk("installningar", inst()); if (x) { v.d.inst = x.inst; this._msg = { type: "ok", text: "Sparat. 💾" }; this._render(); } });
+      on("#bk-nu", async () => { const s = await this._bk("installningar", inst()); if (!s) return; const x = await this._bk("nu"); if (x) { v.d.inst = x.inst; this._render(); } });
+    }
     on("#huvudmeny", () => { this._meny = !this._meny; this._render(); });
     on("#meny-bak", () => { this._meny = false; this._render(); });
     r.querySelectorAll("[data-meny]").forEach((b) => b.addEventListener("click", () => { this._meny = false; this._go(JSON.parse(b.dataset.meny)); }));
@@ -7364,7 +7605,7 @@ class SkolanPanel extends HTMLElement {
     on("#open-widget", async () => {
       this._go({ name: "widget" });
       try {
-        const res = await this._hass.fetchWithAuth(`/api/skolan/widgetnyckel?barn=${encodeURIComponent(this._s.barn)}`);
+        const res = await this._f(`/api/skolan/widgetnyckel?barn=${encodeURIComponent(this._s.barn)}`);
         const x = await res.json();
         if (!res.ok) throw new Error(x.message || res.statusText);
         this._view.kod = x.kod;
@@ -7639,7 +7880,7 @@ class SkolanPanel extends HTMLElement {
     });
     const butik = async (op, args) => {
       try {
-        const res = await this._hass.fetchWithAuth("/api/skolan/action", {
+        const res = await this._f("/api/skolan/action", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ barn: this._s.barn, op, ...args }),
@@ -7974,6 +8215,7 @@ const CSS = `
   .ghost { background:none; border:1px solid var(--divider-color); border-radius:10px; padding:10px 14px; cursor:pointer; }
   .danger { color:var(--error-color, #db4437); }
   .mini { background:none; border:1px solid var(--divider-color); border-radius:8px; padding:4px 9px; cursor:pointer; }
+  .mini.primary { background:var(--primary-color); color:var(--text-primary-color, #fff); border-color:var(--primary-color); }
   .msg { padding:12px 14px; border-radius:10px; margin-bottom:14px; }
   .exempel { background:rgba(3,169,244,.10); border-radius:10px; padding:8px 10px; margin:6px 0; text-align:left; display:grid; gap:4px; }
   .ex-mening { font-size:1.05em; } .exempel .mini { justify-self:start; } .ex-knapp { width:36px; text-align:right; } .ex-rad td { padding-top:0; }
@@ -8293,6 +8535,7 @@ const CSS = `
   .meny-bak { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.25); }
   .meny-grupp { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--secondary-text-color, #777); padding:10px 18px 2px; border-top:1px solid var(--divider-color, #eee); }
   .fs-meny button { background:none; border:none; text-align:left; padding:12px 18px; font-size:15px; color:var(--primary-text-color); cursor:pointer; } .fs-meny button:hover { background:rgba(0,0,0,.06); }
+  .bk-in { width:100%; box-sizing:border-box; font:inherit; padding:9px 10px; border-radius:10px; border:1px solid var(--divider-color); background:var(--card-background-color); color:var(--primary-text-color); margin-top:8px; }
   .penna-kort { min-height:0; border-left:6px solid #3949ab; }
   .penna-trappa { display:grid; grid-template-columns:repeat(6, 1fr); gap:4px; margin:4px 0 6px; }
   .pt-steg { text-align:center; padding:6px 2px; border-radius:10px; background:var(--divider-color, #e0e0e0); font-size:10px; line-height:1.2; opacity:.6; }
