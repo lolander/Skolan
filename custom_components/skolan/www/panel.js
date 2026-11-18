@@ -681,6 +681,62 @@ function ritaDjur(art, humor, steg, x = {}) {
   return ut + `</svg>`;
 }
 
+// Husdjurens story: visas när man trycker på ett djur i butiken.
+const DJUR_STORY = {
+  "🐶": "Valpen hittades en regnig dag under en hög gamla läxböcker, där den hade byggt en koja av glosor. Den kan lukta sig till en bortglömd läxa på tre kilometers håll. Allra helst apporterar den pennor som har rullat in under soffan.",
+  "🐱": "Katten föddes under ett åskväder och har haft små gnistor i pälsen sedan dess. När den är nöjd spinner den så högt att lamporna blinkar. Läxor tycker den egentligen är tråkiga, men den lägger sig gärna på boken du läser, för att hjälpa till.",
+  "🦊": "Räven kommer från en eldröd skog där löven aldrig slutar glöda. Den är bäst i skogen på gåtor och har vunnit gåtturneringen tre år i rad. Ge den en klurig fråga, så viftar den på svansen så att det sprakar.",
+  "🐼": "Pandan växte upp i en bambuskog där varje bambustrå viskar ett nytt ord. Den äter långsamt, tänker långsamt och glömmer aldrig något. Den säger alltid: ta det lugnt, ett ord i taget.",
+  "🐉": "Draken kläcktes i en vulkan, ur ett ägg som var varmare än en nygräddad pizza. När den blir glad blåser den små eldringar. Andra drakar samlar på guld, men den här samlar på guldstjärnor från läxor.",
+  "🐢": "Sköldpaddan har simmat genom alla sju hav och kan säga hej på över hundra språk. Den är inte snabb, men den ger aldrig upp. Lite i taget, varje dag, säger den, så blir det mycket till slut.",
+  "🦄": "Enhörningen bor där regnbågen tar slut. Hornet lyser starkare för varje sak den lär sig. Den påstår att det inte finns något som heter omöjligt, bara saker man inte har övat på än.",
+  "🐧": "Pingvinen kommer från en isig ö där det är så kallt att orden fryser fast i luften när man pratar. Därför är den expert på att plocka ner ord och komma ihåg dem. När ingen tittar glider den fram på magen.",
+  "🐰": "Kaninen bor i en hemlig tunnel under skolans fotbollsplan. Med sina långa öron hör den allt läraren säger, även från andra sidan skolgården. Den hoppar högst av alla när du får alla rätt.",
+  "🦖": "Dinosaurien sov i 65 miljoner år och vaknade alldeles nyfiken. Allt är nytt för den: mobiler, glass och matte. Den har korta armar, men ett jättestort hjärta och ett ännu större vrål.",
+  "🐻": "Björnen sov hela vintern i ett ide fullt av böcker och läste i drömmen. Nu kan den lite om allt, men minns inte alltid var den läste det. Den älskar honung och bra frågor.",
+  "🐨": "Koalan bor i ett eukalyptusträd som växer ända upp till molnen. Den sover tjugo timmar om dygnet, men vaken är den supersmart. Den säger att en tupplur gör hjärnan klokare, och det stämmer faktiskt.",
+  "🐷": "Grisen är världens gladaste gris. Den rullar sig i leran varje gång någon gör klart en läxa, så att lyckan stänker överallt. Den kan räkna till tusen, och baklänges, och gör det gärna högt.",
+  "🐸": "Grodan bor i en damm där varje näckrosblad är en liten ö med ett ord på. Den hoppar från ord till ord och lär sig dem på vägen. Kvack betyder bra jobbat på grodspråk.",
+  "🐯": "Tigern kommer från en djungel där solen alltid går ner i orange och svart. Den är modig, stark och lite stolt. Svåra uppgifter smyger den sig på, och sedan kastar den sig över dem.",
+  "🦁": "Lejonet är kung över savannen, men vill hellre bli kung över multiplikationstabellen. Manen fluffar upp sig när det tänker hårt. När du klarar något svårt vrålar det så att det hörs ända till grannens kök.",
+  "🐭": "Musen bor bakom en bokhylla i ett gammalt bibliotek och har läst hundratals böcker, och försiktigt bara gnagt i marginalerna. Den är liten men har huvudet fullt av fakta. Den älskar ost och korsord.",
+  "🐮": "Kon står på en äng och tuggar på tankar hela dagen. Den idisslar läxor: läser en gång, tänker, läser igen, och sedan sitter allt. Muu betyder både hej och rätt svar.",
+  "🐵": "Apan svingar sig mellan lianerna i en djungel full av siffror. Den är busig och snabb och vill alltid tävla. Klättra högt, men glöm inte att hålla i dig, säger den.",
+  "🐹": "Hamstern springer i sitt hjul hela natten och fyller kinderna med kunskap. De bästa orden gömmer den i ett hemligt förråd, så att de finns kvar till förhöret. Den är liten men har en otrolig kondition.",
+  "🦉": "Ugglan är vaken när alla andra sover och läser i månskenet. Den kan vrida huvudet nästan ett helt varv, så den ser uppgiften från alla håll. Hu-hu säger den när den hittar ett smart svar.",
+  "🦝": "Tvättbjörnen tvättar allt den hittar, även sina anteckningar, så att de blir skinande rena. Den har en svart mask som en superhjälte och smyger runt på natten och plockar upp borttappade pennor. Den delar gärna med sig.",
+  "🌭": "Korven rymde från en grillfest och bestämde sig för att bli äventyrare. Den är varm, glad och lite senapsgul i kanterna. Det viktigaste i livet, säger den, är bra läxor och lagom mycket ketchup.",
+  "🍉": "Vattenmelonen trillade av en lastbil en varm sommardag och rullade hela vägen till din skola. Den är full av saftiga idéer och kärnor av kunskap. Spotta ut det du inte behöver och spara det goda, säger den.",
+  "🍞": "Brödet var det första som kom ut ur en magisk ugn. Det doftar nybakat och är som varmast när det är rostat. Kunskap är som deg, säger det: den måste få jäsa lite innan den blir bra.",
+  "🌵": "Kaktusen bor i en öken där det regnar en gång om året, så den har lärt sig att spara på allt, särskilt glosor. Den är taggig utanpå men alldeles mjuk inuti. När du gör något riktigt bra blommar den.",
+  "🍕": "Pizzan kom ut ur en pizzaugn i Italien med extra ost och extra mycket mod. Den delar alltid sina bitar rättvist, så den är jättebra på bråk. Varje bit är en ny utmaning.",
+  "🍦": "Glassen föddes i frysboxen på en glassbil och har aldrig smält, eftersom den tänker kalla tankar. Den är cool i alla lägen, till och med på prov. Strösslet lyser när den är glad.",
+  "🧦": "Strumpan är en av dem som försvinner i tvättmaskinen. Nu vet du vart de tar vägen: till Strumpornas land, där de tränar för att bli husdjur. Den letar fortfarande efter sin tvilling.",
+  "🪨": "Stenen har legat på samma ställe i tiotusen år och sett allt hända. Den är tålmodig, stark och väldigt svår att rubba. Den rör sig inte så mycket, men den vet väldigt mycket.",
+  "🍌": "Bananen kommer från en ö där alla bananer kan prata. Den är glad, böjd och lite hal, så se upp! Den har alltid energi och säger att en banan om dagen håller tröttheten borta.",
+  "🐙": "Bläckfisken bor djupt nere i Bläckhavet. Med sina åtta armar kan den bläddra i åtta böcker samtidigt. När den blir rädd sprutar den bläck, och sedan skriver den anteckningar med bläcket.",
+  "🍩": "Munken rullade ut ur ett konditori en söndagsmorgon och har rullat runt i världen sedan dess. I hålet i mitten sparar den alla frågor den inte har svar på än. Hålet blir mindre för varje sak den lär sig.",
+  "🥑": "Avokadon kommer från en trädgård i Mexiko och har en stor, stark kärna i mitten, som ett hjärta av sten. Den är snäll, mjuk och full av nyttiga saker. För varje dag blir den mognare och klokare.",
+  "🍄": "Svampen växte upp i en förtrollad skog där svamparna pratar med varandra under marken. Skogen skickar meddelanden genom rötterna, så den vet alltid vad som händer. Den sprider kunskap som sporer i vinden.",
+  "☁️": "Molnet svävade ner från himlen för att se hur det är att gå i skolan. Det regnar när det är ledset och blixtrar när det är taggat. Alla tankar blir lättare när man flyger högt, tycker det.",
+  "🦷": "Tanden lossnade en natt och gömde sig innan tandfen hann hämta den. Den är vit och blank och gillar att bita i svåra uppgifter. Den påminner dig alltid om att borsta tänderna efter läxan.",
+  "🥔": "Potatisen grävdes upp ur en åker och visade sig vara smartare än alla morötter. Den kan bli pommes, mos eller chips, så den är bra på att se saker från olika håll. Den är jordnära och pålitlig.",
+  "👻": "Spöket har bott på en vind i hundra år, men egentligen är det jätterädd för mörker. Det kan gå genom väggar, men inte genom läxor, de måste man göra på riktigt. Bu betyder god natt på spökspråk.",
+  "🤖": "Roboten byggdes i Robotfabriken men vägrade att bara göra som den blev tillsagd. Den vill lära sig själv, en sak i taget. Den piper glatt och laddar batterierna med rätt svar.",
+  "🍫": "Chokladkakan ramlade ner i en kakaofabrik och kom ut med superkrafter. Den smälter inte av värme, bara av kramar. Varje ruta är en liten belöning för något du har kämpat med.",
+  "🐍": "Snake bor under sängen, men inte för att skrämmas. Varje natt, när du har somnat, ringlar han runt och letar efter mardrömmar, och så äter han upp dem, en efter en. De smakar lakrits med salt, säger han. Därför är Snake extra stark mot monstren i Sömnträsket och Spökslottet, och ju mer du pluggar, desto större mardrömmar orkar han äta. 🌙",
+  "⛄": "Snögubben byggdes av tre barn en kall vintermorgon och vaknade till liv när den första snöflingan landade på hans näsa. Han smälter aldrig så länge någon tror på honom. Han har morotsnäsa och ett hjärta av is som är varmare än man tror.",
+  "🎃": "Pumpan växte på en halloweenåker och fick sitt ansikte av en snäll trollkarl. På natten lyser den inifrån som en lykta. Den älskar läskiga sagor, men blir lite rädd själv efteråt.",
+  "🐣": "Kycklingen kläcktes på påskafton ur ett gyllene ägg. Den har kvar en bit av skalet som byxor och vägrar ta av den. Den piper ivrigt varje gång den lär sig något nytt, och det gör den ofta.",
+  "🍓": "Jordgubben växte i en sommarträdgård där solen aldrig går ner. Den är söt och röd och full av små frön, och varje frö är en idé. Den älskar midsommar och grädde.",
+  "🍭": "Klubban kommer från Godisriket, där allt är randigt och glittrigt. Den snurrar och snurrar tills den blir yr, och det är då de bästa idéerna kommer. Den varnar alltid för att för mycket godis gör en trött.",
+  "🕯️": "Ljuset tändes en mörk vinterkväll och har lyst sedan dess. Det lyser upp svåra uppgifter så att man ser vägen. När det blir glatt fladdrar det, och det slocknar aldrig så länge du fortsätter.",
+  "🚀": "Raketen byggdes av en uppfinnare som ville åka till månen och tillbaka före middagen. Den går på nyfikenhet och flyger snabbare för varje sak du lär dig. Nedräkningen börjar nu: tre, två, ett, läxa!",
+  "❤️": "Hjärtat föddes på alla hjärtans dag ur en kram som var så stor att den blev levande. Det slår snabbare när du gör något snällt och starkare när du kämpar. Det tycker om dig precis som du är.",
+  "👽": "Rymdvarelsen landade sitt tefat bakom skolan för att studera människor. Varför man har läxor förstår den inte, men den tycker att det är det mest spännande den har sett. Med tre ögon kan den läsa tre böcker samtidigt.",
+  "🐲": "Guldraken är den ovanligaste draken av alla. Den sover på en hög av gyllene stjärnor som barn har tjänat genom åren. Bara den som pluggar troget får se den vakna.",
+};
+
 const DJUR_HUMOR = {
   glad: (n) => `😄 ${n} är mätt och glad!`,
   nojd: (n) => `🙂 ${n} väntar på dagens mat. Gör något i Läxspelet idag!`,
@@ -1168,6 +1224,10 @@ class SkolanPanel extends HTMLElement {
       title = `💬 Fråga ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "hem" };
       body = this._fragaView();
+    } else if (v.name === "djurstory") {
+      title = `📖 ${v.art} Story`;
+      back = { name: "djurbutik" };
+      body = this._djurStoryView();
     } else if (v.name === "plan") {
       title = "📅 Pluggplan";
       back = v.g && (s.data.uppdrag || []).find((x) => x.id === v.uppdrag)?.plan?.delar?.length ? { name: "plan", uppdrag: v.uppdrag } : { name: "hem" };
@@ -1872,17 +1932,31 @@ class SkolanPanel extends HTMLElement {
         const pris = s.nytt_djur_pris;
         const elIkon = (a) => { const e = (s.djur_element || {})[a]; return e ? `${(s.typer || {})[e]?.split(" ")[0] || ""}💪 ${(s.typer || {})[(s.element_dalig || {})[e]]?.split(" ")[0] || ""}😕` : ""; };
         return `<h3>🐾 Mina husdjur</h3>
-        <div class="small muted">Varje husdjur växer och utvecklas av det du gör medan just det är med dig. Byt gratis mellan dina djur.</div>
-        <div class="mina-djur">${mina.map((h) => `<div class="mitt-djur ${h.aktiv ? "aktiv" : ""}"><div class="rit-val">${ritaDjur(h.art, "glad", h.steg, { form: h.form })}</div>
+        <div class="small muted">Varje husdjur växer och utvecklas av det du gör medan just det är med dig. Byt gratis mellan dina djur. Tryck på ett djur för att läsa dess story.</div>
+        <div class="mina-djur">${mina.map((h) => `<div class="mitt-djur ${h.aktiv ? "aktiv" : ""}"><button class="rit-val" data-djur-story="${h.art}" data-mitt="${h.id}">${ritaDjur(h.art, "glad", h.steg, { form: h.form })}</button>
           <div class="small"><b>${esc(h.namn)}</b><br>${h.form ? `${h.form.ikon} ${esc(h.form.namn)}` : esc(h.steg_namn)}<br>${h.element ? h.element.namn : ""}</div>
           ${h.aktiv ? `<div class="small"><b>✅ Med dig nu</b></div>` : `<button class="mini primary" data-djur-till="${h.id}">🔄 Byt</button>`}</div>`).join("")}</div>
-        ${paket.length ? `<h3>📦 Dina paketdjur</h3><div class="small muted">Redan betalda. De börjar som ägg.</div><div class="djur-val">${paket.map((a) => `<button data-djur-nytt="${a}" data-gratis="1" class="rit-val med-element">${ritaDjur(a, "glad", 2)}<span class="el">${elIkon(a)}</span></button>`).join("")}</div>` : ""}
+        ${paket.length ? `<h3>📦 Dina paketdjur</h3><div class="small muted">Redan betalda. De börjar som ägg.</div><div class="djur-val">${paket.map((a) => `<button data-djur-story="${a}" data-gratis="1" class="rit-val med-element">${ritaDjur(a, "glad", 2)}<span class="el">${elIkon(a)}</span></button>`).join("")}</div>` : ""}
         <h3>🥚 Skaffa ett nytt husdjur · ${pris} ⭐</h3>
         <div class="small muted">Det nya djuret börjar om från början: ett ägg utan attacker och kompisar. Dina andra djur finns kvar med allt de har.</div>
-        <div class="small muted">Varje djur har ett element. Attacker av samma typ gör +25 %, en typ passar dåligt (−25 %).</div>
-        <div class="djur-val">${nya.map((a) => `<button data-djur-nytt="${a}" class="rit-val med-element" ${saldo >= pris ? "" : "disabled"}>${ritaDjur(a, "glad", 2)}<span class="el">${elIkon(a)}</span></button>`).join("")}</div>`;
+        <div class="small muted">Varje djur har ett element. Attacker av samma typ gör +25 %, en typ passar dåligt (−25 %). Tryck på ett djur för att läsa dess story.</div>
+        <div class="djur-val">${nya.map((a) => `<button data-djur-story="${a}" class="rit-val med-element">${ritaDjur(a, "glad", 2)}<span class="el">${elIkon(a)}</span></button>`).join("")}</div>`;
       })()}
       ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
+  }
+
+  _djurStoryView() {
+    const v = this._view, s = this._s, d = s.meriter?.djur || {};
+    const h = v.mitt ? (d.mina || []).find((x) => x.id === v.mitt) : null;
+    const saldo = s.meriter?.saldo ?? 0, pris = s.nytt_djur_pris;
+    const e = (s.djur_element || {})[v.art], typ = (t) => (s.typer || {})[t] || t;
+    return `<div class="djur-kort" style="justify-content:center"><div class="story-bild">${ritaDjur(v.art, "glad", h ? Math.max(1, h.steg) : 3, h ? { form: h.form } : {})}</div></div>
+      <div class="card hjalp-kort story-text">${h ? `<div class="djur-rubrik">${esc(h.namn)}</div>` : ""}<p>${esc(DJUR_STORY[v.art] || "Det här husdjuret är så hemligt att ingen vet dess historia än. Kanske får du ta reda på den själv?")}</p>
+        ${e ? `<div class="small">Element: <b>${esc(typ(e))}</b> · attacker av samma typ gör +25 %, ${esc(typ((s.element_dalig || {})[e]))} passar dåligt (−25 %).</div>` : ""}</div>
+      <div class="actions">${h ? (h.aktiv ? `<span class="small"><b>✅ Med dig nu</b></span>` : `<button class="primary" data-djur-till="${h.id}">🔄 Byt till ${esc(h.namn)}</button>`)
+        : v.gratis ? `<button class="primary" data-djur-nytt="${v.art}" data-gratis="1">🥚 Kläck mig (redan betald)</button>`
+        : `<button class="primary" data-djur-nytt="${v.art}" ${saldo >= pris ? "" : "disabled"}>🥚 Skaffa för ${pris} ⭐</button>${saldo >= pris ? "" : `<span class="small muted">Du behöver ${pris - saldo} ⭐ till.</span>`}`}
+        <button class="ghost" id="story-tillbaka">← Tillbaka till butiken</button></div>`;
   }
 
   // ---------- läxpasset ----------
@@ -6864,15 +6938,23 @@ class SkolanPanel extends HTMLElement {
     r.querySelectorAll("[data-upps]").forEach((b) => b.addEventListener("click", () => this._act("uppsattning", { attack: b.dataset.upps })));
     r.querySelectorAll("[data-djur-till]").forEach((b) => b.addEventListener("click", async () => {
       const h = (this._s.meriter?.djur?.mina || []).find((x) => x.id === b.dataset.djurTill);
-      if (h && await this._act("djur", { id: h.id, art: h.art, namn: "" })) this._msg = { type: "ok", text: `${h.art} ${h.namn} är med dig nu! Allt du gör nu hjälper ${h.namn} att växa.` };
+      if (h && await this._act("djur", { id: h.id, art: h.art, namn: "" })) {
+        this._msg = { type: "ok", text: `${h.art} ${h.namn} är med dig nu! Allt du gör nu hjälper ${h.namn} att växa.` };
+        if (this._view.name === "djurstory") return this._go({ name: "djurbutik" });
+      }
       this._render();
     }));
+    r.querySelectorAll("[data-djur-story]").forEach((b) => b.addEventListener("click", () => this._go({ name: "djurstory", art: b.dataset.djurStory, gratis: b.dataset.gratis === "1", mitt: b.dataset.mitt || null })));
+    on("#story-tillbaka", () => this._go({ name: "djurbutik" }));
     r.querySelectorAll("[data-djur-nytt]").forEach((b) => b.addEventListener("click", async () => {
       const art = b.dataset.djurNytt, gratis = b.dataset.gratis === "1";
       if (!confirm(`Skaffa ${art}${gratis ? "" : ` för ${this._s.nytt_djur_pris} ⭐`}? Det börjar om från början, utan attacker och kompisar. Dina andra djur finns kvar med allt de har.`)) return;
       const namn = this._ask("Vad ska ditt nya husdjur heta?", "");
       if (namn === null) return;
-      if (await this._act("djur", { art, namn: namn || "" })) this._fx({ text: "🥚 NYTT HUSDJUR!", sub: `${art} ${namn || ""}`, emojis: ["🥚", art, "✨", "💖"], antal: 28, farg: "#ffb300" });
+      if (await this._act("djur", { art, namn: namn || "" })) {
+        this._fx({ text: "🥚 NYTT HUSDJUR!", sub: `${art} ${namn || ""}`, emojis: ["🥚", art, "✨", "💖"], antal: 28, farg: "#ffb300" });
+        if (this._view.name === "djurstory") return this._go({ name: "djurbutik" });
+      }
       this._render();
     }));
     r.querySelectorAll("[data-paket]").forEach((b) =>
@@ -7674,6 +7756,9 @@ const CSS = `
   .pd-check { background:none; border:none; font-size:22px; cursor:pointer; padding:0; line-height:1; }
   .pd-text { flex:1; min-width:0; }
   .pd-tankar { border-left:5px solid #7e57c2; }
+  .story-bild { width:200px; height:200px; margin:0 auto; }
+  .story-text p { font-size:16px; line-height:1.5; margin:6px 0 10px; }
+  .mitt-djur button.rit-val { background:none; border:none; padding:0; cursor:pointer; }
   .coach-svar { white-space:pre-wrap; }
   .coach-forslag { margin-top:8px; padding-top:8px; border-top:1px dashed currentColor; font-size:13px; white-space:normal; }
   #coach-onsk { width:100%; box-sizing:border-box; font:inherit; padding:8px; border-radius:10px; border:1px solid var(--divider-color); margin-top:8px; background:var(--card-background-color); color:var(--primary-text-color); }
