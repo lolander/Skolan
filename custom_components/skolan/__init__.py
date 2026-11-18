@@ -42,7 +42,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import backup, boende, dagens, packa, fraga, meriter, penna, plugg, schemavy, skola, skriv, tillsammans, vanner
+from . import backup, boende, dagens, extra, packa, fraga, meriter, penna, plugg, schemavy, skola, skriv, tillsammans, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, BackupView, HemkopplingView, HemView, FjarrView, BoendeView, SyskonView, PackaView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, BackupView, HemkopplingView, HemView, FjarrView, BoendeView, SyskonView, PackaView, ExtraView, KlockaView, PlanKalenderView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -457,6 +457,25 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
 
     async_track_time_change(hass, _auto_backup, hour=3, minute=15, second=0)
 
+    async def _klockor(_now=None) -> None:
+        """Var 10:e minut: visa läxor, packning och husdjuret på barnens Awtrix-klockor (MQTT)."""
+        if not hass.services.has_service("mqtt", "publish"):
+            return
+        inst = await hass.async_add_executor_job(_load_fil, hass.data[DOMAIN]["base"] / "klockor.json")
+        for b in hass.data[DOMAIN]["conf"]["barn"]:
+            k = inst.get(b["id"]) or {}
+            if not k.get("pa") or not k.get("prefix"):
+                continue
+            try:
+                data = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
+                text, farg = _klocka_text(data)
+                await hass.services.async_call("mqtt", "publish", {"topic": f"{k['prefix']}/custom/laxspelet",
+                                                                   "payload": json.dumps({"text": text, "color": farg, "duration": 8, "lifetime": 1200, "scrollSpeed": 80})})
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.info("Läxspelet: klockan för %s: %s", b["id"], err)
+
+    async_track_time_change(hass, _klockor, minute=list(range(2, 60, 10)), second=0)
+
     async def _hungrig_notis(_now=None) -> None:
         """Kl. 16: säg till om husdjuret är hungrigt eller ledset (en gång per dag)."""
         for b in hass.data[DOMAIN]["conf"]["barn"]:
@@ -634,6 +653,22 @@ def _save(path: Path, data: dict) -> None:
     tmp = path / "data.json.tmp"
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), "utf-8")
     tmp.replace(path / "data.json")
+
+
+def _klocka_text(data: dict) -> tuple[str, str]:
+    """Det viktigaste just nu, kort nog för en pixelklocka."""
+    nu = dt_util.now()
+    d = meriter._m(data).get("djur") or {}
+    rader = plugg.dagens_lista(data)["rader"]
+    if rader and 13 <= nu.hour < 21:
+        return f"{len(rader)} sak{'er' if len(rader) > 1 else ''} att plugga", "#FFA726"
+    pl = packa.status(data)
+    if pl["rader"] and nu.hour >= 18 and len(pl["bockat"]) < len(pl["rader"]):
+        return "Packa vaskan!", "#29B6F6"
+    dj = meriter.djur(data) or {}
+    if dj.get("humor") in ("hungrig", "ledsen"):
+        return f"{d.get('namn', 'Husdjuret')} ar hungrig!", "#EF5350"
+    return f"{d.get('namn', '')} {meriter.sammanfattning(data).get('saldo', 0)} stj".strip(), "#66BB6A"
 
 
 def _foralder_tjanster(hass: HomeAssistant, data: dict, dag: date | None = None) -> list[str]:
@@ -1065,7 +1100,8 @@ class StateView(HomeAssistantView):
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
                 "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "skriv": skriv.status(data, fraga.alder(data)), "penna": penna.status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "riktlinjer": plugg.riktlinjer(data) if parent else None,
                 "boende": boende.status(data, await _foralder_namn(hass) if parent else {}),
-                "packlista": packa.status(data), "syskon": [{"id": b["id"], "namn": b["namn"]} for b in conf["barn"] if b["id"] != barn] if not request.get("skolan_bara_barn") else [], "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
+                "packlista": packa.status(data), "lattlast": bool(data.get("lattlast")), "mående": extra.mående_status(data, parent),
+                "matte": {"rekord": (data.get("matte") or {}).get("rekord", {})}, "lasflyt": (data.get("lasflyt") or [])[-30:], "syskon": [{"id": b["id"], "namn": b["namn"]} for b in conf["barn"] if b["id"] != barn] if not request.get("skolan_bara_barn") else [], "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
@@ -1347,7 +1383,7 @@ class HjalpView(HomeAssistantView):
             material=material, historik=hist,
             lage=HJALP_LAGE[lage] + (" Bilden är uppgiften barnet behöver hjälp med." if bilder else "")
             + (" Det finns nästan inget material i ämnet: tipsa EN gång (inte varje svar) om att fota boksidorna eller lägga in glosor i ämnet, så kan du hjälpa ännu bättre." if len(material) < 250 and not historik else ""),
-            ratt_regel=("ratt = true om barnets SENASTE meddelande var ett rätt svar på din senaste förhörsfråga, false om det var fel, "
+            ratt_regel=(("Barnet har läsa-lätt-läge: skriv extra korta och enkla meningar och svåra ord förklarade. " if data.get("lattlast") else "") + "ratt = true om barnets SENASTE meddelande var ett rätt svar på din senaste förhörsfråga, false om det var fel, "
                         "null om det inte var ett svar (t.ex. första gången, eller om barnet bad om en ny fråga)." "Om ratt är false: lägg också till \"fraga\" (din fråga, kort) och \"facit\" (rätt svar, kort) i JSON." if lage in ("forhor", "las") else "ratt ska alltid vara null.")) + plugg.larare_block(data, a["id"])
         try:
             if bilder:
@@ -2541,6 +2577,17 @@ class PlanView(HomeAssistantView):
 
         if op == "profil":
             return {"profil": await spara(lambda d: plugg.profil_spara(d, body))}
+        if op == "kalenderlank":  # föräldrar: hemlig prenumerationslänk till familjens kalender
+            if not foralder:
+                raise web.HTTPForbidden
+
+            def _k(d):
+                if body.get("ny") or not d.get("kal_nyckel"):
+                    d["kal_nyckel"] = secrets.token_urlsafe(24)
+                return d["kal_nyckel"]
+            nyckel = await spara(_k)
+            bas = _hem_extern_url(hass) or (getattr(hass.config, "internal_url", None) or "")
+            return {"url": f"{bas.rstrip('/')}/api/skolan/plankalender/{nyckel}.ics" if bas else f"/api/skolan/plankalender/{nyckel}.ics", "extern": bool(_hem_extern_url(hass))}
         if op == "svag_svar":
             return await spara(lambda d: plugg.svag_svar(d, str(body.get("id")), bool(body.get("kunde"))))
         if op == "onskemal":
@@ -4523,6 +4570,165 @@ async def _syskon_belona(hass: HomeAssistant, syskon: str, namn: str, lista: str
     await _notis(hass, sb.get("notify"), f"🤝 {namn} har gjort ditt förhör", f"{ratt} av {av} rätt på {lista}." + (f" Du får +{p} ⭐ för att du hjälpte till!" if p else ""), "/skolan")
 
 
+class ExtraView(HomeAssistantView):
+    """Mattemonster, läsflyt, läsa-lätt-läge och "Hur känns skolan?"."""
+
+    url = "/api/skolan/extra"
+    name = "api:skolan:extra"
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        barn = _barn_for(hass, request, request.query.get("barn"))
+        path = _dir(hass, barn)
+        data = await hass.async_add_executor_job(_load, path)
+
+        def _sidor():  # böcker med fotade sidor och ordräkning (från e-boken)
+            ut = []
+            for a in data.get("amnen", []):
+                for b in a.get("bocker", []):
+                    cache = _load_fil(path / "filer" / _ebok_fil(b["id"])).get("cache", {})
+                    sidor = [{"nyckel": f"{f}#{i}", "fil": f, "sidnr": s_.get("sidnummer"), "ord": int(s_.get("ord") or 0)}
+                             for f in b.get("sidor", []) for i, s_ in enumerate(cache.get(f, {}).get("sidor", [])) if int(s_.get("ord") or 0) >= 20]
+                    if sidor:
+                        ut.append({"id": b["id"], "namn": b["namn"], "amne": a["namn"], "sidor": sidor})
+            return ut
+        return self.json({"bocker": await hass.async_add_executor_job(_sidor)})
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        ljud = None
+        if request.content_type.startswith("multipart/"):
+            form = await request.post()
+            body = json.loads(str(form.get("json") or "{}"))
+            ljud = form.get("file") if hasattr(form.get("file"), "file") else None
+        else:
+            body = await request.json()
+        barn = _barn_for(hass, request, body.get("barn"))
+        foralder = _ar_foralder(hass, request)
+        op = body.get("op")
+        path = _dir(hass, barn)
+        larm = False
+        async with hass.data[DOMAIN]["locks"][barn]:
+            data = await hass.async_add_executor_job(_load, path)
+            try:
+                if op == "lattlast":
+                    data["lattlast"] = bool(body.get("pa"))
+                    ut = {"lattlast": data["lattlast"]}
+                elif foralder:
+                    raise ValueError("Det här gör barnet själv.")
+                elif op == "matte":
+                    ut = extra.matte_rekord(data, str(body.get("typ") or ""), int(body.get("niva") or 1), int(body.get("poang") or 0))
+                elif op == "mående":
+                    ut = extra.mående_svar(data, str(body.get("kansla") or ""), body.get("vad") or [], str(body.get("text") or ""))
+                    larm = ut["larm"]
+                elif op == "lasflyt":
+                    nyckel = str(body.get("nyckel") or "")
+                    fil, _, idx = nyckel.partition("#")
+                    cache = (await hass.async_add_executor_job(_load_fil, path / "filer" / _ebok_fil(str(body.get("bok") or "")))).get("cache", {})
+                    try:
+                        sida = cache.get(Path(fil).name, {}).get("sidor", [])[int(idx)]
+                    except (ValueError, IndexError) as err:
+                        raise ValueError("Sidan finns inte.") from err
+                    ljudfil = None
+                    if ljud is not None:
+                        innehall = await hass.async_add_executor_job(ljud.file.read)
+                        if 0 < len(innehall) < 15 * 1024 * 1024:
+                            ljudfil = f"lasflyt_{dt_util.now().strftime('%Y%m%d-%H%M%S')}_{_new_id()}{'.webm' if 'webm' in (ljud.content_type or '') else '.m4a'}"
+                            await hass.async_add_executor_job((path / "filer" / ljudfil).write_bytes, innehall)
+                    ut = extra.lasflyt_spara(data, str(body.get("bok") or ""), str(sida.get("sidnummer") or ""), int(sida.get("ord") or 0),
+                                             int(body.get("sek") or 0), ljudfil)
+                    for gammal in extra.lasflyt_gamla_filer(data):
+                        await hass.async_add_executor_job((path / "filer" / gammal).unlink, True)
+                else:
+                    raise ValueError("Okänd åtgärd.")
+            except ValueError as err:
+                return self.json_message(str(err), 400)
+            await hass.async_add_executor_job(_save, path, data)
+        if larm:
+            namn = next((b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn), "")
+            for tj in _foralder_tjanster(hass, data):
+                await _notis(hass, tj, f"💛 {namn} verkar ha det jobbigt", f"{namn} har svarat ledsen, stressad eller arg de senaste tre gångerna på ”Hur känns skolan?”. Kanske värt en pratstund?", f"/skolan?barn={barn}")
+        return self.json(ut)
+
+
+class KlockaView(HomeAssistantView):
+    """Föräldrar: barnets Awtrix-klocka (MQTT-prefix, på/av, test)."""
+
+    url = "/api/skolan/klocka"
+    name = "api:skolan:klocka"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        if not _ar_foralder(hass, request):
+            raise web.HTTPForbidden
+        body = await request.json()
+        barn = _barn_for(hass, request, body.get("barn"))
+        fil = hass.data[DOMAIN]["base"] / "klockor.json"
+        inst = await hass.async_add_executor_job(_load_fil, fil)
+        k = inst.setdefault(barn, {"prefix": f"{barn}s_klocka", "pa": False})
+        if body.get("op") == "spara":
+            k["prefix"] = re.sub(r"[^A-Za-z0-9_/\-]", "", str(body.get("prefix") or ""))[:60] or k["prefix"]
+            k["pa"] = bool(body.get("pa"))
+            await hass.async_add_executor_job(_save_fil, fil, inst)
+        mqtt = hass.services.has_service("mqtt", "publish")
+        if body.get("op") == "testa" and mqtt:
+            data = await hass.async_add_executor_job(_load, _dir(hass, barn))
+            text, farg = _klocka_text(data)
+            await hass.services.async_call("mqtt", "publish", {"topic": f"{k['prefix']}/notify", "payload": json.dumps({"text": "Läxspelet: " + text, "color": farg, "duration": 10})})
+        return self.json({"klocka": k, "mqtt": mqtt})
+
+
+def _ics_text(s: str) -> str:
+    return str(s).replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")[:200]
+
+
+class PlanKalenderView(HomeAssistantView):
+    """Kalenderprenumeration (.ics) med pluggplan, prov, läxor och byten. Hemlig länk per barn, bara för föräldrar."""
+
+    url = "/api/skolan/plankalender/{nyckel}"
+    name = "api:skolan:plankalender"
+    requires_auth = False
+
+    async def get(self, request: web.Request, nyckel: str) -> web.Response:
+        import hmac
+
+        hass: HomeAssistant = request.app["hass"]
+        nyckel = nyckel.removesuffix(".ics")
+        for b in hass.data[DOMAIN]["conf"]["barn"]:
+            data = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
+            if data.get("kal_nyckel") and hmac.compare_digest(data["kal_nyckel"], nyckel):
+                break
+        else:
+            raise web.HTTPNotFound
+        namn = b["namn"]
+        rader = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Laxspelet//SV", "CALSCALE:GREGORIAN", f"X-WR-CALNAME:Läxspelet – {namn}", "X-PUBLISHED-TTL:PT3H"]
+        stamp = dt_util.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+        def ev(uid: str, dag: str, titel: str, besk: str = "") -> None:
+            d = dag.replace("-", "")
+            nasta = (date.fromisoformat(dag) + timedelta(days=1)).strftime("%Y%m%d")
+            rader.extend(["BEGIN:VEVENT", f"UID:{uid}@laxspelet", f"DTSTAMP:{stamp}", f"DTSTART;VALUE=DATE:{d}", f"DTEND;VALUE=DATE:{nasta}",
+                          f"SUMMARY:{_ics_text(titel)}"] + ([f"DESCRIPTION:{_ics_text(besk)}"] if besk else []) + ["TRANSP:TRANSPARENT", "END:VEVENT"])
+        fran = (dt_util.now().date() - timedelta(days=14)).isoformat()
+        for u in data.get("uppdrag", []):
+            if not u.get("datum") or u["datum"] < fran:
+                continue
+            if u.get("typ") == "prov":
+                ev(f"prov-{u['id']}", u["datum"], f"📝 {namn}: {u['namn']}", u.get("amne_namn") or "")
+                for d_ in (u.get("plan") or {}).get("delar", []):
+                    ev(f"plan-{d_['id']}", d_["dag"], f"{'✅' if d_.get('klar') else '📚'} {namn}: {d_['titel']} ({d_['min']} min)", d_.get("vad") or "")
+            elif not u.get("klart"):
+                ev(f"laxa-{u['id']}", u["datum"], f"📖 {namn}: {u['namn']}", u.get("amne_namn") or "")
+        if boende.aktiv(data):
+            idag = dt_util.now().date()
+            for i in range(0, 90):
+                d_ = idag + timedelta(days=i)
+                if boende.bytesdag(data, d_):
+                    ev(f"byte-{b['id']}-{d_.isoformat()}", d_.isoformat(), f"🔄 {namn} till {boende.hem_for(data, d_)['namn']} kl. {(data.get('boende') or {}).get('bytestid', '')}")
+        rader.append("END:VCALENDAR")
+        return web.Response(body="\r\n".join(rader).encode("utf-8"), headers={"Content-Type": "text/calendar; charset=utf-8", "Cache-Control": "no-store"})
+
+
 class SyskonView(HomeAssistantView):
     """Storasyskon-uppdrag: ett barn skickar ett glosförhör till sitt syskon och får ⭐ när det är gjort."""
 
@@ -6294,4 +6500,4 @@ class KlassView(HomeAssistantView):
 # Det barnets andra hem får använda (barnets egna funktioner och föräldrarnas läxfunktioner för just det barnet).
 HEM_VYER = [StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, UploadView,
             FileView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, UttalView, ExempelView, InspelningView,
-            BoendeView, PackaView]
+            BoendeView, PackaView, ExtraView]
