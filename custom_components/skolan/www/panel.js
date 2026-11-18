@@ -1430,12 +1430,9 @@ class SkolanPanel extends HTMLElement {
         <button id="menu" class="icon" style="display:${this._narrow && !this._last ? "inline-flex" : "none"}" title="Meny">☰</button>
         ${back ? `<button id="back" class="icon" title="Tillbaka">←</button>` : ""}
         <div class="title">${title}</div>
-        ${this._hass?.fristaende ? `<button id="fs-konto" class="fs-konto" title="Byt person eller logga ut">👤 ${esc(this._hass.fristaende.namn || "")}</button>` : ""}
+        <button id="huvudmeny" class="fs-konto" title="Meny">☰ Meny</button>
       </div>
-      ${this._fsMeny && this._hass?.fristaende ? `<div class="fs-meny">
-        <button id="fs-byt">🔄 Byt person</button>
-        ${this._hass.fristaende.admin ? `<button id="fs-inst">⚙️ Inställningar</button>` : ""}
-        <button id="fs-ut">🚪 Logga ut</button></div>` : ""}
+      ${this._meny ? this._menyHtml() : ""}
       <div class="content">
         ${barnVal}
         ${this._msg ? `<div class="msg ${this._msg.type}">${esc(this._msg.text)}</div>` : ""}
@@ -2288,6 +2285,50 @@ class SkolanPanel extends HTMLElement {
     }
     this._busy = false;
     this._render();
+  }
+
+  // Rullgardinsmenyn: allt i appen på ett ställe.
+  _menyHtml() {
+    const s = this._s || {}, d = s.meriter?.djur, f = this._hass?.fristaende, barn = !s.kan_valja;
+    const l = (mal, ikon, text) => `<button data-meny='${esc(JSON.stringify(mal))}'>${ikon} ${text}</button>`;
+    const grupp = (rubrik, rader) => (rader.filter(Boolean).length ? `<div class="meny-grupp">${rubrik}</div>${rader.filter(Boolean).join("")}` : "");
+    return `<div class="meny-bak" id="meny-bak"></div><div class="fs-meny huvud-meny">
+      ${l({ name: "hem" }, "🏠", "Startsidan")}
+      ${grupp("Plugga", [
+        d && l({ name: "hjalp" }, "📚", `Plugga med ${esc(d.namn)}`),
+        l({ name: "svaga" }, "🔁", "Svaga punkter"),
+        barn && l({ name: "fokus" }, "⏱️", "Fokusläge"),
+        l({ name: "lektioner" }, "🗓️", s.kan_valja ? "Schema" : "Mitt schema"),
+        barn && l({ name: "laxa", steg: "amne" }, "📥", "Lägg in läxa"),
+      ])}
+      ${grupp("Skriva", [
+        l({ name: "penna" }, "🖊️", "Pennuppdrag"),
+        l({ name: "skriva" }, "✍️", "Skrivverkstad"),
+        l({ name: "handstil" }, "✏️", "Handstil"),
+      ])}
+      ${grupp("Spelet", d ? [
+        l({ name: "karta" }, "🗺️", "Äventyrskartan"),
+        l({ name: "arena" }, "🏟️", "Arenan"),
+        l({ name: "djurbutik" }, "🛍️", "Husdjursbutiken"),
+        l({ name: "rum" }, "🏠", "Husdjurets rum"),
+        l({ name: "album" }, "🃏", "Samlaralbum"),
+        l({ name: "pass" }, "🎟️", "Läxpasset"),
+        l({ name: "fraga" }, "💬", `Fråga ${esc(d.namn)}`),
+      ] : [])}
+      ${grupp("Hjälp", [l({ name: "info", fran: { name: "hem" } }, "ℹ️", "Så funkar det")])}
+      ${s.kan_valja ? grupp("Föräldrar", [
+        l({ name: "foralder" }, "⚙️", "Föräldrasidan"),
+        l({ name: "rapport" }, "📊", "Veckorapport"),
+        l({ name: "coach" }, "🧠", "Studiecoach"),
+        l({ name: "veckobrev" }, "📸", "Veckobrev"),
+        l({ name: "kalender" }, "📅", "Skolkalendrar"),
+      ]) : ""}
+      ${f ? grupp(`Konto · ${esc(f.namn || "")}`, [
+        s.kan_valja && s.barn ? `<button id="fs-koppla-m">📱 Koppla en telefon till ${esc(s.namn)}</button>` : "",
+        f.admin ? `<button id="fs-inst">⚙️ Inställningar</button>` : "",
+        `<button id="fs-byt">🔄 Byt person</button>`,
+        `<button id="fs-ut">🚪 Logga ut</button>`,
+      ]) : ""}</div>`;
   }
 
   // Föräldrasidan: barnets husdjur med statistik.
@@ -6958,8 +6999,11 @@ class SkolanPanel extends HTMLElement {
     on("#dl-fokus", () => this._go({ name: "fokus" }));
     on("#open-rapport", () => this._go({ name: "rapport" }));
     on("#open-coach", () => this._go({ name: "coach" }));
-    on("#fs-konto", () => { this._fsMeny = !this._fsMeny; this._render(); });
-    on("#fs-byt", () => this._hass.fristaende.byt());
+    on("#huvudmeny", () => { this._meny = !this._meny; this._render(); });
+    on("#meny-bak", () => { this._meny = false; this._render(); });
+    r.querySelectorAll("[data-meny]").forEach((b) => b.addEventListener("click", () => { this._meny = false; this._go(JSON.parse(b.dataset.meny)); }));
+    on("#fs-koppla-m", () => { this._meny = false; this._render(); this._hass.fristaende.kopplaTelefon(this._s.barn, this._s.namn); });
+    on("#fs-byt", () => { if (confirm("Byta person? Du loggas ut på den här enheten.")) this._hass.fristaende.byt(); });
     on("#fs-ut", () => this._hass.fristaende.loggaUt());
     on("#fs-inst", () => this._hass.fristaende.installningar());
     on("#fs-koppla", () => this._hass.fristaende.kopplaTelefon(this._s.barn, this._s.namn));
@@ -8225,7 +8269,9 @@ const CSS = `
   .pd-tankar { border-left:5px solid #7e57c2; }
   .story-bild { width:200px; height:200px; margin:0 auto; }
   .fs-konto { margin-left:auto; background:rgba(255,255,255,.2); color:inherit; border:none; border-radius:16px; padding:6px 12px; font-size:14px; cursor:pointer; white-space:nowrap; }
-  .fs-meny { position:fixed; top:58px; right:10px; z-index:20; display:flex; flex-direction:column; background:var(--card-background-color, #fff); border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,.25); overflow:hidden; }
+  .fs-meny { position:fixed; top:58px; right:10px; z-index:21; display:flex; flex-direction:column; background:var(--card-background-color, #fff); border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,.25); overflow:auto; max-height:calc(100vh - 80px); min-width:230px; }
+  .meny-bak { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.25); }
+  .meny-grupp { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--secondary-text-color, #777); padding:10px 18px 2px; border-top:1px solid var(--divider-color, #eee); }
   .fs-meny button { background:none; border:none; text-align:left; padding:12px 18px; font-size:15px; color:var(--primary-text-color); cursor:pointer; } .fs-meny button:hover { background:rgba(0,0,0,.06); }
   .penna-kort { min-height:0; border-left:6px solid #3949ab; }
   .penna-trappa { display:grid; grid-template-columns:repeat(6, 1fr); gap:4px; margin:4px 0 6px; }
