@@ -2719,7 +2719,7 @@ class SkolanPanel extends HTMLElement {
         barn && l({ name: "fokus" }, "⏱️", "Fokusläge"),
         l({ name: "lektioner" }, "🗓️", s.kan_valja ? "Schema" : "Mitt schema"),
         barn && l({ name: "laxa", steg: "amne" }, "📥", "Lägg in läxa"),
-        barn && (s.syskon || []).length && l({ name: "syskon" }, "🤝", "Förhör ditt syskon"),
+        barn && (s.syskonlista || (Array.isArray(s.syskon) ? s.syskon : [])).length && l({ name: "syskon" }, "🤝", "Förhör ditt syskon"),
         l({ name: "lasflyt" }, "📖", "Läsflyt"),
         barn && l({ name: "matte" }, "🔢", "Mattemonster"),
       ])}
@@ -5282,6 +5282,7 @@ class SkolanPanel extends HTMLElement {
   // Veckans syskonuppdrag: ett gemensamt mål, alla får belöningen.
   _syskonKort() {
     const u = this._s.syskon;
+    if (!u || Array.isArray(u) || !Array.isArray(u.bidrag)) return "";
     if (!u) return "";
     const pct = Math.round((u.nu / u.mal) * 100);
     const del = u.bidrag.map((b) => `<span class="sy-del ${b.id === this._s.barn ? "jag" : ""}">${esc(b.namn)}: <b>${b.varde}</b>${u.satt === "alla" ? `/${u.per}` : ""}</span>`).join("");

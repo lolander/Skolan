@@ -457,8 +457,8 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
 
     async_track_time_change(hass, _auto_backup, hour=3, minute=15, second=0)
 
-    async def _klockor(_now=None) -> None:
-        """Var 10:e minut: visa läxor, packning och husdjuret på barnens Awtrix-klockor (MQTT)."""
+    async def _klockor_laxor(_now=None) -> None:
+        """Var 10:e minut: visa läxor, packning och husdjuret på barnens Awtrix-klockor (MQTT), om föräldern har slagit på det."""
         if not hass.services.has_service("mqtt", "publish"):
             return
         inst = await hass.async_add_executor_job(_load_fil, hass.data[DOMAIN]["base"] / "klockor.json")
@@ -474,7 +474,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
             except Exception as err:  # noqa: BLE001
                 _LOGGER.info("Läxspelet: klockan för %s: %s", b["id"], err)
 
-    async_track_time_change(hass, _klockor, minute=list(range(2, 60, 10)), second=0)
+    async_track_time_change(hass, _klockor_laxor, minute=list(range(2, 60, 10)), second=0)
 
     async def _hungrig_notis(_now=None) -> None:
         """Kl. 16: säg till om husdjuret är hungrigt eller ledset (en gång per dag)."""
@@ -1101,7 +1101,7 @@ class StateView(HomeAssistantView):
                 "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "skriv": skriv.status(data, fraga.alder(data)), "penna": penna.status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "riktlinjer": plugg.riktlinjer(data) if parent else None,
                 "boende": boende.status(data, await _foralder_namn(hass) if parent else {}),
                 "packlista": packa.status(data), "lattlast": bool(data.get("lattlast")), "mående": extra.mående_status(data, parent),
-                "matte": {"rekord": (data.get("matte") or {}).get("rekord", {})}, "lasflyt": (data.get("lasflyt") or [])[-30:], "syskon": [{"id": b["id"], "namn": b["namn"]} for b in conf["barn"] if b["id"] != barn] if not request.get("skolan_bara_barn") else [], "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
+                "matte": {"rekord": (data.get("matte") or {}).get("rekord", {})}, "lasflyt": (data.get("lasflyt") or [])[-30:], "syskonlista": [{"id": b["id"], "namn": b["namn"]} for b in conf["barn"] if b["id"] != barn] if not request.get("skolan_bara_barn") else [], "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
