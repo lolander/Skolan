@@ -914,7 +914,7 @@ class StateView(HomeAssistantView):
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
-                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "skriv": skriv.status(data, fraga.alder(data)), "penna": penna.status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
+                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "skriv": skriv.status(data, fraga.alder(data)), "penna": penna.status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "riktlinjer": plugg.riktlinjer(data) if parent else None, "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
@@ -1197,7 +1197,7 @@ class HjalpView(HomeAssistantView):
             lage=HJALP_LAGE[lage] + (" Bilden är uppgiften barnet behöver hjälp med." if bilder else "")
             + (" Det finns nästan inget material i ämnet: tipsa EN gång (inte varje svar) om att fota boksidorna eller lägga in glosor i ämnet, så kan du hjälpa ännu bättre." if len(material) < 250 and not historik else ""),
             ratt_regel=("ratt = true om barnets SENASTE meddelande var ett rätt svar på din senaste förhörsfråga, false om det var fel, "
-                        "null om det inte var ett svar (t.ex. första gången, eller om barnet bad om en ny fråga)." "Om ratt är false: lägg också till \"fraga\" (din fråga, kort) och \"facit\" (rätt svar, kort) i JSON." if lage in ("forhor", "las") else "ratt ska alltid vara null."))
+                        "null om det inte var ett svar (t.ex. första gången, eller om barnet bad om en ny fråga)." "Om ratt är false: lägg också till \"fraga\" (din fråga, kort) och \"facit\" (rätt svar, kort) i JSON." if lage in ("forhor", "las") else "ratt ska alltid vara null.")) + plugg.larare_block(data, a["id"])
         try:
             if bilder:
                 raw = await _ai_las(hass, bilder, instr, "Läxspelet hjälpläraren")
@@ -1431,8 +1431,8 @@ class SkrivView(HomeAssistantView):
                     return self.json_message("Skriv lite mer först, minst ett par meningar.", 400)
                 forra = str(body.get("forra") or "").strip()[:4000]
                 x = await ai(FRITT_BEDOM_PROMPT.format(alder=alder, uppgift=str(body.get("uppgift") or "fritt skrivande")[:300], text=text,
-                                                       forra=f"FÖRRA VERSIONEN (jämför och säg vad som blivit bättre):\n\"\"\"{forra}\"\"\"\n" if forra else ""),
-                             "Läxspelet skrivfeedback")
+                                                       forra=f"FÖRRA VERSIONEN (jämför och säg vad som blivit bättre):\n\"\"\"{forra}\"\"\"\n" if forra else "")
+                             + plugg.larare_block(data, plugg.amne_svenska(data)), "Läxspelet skrivfeedback")
                 omr = {k: max(0, min(100, int(v))) for k, v in (x.get("omraden") or {}).items() if k in skriv.OMRADEN and str(v).lstrip("-").isdigit()}
                 poang = max(0, min(100, int(x.get("poang") or 0))) if str(x.get("poang") or "0").isdigit() else round(sum(omr.values()) / max(1, len(omr)))
                 tips = [{"tips": str(t.get("tips") or "")[:240], "citat": str(t.get("citat") or "")[:160]} for t in (x.get("tips") or []) if isinstance(t, dict)][:3]
@@ -1716,6 +1716,15 @@ class PlanView(HomeAssistantView):
             if not foralder:
                 raise web.HTTPForbidden
             return {"onskemal": await spara(lambda d: plugg.onskemal_spara(d, body, request["hass_user"].name))}
+        if op in ("riktlinje_ny", "riktlinje_bort"):
+            if not foralder:
+                raise web.HTTPForbidden
+            if op == "riktlinje_bort":
+                await spara(lambda d: plugg.riktlinje_bort(d, str(body.get("id"))))
+                return {}
+            a = next((x for x in data.get("amnen", []) if x["id"] == body.get("amne")), None)
+            return {"riktlinje": await spara(lambda d: plugg.riktlinje_ny(d, a["id"] if a else "", a["namn"] if a else "Alla ämnen",
+                                                                            body.get("text"), "foralder", request["hass_user"].name))}
         if op == "coach":
             if not foralder:
                 raise web.HTTPForbidden
@@ -1725,7 +1734,9 @@ class PlanView(HomeAssistantView):
             hist = [x for x in body.get("historik") or [] if isinstance(x, dict)][-12:]
             samtal = "\n".join(f"{'Föräldern' if x.get('vem') == 'jag' else 'Du'}: {plugg._txt(x.get('text'), 800)}" for x in hist) + f"\nFöräldern: {text}"
             x = await self._ai(hass, COACH_PROMPT.format(namn=namn, alder=alder, profil=plugg.profil_text(plugg.profil(data, ar)), onskemal=plugg.onskemal_text(data),
-                                                         historik=plugg.plan_historik(data), vecka=plugg.vecko_underlag(data, namn), samtal=samtal), "Läxspelet studiecoach")
+                                                         historik=plugg.plan_historik(data), vecka=plugg.vecko_underlag(data, namn), samtal=samtal)
+                                 + plugg.larare_block(data) + ("\nOm föräldern vill något som går emot lärarens riktlinjer: säg det vänligt och föreslå att de pratar med läraren." if plugg.riktlinjer(data) else ""),
+                                 "Läxspelet studiecoach")
             o = x.get("onskemal") if isinstance(x.get("onskemal"), dict) else None
             if o:
                 o = {"strikthet": o.get("strikthet") if o.get("strikthet") in plugg.STRIKTHET else plugg.onskemal(data)["strikthet"], "text": plugg._txt(o.get("text"), 800)}
@@ -1770,7 +1781,7 @@ class PlanView(HomeAssistantView):
                 omraden="; ".join(f"{o['namn']}: {plugg.KAN[o['kan']]}" for o in omraden) or "(inga angivna)",
                 profil=plugg.profil_text(prof), dagar=", ".join(f"{d} ({meriter.VECKODAGAR[date.fromisoformat(d).weekday()]})" for d in dagar),
                 min=prof["min_dag"], andra="; ".join(andra) or "inget", material=await material(u),
-                historik=plugg.plan_historik(data, u["id"]), foralder=plugg.onskemal_text(data)), "Läxspelet pluggplan")
+                historik=plugg.plan_historik(data, u["id"]), foralder=plugg.onskemal_text(data)) + plugg.larare_block(data, u.get("amne")), "Läxspelet pluggplan")
             inst["tips"] = plugg._txt(x.get("tips"), 200)
             inst["tankar"] = plugg._txt(x.get("tankar"), 1200)
 
@@ -1791,7 +1802,7 @@ class PlanView(HomeAssistantView):
             x = await self._ai(hass, OVNINGSPROV_PROMPT.format(
                 namn=namn, alder=alder, prov=u["namn"], typ=plugg.PROVTYPER.get((u.get("plan") or {}).get("inst", {}).get("provtyp"), "skriftligt prov"),
                 omraden="; ".join(f"{o['namn']}: {plugg.KAN[o['kan']]}" for o in omraden) or "(inga angivna)",
-                material=await material(u), antal=6 if (ar or 12) < 11 else 8), "Läxspelet övningsprov")
+                material=await material(u), antal=6 if (ar or 12) < 11 else 8) + plugg.larare_block(data, u.get("amne")), "Läxspelet övningsprov")
             op_ = await spara(lambda d: plugg.ovningsprov_spara(prov(d), x.get("fragor") or [], omraden))
             return {"prov": plugg.ovningsprov_ut(op_, foralder)}
         if op == "ovningsprov_ratta":
@@ -3363,6 +3374,7 @@ def _ut(data: dict, foralder: bool) -> dict:
     data.pop("veckorapport", None)
     if not foralder:
         data.pop("foralder_onskemal", None)
+        data.pop("larar_riktlinjer", None)
     if "meriter" in data:
         data["meriter"] = {k: v for k, v in data["meriter"].items() if k != "nycklar"}
     data.pop("kalender", None)  # gamla länken per barn: aldrig till webbläsaren
@@ -5175,6 +5187,20 @@ class SkolaView(HomeAssistantView):
                 return self.json({"forslag": forslag})
             elif op in ("inkorg_material", "inkorg_prov"):
                 await _inkorg_spara(hass, barn, mapp, op, body)
+            elif op == "inkorg_riktlinje":  # föräldern godkänner en riktlinje från läraren
+                async with hass.data[DOMAIN]["locks"][barn]:
+                    async with _vlock(hass, f"skola:{barn}"):
+                        s = await hass.async_add_executor_job(skola.las, mapp)
+                        b = next((x for x in s["inkorg"] if x["id"] == body.get("id") and x["status"] == "ny" and x.get("typ") == "riktlinje"), None)
+                        if not b:
+                            raise ValueError("Det finns inte längre i inkorgen.")
+                        data = await hass.async_add_executor_job(_load, mapp)
+                        a = next((x for x in data.get("amnen", []) if x["id"] == body.get("amne")), None)
+                        plugg.riktlinje_ny(data, a["id"] if a else "", a["namn"] if a else "Alla ämnen", b["text"], "larare",
+                                           (s.get("larare") or {}).get("namn") or "Läraren")
+                        b["status"] = "sparad"
+                        await hass.async_add_executor_job(_save, mapp, data)
+                        await hass.async_add_executor_job(skola.spara, mapp, s)
             else:
                 async with _vlock(hass, f"skola:{barn}"):
                     s = await hass.async_add_executor_job(skola.las, mapp)
@@ -5272,7 +5298,7 @@ class KlassView(HomeAssistantView):
                     return self.json({"fel": "Föräldern har inte slagit på något för läraren än."}, status_code=403)
                 data = await hass.async_add_executor_job(_load, mapp)
                 try:
-                    svar = skola.ta_emot(s, data, hitta["namn"], body)
+                    svar = skola.ta_emot(s, data, hitta["namn"], body, plugg.studieteknik(data, fraga.alder(data)))
                 except PermissionError as err:
                     return self.json({"fel": str(err)}, status_code=409)
                 except ValueError as err:
@@ -5282,5 +5308,13 @@ class KlassView(HomeAssistantView):
                 for namn, innehall in svar.pop("_filer"):
                     await hass.async_add_executor_job((mapp / "filer" / namn).write_bytes, innehall)
                 await hass.async_add_executor_job(skola.spara, mapp, s)
+                vantar = [x for x in s["inkorg"] if x.get("status") == "ny"]
+        if svar.get("nya_veckobrev"):  # något nytt från läraren väntar på förälderns godkännande
+            typer = {"veckobrev": "veckobrev", "material": "studiematerial", "prov": "provresultat", "schema": "schema", "riktlinje": "riktlinje till AI:n"}
+            vad = ", ".join(sorted({typer.get(x.get("typ", "veckobrev"), "meddelande") for x in vantar[-svar["nya_veckobrev"]:]}))
+            for tjanst in hass.data[DOMAIN]["conf"].get("foralder_notify", {}).values():
+                await _notis(hass, tjanst, f"📬 Nytt från läraren till {hitta['namn']}",
+                             f"{svar['nya_veckobrev']} sak{'er' if svar['nya_veckobrev'] > 1 else ''} väntar på att du godkänner: {vad}. Öppna Läxspelet → Föräldrar → Skolan.",
+                             f"/skolan?barn={hitta['id']}")
         svar["skolan"] = VERSION
         return self.json(svar)

@@ -34,6 +34,8 @@ FUNKTIONER = {
     "grupper": ("👥", "Grupper och gruppuppgifter", "Läraren kan sätta ditt barn i tillfälliga grupper med en uppgift. Barnet ser gruppen och kan bocka av uppgiften."),
     "statistik": ("📈", "Statistik till läraren", "Läraren ser hur ditt barn pluggar: dagar per vecka, förhör, prov och ämnen. Inga stjärnor, husdjur eller jämförelser."),
     "schema": ("🗓️", "Schemat till läraren", "Läraren ser den digitala kopian av schemat som Läxspelet har läst av (lektioner, salar och lärare)."),
+    "studieteknik": ("🧠", "Studieteknik till läraren", "Läraren ser hur ditt barn pluggar: pluggplaner och hur de följs, vad som är svårt, svaga punkter, skrivandet och AI:ns tankar om studietekniken. Inga stjärnor, husdjur eller jämförelser."),
+    "riktlinjer": ("📝", "Riktlinjer från läraren till AI:n", "Läraren kan skicka riktlinjer per ämne (t.ex. metod, begrepp eller hur mycket hjälp) som AI:n följer, så att den hjälper på samma sätt som läraren. De hamnar i din inkorg och du godkänner först."),
     "material": ("📎", "Prov och studiematerial från läraren", "Läraren kan skicka provresultat, studiematerial och klassens schema (PDF eller foto). Det hamnar i din inkorg och du godkänner innan något läggs in."),
 }
 KLASSBOSS_BELONING = 30
@@ -308,7 +310,7 @@ def _resultat(r) -> dict | None:
     return {**ut, "betyg": betyg} if betyg in meriter.PROV_BETYG else None
 
 
-def ta_emot(s: dict, data: dict, barn_namn: str, body: dict) -> dict:
+def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict | None = None) -> dict:
     """Lärarappen synkar. Returnerar svaret till läraren (bara det som är påslaget av båda)."""
     lid = _text(body.get("larar_id"), 40)
     if not lid:
@@ -364,6 +366,10 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict) -> dict:
                 in_korg({**post, "typ": "schema"}, m["fil"])
             elif m.get("fil") is not None:
                 in_korg({**post, "typ": "material"}, m["fil"])
+    if aktiv(s, "riktlinjer"):
+        for m in (body.get("riktlinjer") or [])[:20]:
+            if isinstance(m, dict) and re.fullmatch(r"[A-Za-z0-9_\-]{4,40}", str(m.get("id") or "")) and m["id"] not in kanda and _text(m.get("text"), 600):
+                in_korg({"id": m["id"], "typ": "riktlinje", "titel": "Riktlinje till AI:n", "amne": _text(m.get("amne"), 40), "text": _text(m.get("text"), 600)}, None)
     if aktiv(s, "klasslag") and isinstance(body.get("klass_status"), dict):
         k = body["klass_status"]
         try:
@@ -387,6 +393,7 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict) -> dict:
             "klass": {"vecka": vecka, "poang": meriter._vecko_poang(data).get(vecka, 0)} if aktiv(s, "klasslag") else None,
             "grupp_klara": [g["id"] for g in s["grupper"] if g.get("klar")] if aktiv(s, "grupper") else [],
             "statistik": statistik(data) if aktiv(s, "statistik") else None,
+            "studieteknik": studieteknik if aktiv(s, "studieteknik") else None,
             "schema": [{k: x.get(k) for k in ("dag", "start", "slut", "namn", "sal", "larare", "info", "ej")} for x in data.get("lektioner", [])][:80] if aktiv(s, "schema") else None,
             "mottagna": s["mottagna"][-100:], "_filer": filer}
 

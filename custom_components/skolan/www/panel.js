@@ -2508,6 +2508,13 @@ class SkolanPanel extends HTMLElement {
       return `<li>🗓️ <b>${esc(x.titel)}</b> · schema från läraren${x.text ? `<div class="small muted">${esc(x.text)}</div>` : ""}
         <button class="mini primary" data-ink-schema="${x.id}">👀 Granska och lägg in</button>${fil}${bort}</li>`;
     const amnen = this._s.data?.amnen || [];
+    if (typ === "riktlinje") {
+      const t = amnen.find((a) => x.amne && a.namn.toLowerCase().includes(x.amne.toLowerCase()));
+      return `<li>📝 <b>Riktlinje till AI:n</b>${x.amne ? ` · ${esc(x.amne)}` : ""}<div>”${esc(x.text)}”</div>
+        <div class="small muted">AI:n följer lärarens riktlinjer i hjälpläraren, pluggplaner, övningsprov och skrivfeedback.</div>
+        <div class="small">Gäller <select data-ink-amne="${x.id}"><option value="">Alla ämnen</option>${amnen.map((a) => `<option value="${a.id}" ${t?.id === a.id ? "selected" : ""}>${esc(a.namn)}</option>`).join("")}</select></div>
+        <button class="mini primary" data-ink-riktlinje="${x.id}">✅ Godkänn riktlinjen</button>${bort}</li>`;
+    }
     const traff = amnen.find((a) => x.amne && a.namn.toLowerCase() === x.amne.toLowerCase()) || amnen.find((a) => x.amne && a.namn.toLowerCase().includes(x.amne.toLowerCase()));
     const val = `<select class="ink-amne" data-ink-amne="${x.id}">${x.amne && !traff ? `<option value="ny:${esc(x.amne)}">➕ Nytt ämne: ${esc(x.amne)}</option>` : ""}
       ${amnen.map((a) => `<option value="${a.id}" ${traff?.id === a.id ? "selected" : ""}>${esc(a.namn)}</option>`).join("")}
@@ -3715,7 +3722,7 @@ class SkolanPanel extends HTMLElement {
         <button class="row foralder-knapp" id="open-lektioner" style="margin-top:4px"><span>🗓️ <b>Schema</b><br><span class="muted small">Fota ${esc(s.namn)}s lektionsschema så läser AI:n av lektioner och ämnen</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-kalender" style="margin-top:4px"><span>📅 <b>Skolkalendrar</b><br><span class="muted small">${s.kalender ? `${s.kalender.antal} händelser för ${esc(s.namn)} · ` : ""}Koppla in skolans kalender: länk, Home Assistant, webbsida, fil eller foto</span></span><span>›</span></button>
         ${this._hass?.fristaende ? `<button class="row foralder-knapp" id="fs-koppla" style="margin-top:4px"><span>📱 <b>Koppla en telefon till ${esc(s.namn)}</b><br><span class="muted small">Visa en QR-kod. ${esc(s.namn)} skannar den med sin telefon och är inloggad direkt, utan PIN-kod.</span></span><span>›</span></button>` : ""}
-        <button class="row foralder-knapp" id="open-coach" style="margin-top:4px"><span>🧠 <b>Studiecoach</b><br><span class="muted small">Påverka hur ${esc(s.namn)}s pluggplaner görs (t.ex. hur strikta) och prata med AI:n om studietaktiken</span></span><span>›</span></button>
+        <button class="row foralder-knapp" id="open-coach" style="margin-top:4px"><span>🧠 <b>Studiecoach och lärarens riktlinjer</b><br><span class="muted small">Påverka hur ${esc(s.namn)}s pluggplaner görs, lägg in hur läraren vill ha det och prata med AI:n om studietaktiken</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-rapport" style="margin-top:4px"><span>📊 <b>Veckorapport</b><br><span class="muted small">Vad ${esc(s.namn)} har pluggat, vad som är svårt, AI:ns tankar om studietaktiken och frågor till middagen</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
         <h3 style="margin-top:4px">📅 Läxschema för ${esc(s.namn)}</h3>
@@ -5066,6 +5073,12 @@ class SkolanPanel extends HTMLElement {
         <textarea id="coach-onsk" rows="3" placeholder="T.ex. mer läsning och mindre skärm, max 30 min på vardagar, gärna att vi förhör hemma på söndagar…">${esc(o.text || "")}</textarea>
         <div class="actions" style="margin-top:8px"><button class="primary" id="coach-spara" ${this._busy ? "disabled" : ""}>💾 Spara önskemålen</button></div>
         ${s.onskemal?.uppdaterad ? `<div class="small muted">Senast ändrat ${esc(s.onskemal.uppdaterad.replace("T", " "))}${s.onskemal.av ? ` av ${esc(s.onskemal.av)}` : ""}</div>` : ""}</div>
+      <div class="card hjalp-kort"><b>🏫 Lärarens riktlinjer</b>
+        <div class="small muted" style="margin:4px 0 8px">Skriv det läraren har sagt om hur de vill att ${esc(s.namn)} lär sig, t.ex. ”vi räknar bråk med tallinje” eller ”ge inte svaret på läxan, bara ledtrådar”. AI:n följer riktlinjerna överallt och säger aldrig emot läraren. De går före era egna önskemål när det gäller hur något lärs ut.</div>
+        ${(s.riktlinjer || []).length ? `<ul class="lista">${s.riktlinjer.map((x) => `<li><b>${esc(x.amne_namn)}:</b> ${esc(x.text)} <span class="small muted">${x.kalla === "larare" ? "· från läraren" : `· inlagd av ${esc(x.av || "förälder")}`}</span> <button class="mini" data-rl-bort="${x.id}">✕</button></li>`).join("")}</ul>` : ""}
+        <div class="small">Ämne <select id="rl-amne"><option value="">Alla ämnen</option>${(s.data.amnen || []).map((a) => `<option value="${a.id}">${esc(a.namn)}</option>`).join("")}</select></div>
+        <textarea id="rl-text" rows="2" maxlength="600" placeholder="Vad vill läraren?" style="width:100%;box-sizing:border-box;margin-top:6px"></textarea>
+        <div class="actions" style="margin-top:6px"><button class="primary" id="rl-spara" ${this._busy ? "disabled" : ""}>➕ Lägg till riktlinje</button></div></div>
       <h3>💬 Prata med studiecoachen</h3>
       <div class="lar-chatt">${bubbla({ vem: "ai", text: `Hej! Jag har koll på ${s.namn}s pluggplaner, prov, övningsprov och veckan som gått. Fråga mig om studietaktiken, eller säg hur du vill att planerna ska vara.` }, -1)}
         ${c.historik.map(bubbla).join("")}${c.tanker ? `<div class="lar-rad djur"><div class="lar-ikon">🧠</div><div class="lar-bubbla tanker">🤔 …</div></div>` : ""}</div>
@@ -7102,6 +7115,8 @@ class SkolanPanel extends HTMLElement {
       }));
       on("#coach-skicka", () => { sync(); this._coachSkicka(); });
       r.querySelectorAll("[data-coach-q]").forEach((b) => b.addEventListener("click", () => { sync(); this._coachSkicka(b.dataset.coachQ); }));
+      on("#rl-spara", async () => { sync(); const text = ($("#rl-text")?.value || "").trim(); if (!text) return; if (await this._plan("riktlinje_ny", { amne: $("#rl-amne")?.value || "", text })) { await this._load(this._s.barn); this._msg = { type: "ok", text: "Riktlinjen är sparad. AI:n följer den nu. 🏫" }; this._render(); } });
+      r.querySelectorAll("[data-rl-bort]").forEach((b) => b.addEventListener("click", async () => { if (confirm("Ta bort riktlinjen?") && await this._plan("riktlinje_bort", { id: b.dataset.rlBort })) { await this._load(this._s.barn); this._render(); } }));
       $("#coach-text")?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sync(); this._coachSkicka(); } });
     }
     on("#rap-ny", async () => { const x = await this._plan("rapport", { ny: true }); if (x) { v.r = x; this._render(); } });
@@ -7249,6 +7264,10 @@ class SkolanPanel extends HTMLElement {
       const svar = await this._skolaAct({ op: b.dataset.inkTyp === "prov" ? "inkorg_prov" : "inkorg_material", id: b.dataset.inkSpara,
         ...(v.startsWith("ny:") ? { nytt_amne: v.slice(3) } : { amne: v }) }, b.dataset.inkTyp === "prov" ? "Provresultatet är sparat 📝" : "Materialet ligger nu i ämnet 📎");
       if (svar) await this._load(this._s.barn);
+    }));
+    r.querySelectorAll("[data-ink-riktlinje]").forEach((b) => b.addEventListener("click", async () => {
+      const amne = r.querySelector(`[data-ink-amne="${b.dataset.inkRiktlinje}"]`)?.value || "";
+      if (await this._skolaAct({ op: "inkorg_riktlinje", id: b.dataset.inkRiktlinje, amne }, "Riktlinjen är godkänd. AI:n följer den nu. 📝")) await this._load(this._s.barn);
     }));
     r.querySelectorAll("[data-ink-schema]").forEach((b) => b.addEventListener("click", async () => {
       this._msg = { type: "info", text: "AI:n läser schemat… (tar några sekunder)" };

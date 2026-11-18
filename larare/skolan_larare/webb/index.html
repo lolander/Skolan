@@ -34,7 +34,7 @@ tr.klick{cursor:pointer}tr.klick:hover td{background:var(--bg)}td input{padding:
 <header><img src="/ikon.png" width="32" height="32" alt=""><h1 id="rubrik">Läxspelet Lärare</h1><span id="ver" class="small"></span></header>
 <nav id="nav"></nav><main id="main"></main>
 <script>
-const flikar = [["oversikt", "🏫 Översikt"], ["statistik", "📈 Statistik"], ["veckobrev", "📬 Veckobrev"], ["prov", "📝 Prov"], ["material", "📎 Material"], ["grupper", "👥 Grupper"], ["klasslag", "🐲 Klasslag"], ["rapporter", "📊 Rapporter"], ["historik", "📜 Historik"], ["inst", "⚙️ Inställningar"]];
+const flikar = [["oversikt", "🏫 Översikt"], ["statistik", "📈 Statistik"], ["studieteknik", "🧠 Studieteknik"], ["veckobrev", "📬 Veckobrev"], ["prov", "📝 Prov"], ["material", "📎 Material"], ["grupper", "👥 Grupper"], ["klasslag", "🐲 Klasslag"], ["rapporter", "📊 Rapporter"], ["historik", "📜 Historik"], ["inst", "⚙️ Inställningar"]];
 let valdElev = null, valtProv = null, filer = {};
 const VD = ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"];
 let L = null, flik = location.hash.slice(1) || "oversikt", msg = null;
@@ -53,12 +53,12 @@ function rita() {
   $("#rubrik").textContent = L.klass ? `Läxspelet Lärare · ${L.klass}` : "Läxspelet Lärare";
   $("#nav").innerHTML = flikar.map(([id, t]) => `<button class="${id === flik ? "vald" : ""}" data-f="${id}">${t}</button>`).join("");
   document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { flik = b.dataset.f; location.hash = flik; msg = null; rita(); });
-  $("#main").innerHTML = (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, veckobrev, prov, material, grupper, klasslag, rapporter, historik, inst }[flik] || oversikt)();
+  $("#main").innerHTML = (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, historik, inst }[flik] || oversikt)();
   koppla();
 }
 const av = (k) => L.inst[k] ? "" : `<div class="msg fel">Den här funktionen är avstängd. Slå på den under ⚙️ Inställningar.</div>`;
 function oversikt() {
-  const f = (e) => Object.entries(e.foralder || {}).filter(([, v]) => v).map(([k]) => ({ veckobrev: "📬", rapport: "📊", klasslag: "🏫", mejl: "📧", grupper: "👥", statistik: "📈", material: "📎", schema: "🗓️" })[k]).join(" ");
+  const f = (e) => Object.entries(e.foralder || {}).filter(([, v]) => v).map(([k]) => ({ veckobrev: "📬", rapport: "📊", klasslag: "🏫", mejl: "📧", grupper: "👥", statistik: "📈", material: "📎", schema: "🗓️", studieteknik: "🧠", riktlinjer: "📝" })[k]).join(" ");
   return `<div class="kort flex"><img class="qr" src="/api/qr.svg" alt="QR-kod">
     <div><h2>Eleverna ansluter här</h2><div class="adress">${esc(L.adress)}</div>
     <p class="muted">Eleverna ska vara på samma wifi som datorn. I Läxspelet trycker de <b>🤝 Plugga ihop → 🏫 Anslut till läraren</b> och skriver adressen.
@@ -177,6 +177,30 @@ function prov() {
     return `<tr class="klick" data-prov="${m.id}"><td><b>${esc(m.titel)}</b><div class="small muted">${esc(m.amne)}${m.datum ? ` · ${esc(m.datum)}` : ""}</div></td><td>${n} av ${L.elever.length} resultat</td><td class="small">${m.fatt.length} framme</td>
       <td><button class="m" data-mat-bort="${m.id}">🗑️</button></td></tr>`; }).join("")}</table>` : `<p class="muted">Inga prov än.</p>`}</div>`;
 }
+function studieteknik() {
+  if (!L.inst.studieteknik && !L.inst.riktlinjer) return av("studieteknik");
+  const med = L.elever.filter((e) => e.studieteknik);
+  const elevval = L.elever.map((e) => `<label class="chk"><input type="checkbox" data-rl-till="${e.id}"> ${esc(e.namn)}</label>`).join("");
+  const skickade = L.material.filter((m) => m.typ === "riktlinje");
+  const OMR = { tecken: "Tecken", stor: "Stor bokstav", mellanrum: "Mellanrum", stycken: "Stycken", struktur: "Början/slut", ordval: "Ordval", meningar: "Variation" };
+  const elev = (e) => { const t = e.studieteknik; return `<details class="kort"><summary><b>${esc(e.namn)}</b> <span class="small muted">· ${t.planer.length} pluggplaner · ${t.svaga_punkter.reduce((a, x) => a + x.antal, 0)} svaga punkter</span></summary>
+    <p class="small"><b>Så pluggar eleven (elevens egna svar):</b> ${esc(t.profil)}</p>
+    ${t.ai_tankar ? `<p><b>🧠 AI:ns tankar om studietekniken:</b> ${esc(t.ai_tankar)}</p>` : ""}
+    ${t.svart?.length ? `<p><b>Verkar svårt:</b> ${t.svart.map(esc).join("; ")}</p>` : ""}
+    ${t.svaga_punkter.length ? `<p class="small"><b>Svaga punkter per ämne:</b> ${t.svaga_punkter.map((x) => `${esc(x.amne)} (${x.antal})`).join(", ")}</p>` : ""}
+    ${t.planer.length ? `<p class="small"><b>Pluggplaner:</b></p><ul class="small">${t.planer.map((p) => `<li><b>${esc(p.prov)}</b> (${esc(p.amne || "")}, ${esc(p.datum || "")}): ${esc(p.sammanfattning)}</li>`).join("")}</ul>` : ""}
+    ${Object.keys(t.skrivande || {}).length ? `<p class="small"><b>Skrivande (0–100):</b> ${Object.entries(t.skrivande).map(([k, v]) => `${OMR[k] || k} ${v}`).join(" · ")}</p>` : ""}
+    ${t.riktlinjer?.length ? `<p class="small"><b>Riktlinjer AI:n följer:</b> ${t.riktlinjer.map((x) => `${esc(x.amne)}: ”${esc(x.text)}” ${x.kalla === "larare" ? "(från dig)" : "(från föräldern)"}`).join("; ")}</p>` : ""}</details>`; };
+  return `${L.inst.riktlinjer ? `<div class="kort"><h2>📝 Riktlinjer till AI-hjälpläraren</h2>
+      <p class="small muted">Elevens AI (hjälplärare, pluggplaner, övningsprov och skrivfeedback) följer dina riktlinjer och säger aldrig emot dig. T.ex. ”Vi räknar bråk med tallinje”, ”Använd begreppen från kapitel 3”, ”Ge ledtrådar, inte svar”. Föräldern godkänner först.</p>
+      <div class="grid2"><div><label>Ämne</label><input id="rl-amne" placeholder="t.ex. Matte (tomt = alla ämnen)"></div></div>
+      <label>Riktlinje</label><textarea id="rl-text" rows="3" maxlength="600" placeholder="Vad ska AI:n tänka på?"></textarea>
+      <details><summary class="small">Bara till vissa elever (annars hela klassen)</summary>${elevval || "<p class='muted'>Inga elever än.</p>"}</details>
+      <button class="p" id="rl-ny">📝 Skicka riktlinjen</button>
+      ${skickade.length ? `<table>${skickade.map((m) => `<tr><td><b>${esc(m.amne || "Alla ämnen")}</b>: ${esc(m.text)}<div class="small muted">${esc(m.skapad)}${m.till?.length ? ` · till ${m.till.length} elever` : " · hela klassen"}</div></td><td class="small">${fatt(m.fatt)}</td><td><button class="m" data-mat-bort="${m.id}">🗑️</button></td></tr>`).join("")}</table>` : ""}</div>` : ""}
+    ${L.inst.studieteknik ? `<div class="kort"><h2>🧠 Elevernas studieteknik</h2><p class="small muted">Bara elever vars förälder har slagit på det syns här. Uppdateras när eleverna synkar. Inga poäng eller jämförelser.</p></div>
+      ${med.length ? med.map(elev).join("") : `<p class="muted">Ingen elev delar sin studieteknik än.</p>`}` : ""}`;
+}
 function material() {
   if (!L.inst.material) return av("material");
   const lista = L.material.filter((m) => m.typ === "material" || m.typ === "schema");
@@ -268,6 +292,10 @@ function koppla() {
   document.querySelectorAll("[data-res-spara]").forEach((b) => b.onclick = () => {
     const e = b.dataset.resSpara, po = $(`[data-res-po="${e}"]`), be = $(`[data-res-be="${e}"]`);
     andra({ op: "prov_resultat", id: valtProv, elev: e, poang: po ? po.value : "", betyg: be ? be.value : "", kommentar: $(`[data-res-ko="${e}"]`).value }, "Sparat. Det skickas när eleven synkar.");
+  });
+  on("#rl-ny", async () => {
+    if (await andra({ op: "material_ny", typ: "riktlinje", titel: "Riktlinje", amne: $("#rl-amne").value, text: $("#rl-text").value,
+      till: [...document.querySelectorAll("[data-rl-till]")].filter((x) => x.checked).map((x) => x.dataset.rlTill) }, "Riktlinjen skickas när eleverna synkar. Föräldern godkänner den.")) rita();
   });
   on("#mt-ny", async () => {
     if (await andra({ op: "material_ny", typ: $("#mt-schema").checked ? "schema" : "material", titel: $("#mt-titel").value || ($("#mt-schema").checked ? "Schema" : ""), amne: $("#mt-amne").value, text: $("#mt-text").value, fil: filer.mt,

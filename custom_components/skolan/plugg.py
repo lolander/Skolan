@@ -428,3 +428,69 @@ def vecko_underlag(data: dict, namn: str) -> str:
     if si:
         rader.append("Från skolan: " + "; ".join(f"{x.get('datum') or ''} {x['text']}" for x in si[:8]))
     return "\n".join(rader)
+
+
+# ---------- lärarens riktlinjer (AI:n samarbetar med läraren) ----------
+RIKTLINJE_REGEL = ("LÄRARENS RIKTLINJER (viktigt, gäller allt ovan): följ dem. De går före föräldrarnas önskemål när det gäller hur något lärs ut "
+                   "(metod, begrepp, hur mycket hjälp). Säg aldrig emot läraren eller lärarens metod och lär inte ut ett annat sätt än läraren. "
+                   "Är du osäker på hur läraren vill ha det: säg det och föreslå att barnet frågar läraren.")
+
+
+def riktlinjer(data: dict) -> list[dict]:
+    return data.get("larar_riktlinjer", [])
+
+
+def riktlinje_ny(data: dict, amne_id: str, amne_namn: str, text: str, kalla: str, av: str) -> dict:
+    text = _txt(text, 600)
+    if len(text) < 3:
+        raise ValueError("Skriv vad läraren vill.")
+    lista = data.setdefault("larar_riktlinjer", [])
+    if len(lista) >= 60:
+        raise ValueError("Ta bort några gamla riktlinjer först.")
+    r = {"id": _id(), "amne": amne_id or "", "amne_namn": _txt(amne_namn, 40) or "Alla ämnen", "text": text,
+         "kalla": "larare" if kalla == "larare" else "foralder", "av": _txt(av, 60), "tid": dt_util.now().isoformat(timespec="minutes")}
+    lista.append(r)
+    return r
+
+
+def riktlinje_bort(data: dict, rid: str) -> None:
+    data["larar_riktlinjer"] = [x for x in riktlinjer(data) if x["id"] != rid]
+
+
+def larare_block(data: dict, amne_id: str | None = None) -> str:
+    """Text att lägga sist i en AI-prompt. Tom om det inte finns några riktlinjer för ämnet."""
+    rader = [x for x in riktlinjer(data) if not x["amne"] or amne_id is None or x["amne"] == amne_id]
+    if not rader:
+        return ""
+    return "\n\n" + RIKTLINJE_REGEL + "\n" + "\n".join(
+        f"- {x['amne_namn']}: {x['text']}" + (" (direkt från läraren)" if x["kalla"] == "larare" else " (enligt föräldern)") for x in rader[-20:])
+
+
+def amne_svenska(data: dict) -> str:
+    """Ämnet för skrivande (svenska), annars ett id som bara matchar riktlinjer för alla ämnen."""
+    a = next((x for x in data.get("amnen", []) if "svensk" in x["namn"].lower()), None)
+    return a["id"] if a else "-"
+
+
+def studieteknik(data: dict, alder: int | None) -> dict:
+    """Det läraren får se om studietekniken (om föräldern slagit på det). Inga stjärnor, husdjur eller jämförelser."""
+    planer = []
+    tankar = ""
+    for u in sorted(data.get("uppdrag", []), key=lambda x: x.get("datum") or ""):
+        if u.get("typ") == "prov" and u.get("plan"):
+            planer.append({"prov": u["namn"], "amne": u.get("amne_namn"), "datum": u.get("datum"), "sammanfattning": plan_summering(u, u["plan"])})
+            tankar = (u["plan"].get("inst") or {}).get("tankar") or tankar
+    svaga = {}
+    for x in data.get("svaga", []):
+        if not x.get("klar"):
+            svaga[x["amne"]] = svaga.get(x["amne"], 0) + 1
+    namn = {a["id"]: a["namn"] for a in data.get("amnen", [])}
+    rap = (data.get("veckorapport") or {}).get("rapport") or {}
+    skriv_omr = {}
+    for x in (data.get("skriv") or {}).get("historik", [])[-40:]:
+        for k, v in (x.get("omraden") or {}).items():
+            skriv_omr.setdefault(k, []).append(v)
+    return {"profil": profil_text(profil(data, alder)), "planer": planer[-6:], "ai_tankar": tankar or rap.get("studietaktik", ""),
+            "svart": rap.get("svart", []), "svaga_punkter": [{"amne": namn.get(k, "?"), "antal": v} for k, v in sorted(svaga.items(), key=lambda kv: -kv[1])][:6],
+            "skrivande": {k: round(sum(v) / len(v)) for k, v in skriv_omr.items()},
+            "riktlinjer": [{"amne": x["amne_namn"], "text": x["text"], "kalla": x["kalla"]} for x in riktlinjer(data)]}

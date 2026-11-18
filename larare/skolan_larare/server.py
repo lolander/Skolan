@@ -39,6 +39,8 @@ FUNKTIONER = {
     "statistik": "📈 Se statistik om hur eleverna pluggar",
     "material": "📎 Skicka provresultat, studiematerial och schema (PDF/foto)",
     "schema": "🗓️ Se elevernas digitala scheman",
+    "studieteknik": "🧠 Se elevernas studieteknik (pluggplaner, vad som är svårt, AI:ns tankar)",
+    "riktlinjer": "📝 Skicka riktlinjer till elevernas AI-hjälplärare",
 }
 FIL_TYPER = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_FIL = 8 * 1024 * 1024  # samma gräns som i elevens Läxspelet
@@ -193,7 +195,8 @@ class Klass:
             elever.append({"id": e["id"], "namn": e.get("namn") or "?", "senast": e.get("senast", ""), "fel": e.get("fel", ""),
                            "foralder": e.get("foralder") or {}, "rapport": e.get("rapport") if self.d["inst"].get("rapport") else None,
                            "statistik": e.get("statistik") if self.d["inst"].get("statistik") else None,
-                           "veckobrev_nya": e.get("veckobrev_nya", 0), "har_schema": bool(e.get("schema")) and bool(self.d["inst"].get("schema"))})
+                           "veckobrev_nya": e.get("veckobrev_nya", 0), "har_schema": bool(e.get("schema")) and bool(self.d["inst"].get("schema")),
+                           "studieteknik": e.get("studieteknik") if self.d["inst"].get("studieteknik") else None})
         mott = {e["id"]: set(e.get("mottagna") or []) for e in self.d["elever"]}
         material = []
         for m in self.d["material"][::-1]:
@@ -248,12 +251,17 @@ class Klass:
                     p = med_fil(m, m.get("_fil"), "material")
                     if p:
                         material.append(p)
+        riktlinjer = []
+        if self.d["inst"].get("riktlinjer") and (e.get("foralder") or {}).get("riktlinjer", True):
+            for m in self.d["material"]:
+                if m["typ"] == "riktlinje" and m["id"] not in har and (not m.get("till") or e["id"] in m["till"]):
+                    riktlinjer.append({"id": m["id"], "amne": m.get("amne", ""), "text": m.get("text", "")})
         body = {"v": 1, "larar_id": self.d["larar_id"], "klass": self.d["klass"], "larare": self.d["larare"], "url": self.url,
-                "inst": self.d["inst"], "veckobrev": brev, "material": material,
+                "inst": self.d["inst"], "veckobrev": brev, "material": material, "riktlinjer": riktlinjer[-20:],
                 "klass_status": self.boss() if self.d["inst"].get("klasslag") else None, "grupper": grupper}
         try:
             async with session.post(lank, json=body, timeout=ClientTimeout(total=120), allow_redirects=False) as r:
-                svar = json.loads(await r.content.read(65536) or b"{}")
+                svar = json.loads(await r.content.read(524288) or b"{}")
                 if r.status == 404:
                     raise ValueError("Läxspelet hos eleven svarar inte på klasslänken (är skolfunktionerna på där?).")
                 if r.status != 200:
@@ -280,6 +288,7 @@ class Klass:
         e["rapport"] = {"fran": str(r.get("fran", ""))[:10], "till": str(r.get("till", ""))[:10],
                         "rader": [str(x)[:200] for x in (r.get("rader") or [])][:20]} if isinstance(r, dict) else None
         e["statistik"] = svar["statistik"] if isinstance(svar.get("statistik"), dict) else None
+        e["studieteknik"] = svar["studieteknik"] if isinstance(svar.get("studieteknik"), dict) else None
         sc = svar.get("schema")
         e["schema"] = [{k: str(x.get(k) or "")[:80] for k in ("start", "slut", "namn", "sal", "larare", "info")} | {"dag": int(x.get("dag") or 0), "ej": bool(x.get("ej"))}
                        for x in sc[:80] if isinstance(x, dict)] if isinstance(sc, list) else None
@@ -407,22 +416,24 @@ def bygg_app(klass: Klass) -> web.Application:
                     ta_bort_fil(b.get("fil"))
                 d["veckobrev"] = [b for b in d["veckobrev"] if b["id"] != body.get("id")]
             elif op == "material_ny":
-                typ = body.get("typ") if body.get("typ") in ("prov", "schema") else "material"
-                fil = fil_info(body.get("fil"))
-                titel = str(body.get("titel") or "").strip()[:80]
+                typ = body.get("typ") if body.get("typ") in ("prov", "schema", "riktlinje") else "material"
+                fil = fil_info(body.get("fil")) if typ != "riktlinje" else None
+                titel = str(body.get("titel") or ("Riktlinje" if typ == "riktlinje" else "")).strip()[:80]
+                if typ == "riktlinje" and len(str(body.get("text") or "").strip()) < 3:
+                    raise ValueError("Skriv riktlinjen.")
                 if not titel:
                     raise ValueError("Skriv en rubrik.")
                 if typ in ("material", "schema") and not fil:
                     raise ValueError("Välj en PDF eller ett foto.")
                 mx = body.get("max")
                 m = {"id": secrets.token_urlsafe(8), "typ": typ, "titel": titel, "amne": str(body.get("amne") or "").strip()[:40],
-                     "text": str(body.get("text") or "").strip()[:1000], "datum": str(body.get("datum") or "")[:10],
+                     "text": str(body.get("text") or "").strip()[:600 if typ == "riktlinje" else 1000], "datum": str(body.get("datum") or "")[:10],
                      "max": float(mx) if mx not in (None, "") and 0 < float(mx) <= 10000 else None, "fil": fil,
                      "till": [x for x in (body.get("till") or []) if any(e["id"] == x for e in d["elever"])], "resultat": {},
                      "skapad": time.strftime("%Y-%m-%d %H:%M")}
                 d["material"].append(m)
                 d["material"] = d["material"][-200:]
-                klass.logga("prov" if typ == "prov" else "material", f"{({'prov': 'Prov', 'schema': 'Schema'}).get(typ, 'Studiematerial')}: {titel}" + (f" ({m['amne']})" if m["amne"] else ""))
+                klass.logga("prov" if typ == "prov" else "material", f"{({'prov': 'Prov', 'schema': 'Schema', 'riktlinje': 'Riktlinje till AI:n'}).get(typ, 'Studiematerial')}: {titel}" + (f" ({m['amne']})" if m["amne"] else ""))
             elif op == "material_bort":
                 m = next(x for x in d["material"] if x["id"] == body.get("id"))
                 ta_bort_fil(m.get("fil"))
