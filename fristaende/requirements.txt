@@ -5,3 +5,5 @@ pywebpush>=2.0
 pystray>=0.19
 Pillow>=10
 tzdata
+truststore>=0.9
+certifi

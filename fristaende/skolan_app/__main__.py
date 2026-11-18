@@ -6,11 +6,33 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 import threading
 import webbrowser
 
-from skolan_app import server
+
+def _certifikat() -> None:
+    """https ska fungera i den packade Windowsappen: använd Windows egna certifikat (även antivirus/företagsproxy),
+    och certifis lista som reserv. Annars blir det CERTIFICATE_VERIFY_FAILED mot GitHub och AI-tjänsterna."""
+    try:
+        import truststore
+
+        truststore.inject_into_ssl()
+        return
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import certifi
+
+        os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+    except Exception:  # noqa: BLE001
+        pass
+
+
+_certifikat()
+
+from skolan_app import server  # noqa: E402
 
 
 def _oppna(port: int, vag: str = "/skolan") -> None:

@@ -22,7 +22,7 @@ a = Analysis(
     datas=mapp(ROT / "ha_shim", "ha_shim") + mapp(INTEGRATION / "skolan", "custom_components/skolan")
     + mapp(ROT / "skolan_app" / "webb", "skolan_app/webb"),
     hiddenimports=collect_submodules("voluptuous") + collect_submodules("aiohttp") + collect_submodules("pystray")
-    + ["pywebpush", "py_vapid", "http_ece", "qrcode.image.svg", "tzdata", "PIL.ImageOps"],
+    + ["pywebpush", "py_vapid", "http_ece", "qrcode.image.svg", "tzdata", "PIL.ImageOps", "truststore", "certifi"],
     excludes=["tkinter"],
 )
 pyz = PYZ(a.pure)
