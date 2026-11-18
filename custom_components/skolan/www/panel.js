@@ -779,7 +779,7 @@ const idagISO = () => {
 const TYP_IKON = { prov: "📝", las: "📖", hogl: "🗣️", skriv: "✍️" };
 const TYP_NAMN = { prov: "Prov", las: "Läsläxa", hogl: "Högläsning", skriv: "Läxboken" };
 const FJARR_VYER = new Set(["state", "action", "glosstrid", "lar", "fraga", "hjalp", "plan", "handstil", "skriv", "penna", "upload", "fil", "ebok", "utskrift",
-  "forhor", "uppdrag", "veckobrev", "lektionsschema", "schema_sida", "uttal", "exempel", "inspelning", "boende"]);
+  "forhor", "uppdrag", "veckobrev", "lektionsschema", "schema_sida", "uttal", "exempel", "inspelning", "boende", "packa"]);
 const PLAN_IKON = { las: "📖", forhor: "📝", ovningsprov: "🧪", repetera: "🔁", uppgifter: "✏️", glosor: "🗣️", sammanfatta: "🗒️", forklara: "🙋" };
 const VECKODAG = ["måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag"];
 const veckodag = (iso) => VECKODAG[(new Date(`${iso}T12:00:00`).getDay() + 6) % 7];
@@ -1258,6 +1258,10 @@ class SkolanPanel extends HTMLElement {
       title = `💬 Fråga ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "hem" };
       body = this._fragaView();
+    } else if (v.name === "syskon") {
+      title = "🤝 Förhör ditt syskon";
+      back = { name: "hem" };
+      body = this._syskonView();
     } else if (v.name === "boende") {
       title = "🔄 Växelvis boende";
       back = { name: "foralder" };
@@ -2024,6 +2028,47 @@ class SkolanPanel extends HTMLElement {
       ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
   }
 
+  // ---------- omgång 1: provanalys, packlista, syskonförhör ----------
+  _provAnalysHtml(u) {
+    const a = u.provanalys;
+    const knapp = `<label class="${a ? "ghost" : "primary"} upload">📸 ${a ? "Fota provet igen" : "Fota det rättade provet"}<input type="file" id="pa-foto" data-pa="${u.id}" accept="image/*" multiple hidden></label>`;
+    if (!a) return `<div class="card hjalp-kort"><b>📸 Lär dig av provet</b><p class="small muted">Har du fått tillbaka provet? Fota alla sidor. AI:n läser lärarens rättning, och det du missade blir 🔁 svaga punkter så att du kan öva på dem. Nästa pluggplan lägger mer tid på det som var svårt.${this._s.kan_valja ? "" : " +5 ⭐"}</p>${knapp}${this._busy && this._view.pa ? `<p class="small muted">AI:n läser provet…</p>` : ""}</div>`;
+    const farg = (o) => { const n = o.ratt + o.fel; const p = n ? o.ratt / n : 0; return p >= 0.8 ? "#43a047" : p >= 0.5 ? "#fb8c00" : "#e53935"; };
+    return `<div class="card hjalp-kort"><b>📸 Provanalys</b> <span class="small muted">· ${esc(a.tid.slice(0, 10))}${a.poang != null && a.max ? ` · ${a.poang} av ${a.max} p` : a.betyg ? ` · betyg ${esc(a.betyg)}` : ""}</span>
+      ${a.sammanfattning ? `<p>${esc(a.sammanfattning)}</p>` : ""}
+      ${a.omraden.length ? `<div class="sk-omr">${a.omraden.map((o) => `<div class="sk-omr-rad"><span>${esc(o.namn)}</span><div class="sk-mat"><div style="width:${o.ratt + o.fel ? Math.round((o.ratt / (o.ratt + o.fel)) * 100) : 0}%;background:${farg(o)}"></div></div><b>${o.ratt}/${o.ratt + o.fel}</b></div>`).join("")}</div>` : ""}
+      ${a.bra?.length ? `<div class="small">👍 ${a.bra.map(esc).join(" ")}</div>` : ""}
+      ${a.ova?.length ? `<div class="small">🎯 Öva på: ${a.ova.map(esc).join("; ")}</div>` : ""}
+      ${a.fel?.length ? `<details class="small"><summary>${a.fel.length} frågor att öva på (finns i 🔁 Svaga punkter)</summary><ul class="lista">${a.fel.map((f) => `<li>${esc(f.fraga)} → <b>${esc(f.ratt_svar)}</b></li>`).join("")}</ul></details>` : ""}
+      <div class="actions">${knapp}</div></div>`;
+  }
+
+  _packaKort() {
+    const p = this._s.packlista;
+    if (!p?.rader?.length) return "";
+    const klara = p.bockat.length, alla = p.rader.length;
+    const dag = p.dag === idagISO() ? "idag" : `${veckodag(p.dag)}`;
+    return `<div class="card packa-kort"><div class="djur-rubrik">🎒 Packa till ${esc(dag)} <span class="small">${klara}/${alla}${klara === alla ? " ✅" : ""}</span></div>
+      ${p.rader.map((r) => `<label class="packa-rad ${p.bockat.includes(r.id) ? "klar" : ""}"><input type="checkbox" data-packa="${r.id}" ${p.bockat.includes(r.id) ? "checked" : ""}> <span>${esc(r.text)} <span class="small muted">· ${esc(r.varfor)}</span></span></label>`).join("")}
+      ${!this._s.kan_valja && klara < alla ? `<div class="small muted">Allt packat = +2 ⭐</div>` : ""}</div>`;
+  }
+
+  _syskonView() {
+    const v = this._view;
+    if (!v.d && !v.hamtar) {
+      v.hamtar = true;
+      this._f(`/api/skolan/syskon?barn=${encodeURIComponent(this._s.barn)}`).then((r) => r.json()).then((d) => { v.d = d; v.hamtar = false; this._render(); }).catch(() => { v.hamtar = false; });
+    }
+    if (!v.d) return `<p class="muted">Hämtar…</p>`;
+    if (!v.d.syskon.length) return `<p class="muted">Du har inga syskon i Läxspelet.</p>`;
+    const sy = v.d.syskon.find((x) => x.id === v.sy) || v.d.syskon[0];
+    v.sy = sy.id;
+    return `<p class="small">Hjälp ${esc(sy.namn)} att plugga! Välj en glosläxa så får ${esc(sy.namn)} ett förhör. När ${esc(sy.namn)} har gjort det får du <b>+5 ⭐</b> (+3 till om det blev godkänt).</p>
+      ${v.d.syskon.length > 1 ? `<div class="fraga-forslag">${v.d.syskon.map((x) => `<button class="mini ${x.id === sy.id ? "primary" : ""}" data-sy="${x.id}">${esc(x.namn)}</button>`).join("")}</div>` : ""}
+      ${sy.listor.length ? `<div class="list">${sy.listor.slice().reverse().map((l) => `<button class="row" data-sy-lista="${l.amne}|${l.id}"><span>📝 <b>${esc(l.namn)}</b><br><span class="small muted">${esc(l.amne_namn)} · ${l.antal} ord</span></span><span>📤</span></button>`).join("")}</div>` : `<p class="muted">${esc(sy.namn)} har inga glosor än.</p>`}
+      ${sy.skickade.length ? `<h3>Dina förhör till ${esc(sy.namn)}</h3><ul class="lista">${sy.skickade.map((f) => `<li>${esc(f.namn)} · ${f.status === "klart" ? `✅ ${f.ratt} av ${f.av} rätt` : f.status === "pagar" ? "✏️ håller på" : "⏳ inte gjort än"}</li>`).join("")}</ul>` : ""}`;
+  }
+
   // ---------- växelvis boende ----------
   async _boende(op, args = {}) {
     try {
@@ -2532,6 +2577,7 @@ class SkolanPanel extends HTMLElement {
         barn && l({ name: "fokus" }, "⏱️", "Fokusläge"),
         l({ name: "lektioner" }, "🗓️", s.kan_valja ? "Schema" : "Mitt schema"),
         barn && l({ name: "laxa", steg: "amne" }, "📥", "Lägg in läxa"),
+        barn && (s.syskon || []).length && l({ name: "syskon" }, "🤝", "Förhör ditt syskon"),
       ])}
       ${grupp("Skriva", [
         l({ name: "penna" }, "🖊️", "Pennuppdrag"),
@@ -4288,6 +4334,7 @@ class SkolanPanel extends HTMLElement {
       ${u.typ === "prov" && u.datum > idagISO() ? `<div class="actions"><button class="primary" data-plan="${u.id}">📅 ${u.plan?.delar?.length ? `Pluggplan (${u.plan.delar.filter((x) => x.klar).length}/${u.plan.delar.length})` : "Gör en pluggplan"}</button><button class="ghost" data-ovp="${u.id}">🧪 Övningsprov</button>${s.meriter?.djur ? `<button class="ghost" data-hjalp-prov="${u.id}">📚 Plugga med ${esc(s.meriter.djur.namn)}</button>` : ""}</div>` : ""}
       ${(u.typ === "las" || u.typ === "hogl") && s.meriter?.djur && u.sidor?.length ? `<button class="row" data-hjalp-las="${u.amne}|${u.id}"><span>🧠 <b>Prata om boken med ${esc(s.meriter.djur.namn)}</b><br><span class="muted small">Husdjuret ställer frågor om det du har läst. Rätt svar räknas mot ⭐</span></span><span>›</span></button>` : ""}
       ${u.typ === "prov" ? this._provResultat(u) : ""}
+      ${u.typ === "prov" && u.datum <= idagISO() ? this._provAnalysHtml(u) : ""}
       ${s.kan_valja && !u.klart ? `<button class="row foralder-knapp" id="u-manuell"><span>✅ <b>Gjord i boken</b><br><span class="muted small">Registrera att ${esc(s.namn)} har gjort den utanför appen, så blir meriterna rätt</span></span><span>›</span></button>` : ""}
       ${u.manuell ? `<p class="muted small">Registrerad som gjord i boken.</p>` : ""}
       ${s.kan_valja && u.typ === "prov" && !u.klart ? this._dagValjare("📚 Pluggat inför provet utanför appen", u.studiedagar || [], (d) => d < u.datum, "data-man-plugg") : ""}
@@ -5671,6 +5718,7 @@ class SkolanPanel extends HTMLElement {
       ${this._materialKort()}
       ${this._hejaropKort()}
       ${this._boendeKort()}
+      ${this._packaKort()}
       ${this._dagensListaKort()}
       ${this._pennaKort()}
       ${this._dagensKort()}
@@ -7254,6 +7302,38 @@ class SkolanPanel extends HTMLElement {
     on("#open-backup", () => this._go({ name: "backup" }));
     on("#open-hem2", () => this._go({ name: "hem2" }));
     on("#open-boende", () => this._go({ name: "boende" }));
+    $("#pa-foto")?.addEventListener("change", async (e) => {
+      const filer = [...(e.target.files || [])];
+      if (!filer.length) return;
+      v.pa = true;
+      const x = await this._plan("provanalys", { uppdrag: e.target.dataset.pa }, filer);
+      v.pa = false;
+      if (x) { if (x.p) this._fx({ text: "📸 BRA JOBBAT!", sub: `+${x.p} ⭐ · ${x.analys.fel.length} frågor blev svaga punkter`, emojis: ["📸", "🧠", "⭐"], antal: 20, farg: "#5c6bc0" }); await this._load(this._s.barn); this._render(); }
+    });
+    r.querySelectorAll("[data-packa]").forEach((b) => b.addEventListener("change", async () => {
+      try {
+        const res = await this._f("/api/skolan/packa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, op: "bocka", dag: this._s.packlista.dag, id: b.dataset.packa, pa: b.checked }) });
+        const x = await res.json();
+        if (res.ok) { this._s.packlista = x.packlista; if (x.p) { this._fx({ text: "🎒 VÄSKAN ÄR PACKAD!", sub: `+${x.p} ⭐`, emojis: ["🎒", "✅"], antal: 14, farg: "#26a69a" }); this._load(this._s.barn); } }
+      } catch (e) { /* ok */ }
+      this._render();
+    }));
+    if (v.name === "syskon") {
+      r.querySelectorAll("[data-sy]").forEach((b) => b.addEventListener("click", () => { v.sy = b.dataset.sy; this._render(); }));
+      r.querySelectorAll("[data-sy-lista]").forEach((b) => b.addEventListener("click", async () => {
+        const [amne, glosor] = b.dataset.syLista.split("|");
+        const sy = v.d.syskon.find((x) => x.id === v.sy);
+        if (!confirm(`Skicka ett förhör på ${sy.listor.find((l) => l.id === glosor)?.namn} till ${sy.namn}?`)) return;
+        try {
+          const res = await this._f("/api/skolan/syskon", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, syskon: v.sy, amne, glosor }) });
+          const x = await res.json();
+          if (!res.ok) throw new Error(x.message || res.statusText);
+          this._msg = { type: "ok", text: `📤 Skickat till ${sy.namn}! Du får ⭐ när förhöret är gjort.` };
+          v.d = null;
+        } catch (e) { this._msg = { type: "error", text: e.message || String(e) }; }
+        this._render();
+      }));
+    }
     $("#boende-det")?.addEventListener("toggle", (e) => { this._boendeOppen = e.target.open; });
     r.querySelectorAll("[data-sak-hem]").forEach((b) => b.addEventListener("click", () => { const [id, hem] = b.dataset.sakHem.split("|"); this._boende("sak_flytta", { id, hem }); }));
     r.querySelectorAll("[data-sak-bort]").forEach((b) => b.addEventListener("click", () => { if (confirm("Ta bort saken från listan?")) this._boende("sak_bort", { id: b.dataset.sakBort }); }));
@@ -8627,6 +8707,9 @@ const CSS = `
   .boende-kort { min-height:0; border-left:6px solid #26a69a; cursor:default; }
   .sak-rad { display:flex; justify-content:space-between; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--divider-color); font-size:14px; }
   .sak-hem { display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; }
+  .packa-kort { min-height:0; border-left:6px solid #ff9800; cursor:default; }
+  .packa-rad { display:flex; gap:8px; align-items:flex-start; padding:5px 0; font-size:15px; cursor:pointer; }
+  .packa-rad.klar span { opacity:.55; text-decoration:line-through; }
   .bk-in { width:100%; box-sizing:border-box; font:inherit; padding:9px 10px; border-radius:10px; border:1px solid var(--divider-color); background:var(--card-background-color); color:var(--primary-text-color); margin-top:8px; }
   .penna-kort { min-height:0; border-left:6px solid #3949ab; }
   .penna-trappa { display:grid; grid-template-columns:repeat(6, 1fr); gap:4px; margin:4px 0 6px; }

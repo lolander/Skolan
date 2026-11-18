@@ -187,7 +187,7 @@ def plan_historik(data: dict, utom: str | None = None) -> str:
     """Tidigare pluggplaner och hur det gick på proven, så att AI:n kan förbättra nästa plan."""
     rader = []
     for u in sorted(data.get("uppdrag", []), key=lambda x: x.get("datum") or ""):
-        if u.get("typ") != "prov" or (not u.get("plan") and not u.get("plan_historik")):
+        if u.get("typ") != "prov" or (not u.get("plan") and not u.get("plan_historik") and not u.get("provanalys")):
             continue
         rad = [f"{u['namn']} ({u.get('amne_namn')}, prov {u.get('datum')})" + (" [nuvarande prov]" if u["id"] == utom else "") + ":"]
         rad += [f"  tidigare version: {h}" for h in u.get("plan_historik", [])]
@@ -197,6 +197,11 @@ def plan_historik(data: dict, utom: str | None = None) -> str:
         if isinstance(res, dict):
             andel = meriter.prov_andel(res)
             rad.append(f"  Provresultat: {res.get('betyg') or (f'{res.get('poang')}/{res.get('max')}')}" + (f" ({round(andel * 100)} %)" if andel is not None else ""))
+        an = u.get("provanalys")
+        if an:
+            svart = [f"{o['namn']} ({o['fel']} fel)" for o in an.get("omraden", []) if o.get("fel")]
+            rad.append("  Provanalys från foto: " + (f"{an.get('poang'):g}/{an.get('max'):g}. " if an.get("poang") is not None and an.get("max") else "")
+                       + ("Fel inom: " + ", ".join(svart) + "." if svart else "Inga tydliga fel.") + (f" Öva: {'; '.join(an.get('ova', []))}" if an.get("ova") else ""))
         if len(rad) > 1:
             rader.append("\n".join(rad))
     return "\n".join(rader[-8:]) or "Inga tidigare planer."
