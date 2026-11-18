@@ -2429,6 +2429,42 @@ def lar_djuret(data: dict, g: dict, term: str, betyg: int) -> int:
     return 0
 
 
+# ---------- hjälpläraren: plugga med husdjuret ----------
+P_HJALP = 8  # ⭐ per pass
+HJALP_RATT = 5  # så många rätt i förhöret = ett pass
+HJALP_MAX_DAG = 2  # pass per dag som ger ⭐
+
+
+def hjalp_status(data: dict) -> dict:
+    h = _m(data).get("hjalp") or {}
+    if h.get("dag") != dt_util.now().date().isoformat():
+        h = {}
+    return {"ratt": h.get("ratt", 0), "pass": h.get("pass", 0), "per_pass": HJALP_RATT, "max": HJALP_MAX_DAG, "p": P_HJALP}
+
+
+def hjalp_ratt(data: dict, u: dict | None = None) -> dict:
+    """Ett rätt svar i husdjurets förhör. Var 5:e rätt = ett pass: ⭐, svitdag och pluggdag för provet."""
+    m = _m(data)
+    idag = dt_util.now().date().isoformat()
+    h = m.get("hjalp") or {}
+    if h.get("dag") != idag:
+        h = {"dag": idag, "ratt": 0, "pass": 0}
+    h["ratt"] += 1
+    p, studiedag = 0, False
+    if h["ratt"] % HJALP_RATT == 0 and h["pass"] < HJALP_MAX_DAG:
+        h["pass"] += 1
+        aktiv(data, idag)
+        _rakna(data, "hjalp_pass")
+        if ge(data, P_HJALP, "📚 Pluggade med husdjuret", f"hjalp:{idag}:{h['pass']}", "📚"):
+            p = P_HJALP
+        if u and u.get("typ") == "prov":
+            fore = len(u.get("studiedagar", []))
+            prov_studiedag(data, u)
+            studiedag = len(u.get("studiedagar", [])) > fore
+    m["hjalp"] = h
+    return {**hjalp_status(data), "pass_klart": h["ratt"] % HJALP_RATT == 0, "p_ny": p, "studiedag": studiedag}
+
+
 # ---------- glosstrid: rätt svar på glosor blir attacker mot kartans monster ----------
 GS_SKADA = 1  # grundskada per rätt svar (× husdjurets kraft, × 2 vid kombo)
 GS_KOMBO = 5  # så många rätt i rad ger dubbel skada

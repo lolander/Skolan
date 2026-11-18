@@ -1152,6 +1152,10 @@ class SkolanPanel extends HTMLElement {
       title = `💬 Fråga ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "hem" };
       body = this._fragaView();
+    } else if (v.name === "hjalp") {
+      title = `📚 Plugga med ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
+      back = { name: "hem" };
+      body = this._hjalpView();
     } else if (v.name === "lar") {
       title = `🎓 Lär ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "glosor", amne: v.amne, glosor: v.glosor };
@@ -1662,7 +1666,7 @@ class SkolanPanel extends HTMLElement {
         <div class="small">${agg ? `Ägget kläcks om ${kvar} ⭐. Gör läxor för att värma det!` : DJUR_HUMOR[d.humor](esc(d.namn))}</div>
         ${d.nasta ? `<div class="progress"><div style="width:${Math.min(100, Math.round((d.intjanat / d.nasta) * 100))}%"></div></div>
         <div class="small muted">${kvar} ⭐ kvar tills ${esc(d.namn)} växer</div>` : `<div class="small">👑 ${esc(d.namn)} är en legend!</div>`}
-        <div class="djur-knappar"><button class="mini butik-knapp" id="open-fraga">💬 Fråga ${esc(d.namn)}</button>${this._s.kan_valja ? "" : `<button class="mini butik-knapp" id="open-fokus">⏱️ Fokus</button>`}<button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-album">🃏 Album${this._s.kort ? ` ${this._s.kort.antal}/${this._s.kort.totalt}` : ""}</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button></div>
+        <div class="djur-knappar"><button class="mini butik-knapp" id="open-hjalp">📚 Plugga med ${esc(d.namn)}</button><button class="mini butik-knapp" id="open-fraga">💬 Fråga ${esc(d.namn)}</button>${this._s.kan_valja ? "" : `<button class="mini butik-knapp" id="open-fokus">⏱️ Fokus</button>`}<button class="mini butik-knapp" id="open-djurbutik">🛍️ Butik</button><button class="mini butik-knapp" id="open-album">🃏 Album${this._s.kort ? ` ${this._s.kort.antal}/${this._s.kort.totalt}` : ""}</button><button class="mini butik-knapp" id="open-rum">🏠 Rummet</button></div>
         <button class="mini butik-knapp" id="open-widget">📱 ${this._s.kan_valja ? `${esc(this._s.namn)}s husdjur` : "Husdjuret"} på hemskärmen</button>
       </div></div>`;
   }
@@ -3083,6 +3087,12 @@ class SkolanPanel extends HTMLElement {
         `Läxsvar får du inte, men en ledtråd kan du få. 😉`,
       ])}
 
+      ${kort("📚", "Plugga med husdjuret", [
+        `Tryck <b>📚 Plugga med</b> på husdjurskortet, eller vid en provboss. Husdjuret blir din hjälplärare och använder dina böcker, glosor och läxor.`,
+        `<b>🙋 Förklara</b>: fråga om något du inte förstår. <b>📝 Förhör mig</b>: en fråga i taget. Var 5:e rätt svar ger +8 ⭐ (2 gånger per dag), och pluggar du inför ett prov blir det en pluggdag som skadar provbossen.`,
+        `<b>📷 Hjälp med uppgift</b>: fota uppgiften så hjälper husdjuret dig steg för steg. Svaret säger det aldrig, det ska du klura ut själv! 😉`,
+      ])}
+
       ${kort("🏠", "Husdjurets rum", [
         `Inred ditt husdjurs rum med tapet, säng, lampa, fönster och mycket mer.`,
       ])}
@@ -4119,7 +4129,8 @@ class SkolanPanel extends HTMLElement {
       <span><b>${esc(b.namn)}</b> <span class="small muted">· ${esc(b.prov)}</span><br>
         <span class="small">${nar} · 🎯 svag mot ${TYP_TEXT[b.svag] || b.svag} · 📚 ${b.pluggdagar} pluggdag${b.pluggdagar === 1 ? "" : "ar"}${b.klart ? " · ✅ allt klart" : ""}</span>
         <div class="pb-liv" title="Skada från plugget"><div style="width:${100 - b.skada}%"></div></div>
-        <span class="small">${b.vunnen ? "🏆 Besegrad!" : b.skada ? `💥 ${b.skada} % skadad av ditt plugg` : "Oskadd: plugga inför provet så blir den svagare!"}</span></span>
+        <span class="small">${b.vunnen ? "🏆 Besegrad!" : b.skada ? `💥 ${b.skada} % skadad av ditt plugg` : "Oskadd: plugga inför provet så blir den svagare!"}</span>
+        ${knapp && !b.vunnen && b.dagar_kvar >= 1 ? `<br><button class="mini" data-hjalp-prov="${b.id}">📚 Plugga med ${esc(this._s.meriter?.djur?.namn || "husdjuret")}</button>` : ""}</span>
       ${knapp && !b.vunnen ? (b.oppen ? `<button class="mini primary" data-provboss="${b.id}" ${this._busy || this._s.arena?.pagar ? "disabled" : ""}>⚔️ Slutstrid</button>`
         : `<span class="small muted center">Öppnar dagen före provet</span>`) : ""}</li>`;
   }
@@ -4356,6 +4367,81 @@ class SkolanPanel extends HTMLElement {
       const c = this.shadowRoot.querySelector(".lar-chatt");
       c?.lastElementChild?.scrollIntoView({ block: "nearest" });
       if (!f.tanker) this.shadowRoot.querySelector("#fraga-text")?.focus();
+    }
+  }
+
+  // Plugga med husdjuret: en hjälplärare som utgår från barnets eget material och aldrig säger svaret.
+  _hjalpView() {
+    const d = this._s.meriter?.djur;
+    if (!d) return `<p class="muted">Välj ett husdjur först.</p>`;
+    const k = this._s.barn, amnen = this._s.data.amnen || [];
+    if (!this._hjalp || this._hjalp.barn !== k) this._hjalp = { barn: k, historik: [], lage: "forklara" };
+    const h = this._hjalp, idag = idagISO();
+    if (!h.amne) {
+      const kommande = (this._s.data.uppdrag || []).filter((u) => u.datum && u.datum >= idag && (u.typ === "prov" || !u.klart) && amnen.some((a) => a.id === u.amne))
+        .sort((x, y) => (x.typ === "prov" ? 0 : 1) - (y.typ === "prov" ? 0 : 1) || x.datum.localeCompare(y.datum)).slice(0, 6);
+      const om = (iso) => { const n = Math.round((new Date(`${iso}T12:00`) - new Date(`${idag}T12:00`)) / 86400000); return n === 0 ? "idag" : n === 1 ? "i morgon" : `om ${n} dagar`; };
+      return `<div class="lar-chatt"><div class="lar-rad djur"><div class="lar-ikon">${d.art}</div><div class="lar-bubbla">Hej! Jag är din hjälplärare. Vad ska vi plugga på? Jag kan förklara, förhöra dig eller hjälpa dig med en uppgift. Men jag säger aldrig svaret, du ska klura ut det själv! 😉</div></div></div>
+        ${kommande.length ? `<div class="card hjalp-kort"><b>📅 Snart</b>${kommande.map((u) => `<button class="row" data-hjalp-u="${u.amne}|${u.id}"><span>${u.typ === "prov" ? "📝" : "📖"} <b>${esc(u.namn)}</b><br><span class="small muted">${esc(u.amne_namn || "")} · ${u.typ === "prov" ? "provet" : "klart"} ${om(u.datum)}</span></span><span>▶</span></button>`).join("")}</div>` : ""}
+        <div class="card hjalp-kort"><b>📚 Välj ämne</b><div class="fraga-forslag" style="margin-top:8px">${amnen.map((a) => `<button class="mini" data-hjalp-u="${a.id}|">${esc(a.namn)}</button>`).join("")}</div></div>`;
+    }
+    const a = amnen.find((x) => x.id === h.amne), u = (this._s.data.uppdrag || []).find((x) => x.id === h.uppdrag);
+    const p = h.poang || this._s.hjalp || { ratt: 0, pass: 0, per_pass: 5, max: 2, p: 8 };
+    const ikon = `<div class="lar-ikon">${d.art}</div>`;
+    const bubbla = (x) => x.vem === "barn" ? `<div class="lar-rad barn"><div class="lar-bubbla">${x.bild ? "📷 " : ""}${esc(x.text)}</div></div>`
+      : `<div class="lar-rad djur">${ikon}<div class="lar-bubbla">${x.ratt === true ? "✅ " : x.ratt === false ? "❌ " : ""}${esc(x.text)}</div></div>`;
+    const LAGEN = { forklara: ["🙋", "Förklara"], forhor: ["📝", "Förhör mig"], uppgift: ["📷", "Hjälp med uppgift"] };
+    const start = { forklara: "Vad vill du förstå bättre? Skriv vad du undrar över, så förklarar jag! 💡", forhor: "Tryck på Starta så ställer jag en fråga i taget. Varje gång du får 5 rätt blir det ⭐!", uppgift: "Fota uppgiften (eller skriv av den) så hjälper jag dig steg för steg. 📷" }[h.lage];
+    const bild = h.bild ? `<div class="small">🖼️ ${esc(h.bild.name || "Bild")} <button class="mini" id="hjalp-bild-bort">✕</button></div>` : "";
+    const tom = !h.historik.length;
+    return `<div class="card hjalp-topp"><span>${u ? (u.typ === "prov" ? "📝 " : "📖 ") + `<b>${esc(u.namn)}</b> · ` : ""}<b>${esc(a?.namn || "")}</b></span><button class="mini ghost" id="hjalp-byt">Byt ämne</button></div>
+      <div class="hjalp-lagen">${Object.entries(LAGEN).map(([id, [i, t]]) => `<button class="mini ${h.lage === id ? "primary" : ""}" data-hjalp-lage="${id}" ${h.tanker ? "disabled" : ""}>${i} ${t}</button>`).join("")}</div>
+      ${h.lage === "forhor" ? `<div class="small hjalp-poang">✅ ${p.ratt} rätt idag${p.pass < p.max ? ` · ${p.per_pass - (p.ratt % p.per_pass)} kvar till +${p.p} ⭐${u?.typ === "prov" ? " och en pluggdag mot provbossen" : ""}` : " · dagens ⭐ är tagna, men det är bra plugg ändå!"}</div>` : ""}
+      <div class="lar-chatt">${bubbla({ vem: "djur", text: start })}${h.historik.map(bubbla).join("")}
+        ${h.tanker ? `<div class="lar-rad djur">${ikon}<div class="lar-bubbla tanker">🤔 …</div></div>` : ""}</div>
+      ${h.lage === "forhor" && tom ? `<div class="actions"><button class="primary" id="hjalp-starta" ${h.tanker ? "disabled" : ""}>📝 Starta förhöret</button></div>`
+        : `${h.lage === "uppgift" ? `${bild}<label class="ghost upload mini">📷 ${h.bild ? "Byt bild" : "Fota uppgiften"}<input type="file" id="hjalp-foto" accept="image/*" hidden></label>` : ""}
+      <div class="lar-input"><textarea id="hjalp-text" rows="2" maxlength="600" placeholder="${h.lage === "forhor" && !tom ? "Ditt svar…" : h.lage === "uppgift" ? "Skriv uppgiften eller hur du tänker…" : "Skriv vad du undrar…"}" ${h.tanker ? "disabled" : ""}></textarea>
+        <div class="actions"><button class="primary" id="hjalp-skicka" ${h.tanker ? "disabled" : ""}>${h.lage === "forhor" && !tom ? "✔️ Svara" : "💬 Skicka"}</button>${h.lage === "forhor" && !tom ? `<button class="ghost" id="hjalp-ny" ${h.tanker ? "disabled" : ""}>⏭️ Ny fråga</button>` : ""}</div></div>`}
+      <div class="small muted">Husdjuret använder dina böcker, glosor och läxor. Ju mer material du har lagt in i ämnet, desto bättre kan det hjälpa.</div>`;
+  }
+
+  async _hjalpSkicka(fast) {
+    const h = this._hjalp, el = this.shadowRoot.querySelector("#hjalp-text"), text = (fast || el?.value || "").trim();
+    if (!h || h.tanker || (!text && !h.bild)) return;
+    const bild = h.lage === "uppgift" ? h.bild : null;
+    h.historik.push({ vem: "barn", text: text || "Här är uppgiften.", bild: !!bild });
+    h.tanker = true;
+    this._render();
+    try {
+      const json = { barn: this._s.barn, amne: h.amne, uppdrag: h.uppdrag || null, lage: h.lage, text: text || "", historik: h.historik.slice(0, -1).map(({ vem, text }) => ({ vem, text })) };
+      let res;
+      if (bild) {
+        const fd = new FormData();
+        fd.append("json", JSON.stringify(json));
+        fd.append("file", bild, bild.name || "uppgift.jpg");
+        res = await this._hass.fetchWithAuth("/api/skolan/hjalp", { method: "POST", body: fd });
+      } else {
+        res = await this._hass.fetchWithAuth("/api/skolan/hjalp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) });
+      }
+      const x = await res.json();
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      if (bild) h.bild = null;
+      h.historik.push({ vem: "djur", text: x.svar, ratt: x.ratt });
+      h.historik = h.historik.slice(-24);
+      if (x.poang) h.poang = x.poang;
+      if (x.poang?.pass_klart && x.poang.p_ny) {
+        this._fx({ text: "📚 BRA PLUGGAT!", sub: `+${x.poang.p_ny} ⭐${x.poang.studiedag ? " · pluggdag mot provbossen!" : ""}`, emojis: ["📚", "🧠", "⭐", "💡"], antal: 30, konfetti: true, farg: "#43a047" });
+        this._load(this._s.barn);
+      }
+    } catch (e) {
+      h.historik.pop();
+      this._msg = { type: "error", text: e.message || String(e) };
+    } finally {
+      h.tanker = false;
+      this._render();
+      this.shadowRoot.querySelector(".lar-chatt")?.lastElementChild?.scrollIntoView({ block: "nearest" });
+      this.shadowRoot.querySelector("#hjalp-text")?.focus();
     }
   }
 
@@ -6135,6 +6221,18 @@ class SkolanPanel extends HTMLElement {
     on("#lar-start", () => this._go({ name: "lar", amne: v.amne, glosor: v.glosor }));
     on("#lar-skicka", () => this._larSkicka());
     on("#open-fraga", () => this._go({ name: "fraga" }));
+    on("#open-hjalp", () => this._go({ name: "hjalp" }));
+    const hjalpNy = (amne, uppdrag) => { this._hjalp = { barn: this._s.barn, historik: [], lage: uppdrag && (this._s.data.uppdrag || []).find((x) => x.id === uppdrag)?.typ === "prov" ? "forhor" : "forklara", amne, uppdrag: uppdrag || null }; };
+    r.querySelectorAll("[data-hjalp-u]").forEach((b) => b.addEventListener("click", () => { const [a, u] = b.dataset.hjalpU.split("|"); hjalpNy(a, u); this._render(); }));
+    r.querySelectorAll("[data-hjalp-prov]").forEach((b) => b.addEventListener("click", () => { const u = (this._s.data.uppdrag || []).find((x) => x.id === b.dataset.hjalpProv); if (!u) return; hjalpNy(u.amne, u.id); this._go({ name: "hjalp" }); }));
+    r.querySelectorAll("[data-hjalp-lage]").forEach((b) => b.addEventListener("click", () => { if (this._hjalp.lage !== b.dataset.hjalpLage) { this._hjalp.lage = b.dataset.hjalpLage; this._hjalp.historik = []; } this._render(); }));
+    on("#hjalp-byt", () => { this._hjalp = null; this._render(); });
+    on("#hjalp-skicka", () => this._hjalpSkicka());
+    on("#hjalp-starta", () => this._hjalpSkicka("Förhör mig!"));
+    on("#hjalp-ny", () => this._hjalpSkicka("Jag vet inte, ge mig en ny fråga."));
+    on("#hjalp-bild-bort", () => { this._hjalp.bild = null; this._render(); });
+    $("#hjalp-foto")?.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) { this._hjalp.bild = f; this._render(); } });
+    r.querySelector("#hjalp-text")?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this._hjalpSkicka(); } });
     on("#fraga-skicka", () => this._fragaSkicka());
     r.querySelectorAll("[data-fraga]").forEach((b) => b.addEventListener("click", () => this._fragaSkicka(b.dataset.fraga)));
     r.querySelector("#fraga-text")?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this._fragaSkicka(); } });
@@ -7181,6 +7279,12 @@ const CSS = `
   .mitt-djur.aktiv { border-color:#43a047; background:rgba(67,160,71,.08); }
   .mitt-djur .rit-val { width:90px; height:90px; margin:0 auto; border:none; background:none; }
   .fraga-forslag { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .hjalp-topp { display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:0; padding:10px 14px; margin-bottom:10px; cursor:default; }
+  .hjalp-kort { min-height:0; margin-bottom:10px; cursor:default; }
+  .hjalp-kort .row { width:100%; box-sizing:border-box; margin-top:8px; }
+  .hjalp-lagen { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
+  .hjalp-lagen .mini { border-radius:14px; }
+  .hjalp-poang { margin:0 0 8px; }
   .fraga-forslag .mini { border-radius:14px; }
   .lar-beloning { font-size:28px; font-weight:800; color:#2e7d32; animation:gs-pop .6s; }
   .fokus-djur { position:relative; display:inline-block; }

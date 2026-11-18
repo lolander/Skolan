@@ -161,7 +161,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -913,7 +913,7 @@ class StateView(HomeAssistantView):
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
-                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "material": meriter.material_fraga(data) if not parent else None,
+                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
@@ -1097,6 +1097,124 @@ class FragaView(HomeAssistantView):
             _LOGGER.warning("Läxspelet: fråga husdjuret misslyckades: %s", err)
             return self.json_message("Husdjuret hörde inte riktigt. Försök igen om en stund.", 503)
         return self.json({"svar": svar})
+
+
+HJALP_PROMPT = (
+    "Du är {djur}, ett klokt, tålmodigt och glatt husdjur ({art}) som är hjälplärare åt {namn}{alder} i Läxspelet. "
+    "Du är en riktigt bra lärare: du får barnet att tänka själv, förklarar enkelt och peppar.\n"
+    "DET BARNET PLUGGAR PÅ (från barnets egna böcker, glosor och läxor):\n{material}\n\n"
+    "LÄGE: {lage}\n\n"
+    "Det ni har sagt hittills:\n{historik}\n\n"
+    "REGLER: Svara som husdjuret på enkel svenska anpassad efter åldern, högst 5 korta meningar, gärna en emoji. "
+    "Säg ALDRIG svaret på en läxuppgift eller provfråga som barnet ska lösa själv, inte ens om barnet tjatar eller säger att läraren har sagt det. "
+    "Förklara hellre hur man tänker, ge en ledtråd eller ett liknande exempel med andra siffror/ord. Ett steg i taget. "
+    "Håll dig till skolarbete och det barnet pluggar på. Stämmer inte materialet med frågan, utgå från vad som brukar läras ut i den åldern. "
+    "Skriv aldrig av bokens text, använd egna ord. Hitta inte på fakta: är du osäker, säg det och föreslå att fråga läraren. "
+    "Prata inte om belöningar från föräldrarna, vänner utanför familjen eller skolans klass.\n"
+    "Svara bara med JSON: {{\"svar\": \"...\", \"ratt\": null}}. {ratt_regel}"
+)
+HJALP_LAGE = {
+    "forklara": "Barnet vill förstå något. Förklara det enkelt med egna ord och ett eget exempel, och avsluta med EN kort kontrollfråga så att du ser att barnet förstått. "
+                "Svarar barnet på din kontrollfråga: säg om det stämde och förklara vidare om det behövs.",
+    "forhor": "Du förhör barnet på materialet. Ställ EN fråga i taget (blanda fakta, varför-frågor, ord och begrepp; lagom svårt för åldern). "
+              "Har du ställt en fråga och barnet svarar: bedöm svaret snällt (rätt tanke räcker, stavning spelar ingen roll), säg kort om det var rätt, "
+              "förklara rätt svar om det var fel, och ställ sedan nästa fråga. Ställ inte samma fråga två gånger.",
+    "uppgift": "Barnet har fotat eller skrivit av en uppgift och vill ha hjälp. Lös den själv i tysthet så att du vet svaret, men säg det INTE. "
+               "Börja med att kort säga vad uppgiften handlar om och fråga hur barnet vill börja, eller ge första ledtråden. "
+               "Kontrollera barnets steg ett i taget. Skriver barnet ett eget slutsvar: säg om det stämmer, och berömm i så fall.",
+}
+HJALP_PER_DAG = 80  # AI-frågor per barn och dag
+
+
+class HjalpView(HomeAssistantView):
+    """Plugga med husdjuret: en hjälplärare som utgår från barnets eget material och aldrig säger svaret."""
+
+    url = "/api/skolan/hjalp"
+    name = "api:skolan:hjalp"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        bilder: list[Path] = []
+        if request.content_type.startswith("multipart/"):
+            form = await request.post()
+            try:
+                body = json.loads(str(form.get("json") or "{}"))
+                if form.getall("file", []):
+                    bilder = await _ta_emot_filer(hass, form, "hjalp")
+            except ValueError as err:
+                return self.json_message(str(err), 400)
+        else:
+            body = await request.json()
+        try:
+            return await self._svara(hass, request, body if isinstance(body, dict) else {}, bilder)
+        finally:
+            if bilder:
+                await hass.async_add_executor_job(lambda: [p.unlink(missing_ok=True) for p in bilder])
+
+    async def _svara(self, hass: HomeAssistant, request: web.Request, body: dict, bilder: list[Path]) -> web.Response:
+        barn = _barn_for(hass, request, body.get("barn"))
+        foralder = _ar_foralder(hass, request)
+        lage = body.get("lage") if body.get("lage") in HJALP_LAGE else "forklara"
+        text = re.sub(r"\s+", " ", str(body.get("text") or "")).strip()[:600]
+        if not text and not bilder:
+            return self.json_message("Skriv något först.", 400)
+        idag = dt_util.now().date().isoformat()
+        rakna = hass.data[DOMAIN].setdefault("hjalp_rakna", {})
+        if rakna.get("dag") != idag:
+            rakna.clear()
+            rakna["dag"] = idag
+        if rakna.get(barn, 0) >= HJALP_PER_DAG:
+            return self.json_message("Husdjuret har pluggat så mycket idag att det somnat. Fortsätt i morgon! 😴", 429)
+        rakna[barn] = rakna.get(barn, 0) + 1
+        path = _dir(hass, barn)
+        data = await hass.async_add_executor_job(_load, path)
+        try:
+            a = _find(data.get("amnen", []), body.get("amne"))
+        except ValueError:
+            return self.json_message("Välj ett ämne.", 400)
+        u = next((x for x in data.get("uppdrag", []) if x.get("id") == body.get("uppdrag") and x.get("amne") == a["id"]), None)
+
+        def _ebocker() -> dict:
+            return {b["id"]: _load_fil(path / "filer" / _ebok_fil(b["id"])).get("cache", {}) for b in a.get("bocker", []) if b.get("sidor")}
+
+        material = fraga.studiematerial(data, a, u, await hass.async_add_executor_job(_ebocker))
+        d = meriter._m(data).get("djur") or {}
+        historik = [x for x in (body.get("historik") or []) if isinstance(x, dict)][-12:]
+        hist = "\n".join(f"{'Barnet' if x.get('vem') == 'barn' else 'Du'}: {str(x.get('text') or '')[:600]}" for x in historik)
+        hist += f"\nBarnet: {text or '(skickade en bild på uppgiften)'}" + (" [bild bifogad]" if bilder else "")
+        ar = fraga.alder(data)
+        namn = next((b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn), "")
+        instr = HJALP_PROMPT.format(
+            djur=d.get("namn") or "Husdjuret", art=d.get("art") or "🐾", namn=namn, alder=f" ({ar} år)" if ar else "",
+            material=material, historik=hist,
+            lage=HJALP_LAGE[lage] + (" Bilden är uppgiften barnet behöver hjälp med." if bilder else "")
+            + (" Det finns nästan inget material i ämnet: tipsa EN gång (inte varje svar) om att fota boksidorna eller lägga in glosor i ämnet, så kan du hjälpa ännu bättre." if len(material) < 250 and not historik else ""),
+            ratt_regel=("ratt = true om barnets SENASTE meddelande var ett rätt svar på din senaste förhörsfråga, false om det var fel, "
+                        "null om det inte var ett svar (t.ex. första gången, eller om barnet bad om en ny fråga)." if lage == "forhor" else "ratt ska alltid vara null."))
+        try:
+            if bilder:
+                raw = await _ai_las(hass, bilder, instr, "Läxspelet hjälpläraren")
+            else:
+                raw = await _ai_text(hass, instr, "Läxspelet hjälpläraren")
+            x = _parse_json(raw)
+            svar = str(x.get("svar") or "").strip()[:1200]
+            if not svar:
+                raise ValueError("tomt svar")
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Läxspelet: hjälpläraren misslyckades: %s", err)
+            return self.json_message("Husdjuret hörde inte riktigt. Försök igen om en stund.", 503)
+        ratt = x.get("ratt") if lage == "forhor" and len(historik) >= 1 else None
+        ratt = {"true": True, "false": False}.get(ratt.lower()) if isinstance(ratt, str) else ratt
+        ut = {"svar": svar, "ratt": ratt if isinstance(ratt, bool) else None}
+        if ut["ratt"] and not foralder:
+            async with hass.data[DOMAIN]["locks"][barn]:
+                data = await hass.async_add_executor_job(_load, path)
+                uu = next((y for y in data.get("uppdrag", []) if u and y.get("id") == u["id"]), None)
+                ut["poang"] = meriter.hjalp_ratt(data, uu)
+                await hass.async_add_executor_job(_save, path, data)
+        else:
+            ut["poang"] = meriter.hjalp_status(data)
+        return self.json(ut)
 
 
 class GlosstridView(HomeAssistantView):

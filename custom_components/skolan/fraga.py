@@ -10,7 +10,7 @@ from . import meriter
 SPELGUIDE = """
 MERITER ⭐: tjänas på läxor. Lägga in läxan samma dag/dagen efter +20 (senare samma vecka +5). Öva hela glosläxan +5 (max 3 ggr per läxa och dag), alla rätt +5 extra, öva minst 2 dagar före förhöret +10. Förhör: +2 per rätt ord, alla rätt +20, samma dag +5. Högläsning +6/dag, alla dagar +20. Läxboken i tid +25. Läsläxa i tid +30. Prov: registrera 3 dagar innan +10, plugga en dag före +10/dag (max 5), allt klart före provdagen +40, bra provresultat +15/30/50. Tips i övning kostar 1 ⭐, fel efter 2 gratisförsök kostar 1 ⭐.
 SVIT 🔥: gör något varje dag. Dag 2 +2, dag 3 +3 … max +10 per dag. Var 7:e dag i rad ger ett svitskydd 🛡️ (max 2) som räddar sviten om man missar 1–2 dagar.
-DAGENS UTMANING 🎯: 2–3 mål per dag, alla klara +15. GLOSREKORD ⚡: så många rätt som möjligt på 60 s, nytt rekord +5. DAGENS GÅTA: rätt svar +5, svaret visas dagen efter. FOKUSLÄGE ⏱️: 10/15/20/25 min ger +5/8/10/12, 2 pass per dag. LÄR HUSDJURET 🎓: förklara ett ord med egna ord, bra förklaring +5, jättebra +8. REPETERA 🔁: öva en lista man inte övat på 10 dagar, +10 extra. SYSKONUPPDRAG: gemensamt mål med syskonet, +30 till båda. SAMLARKORT 🃏: kort delas ut när man tjänar 20/60/120 ⭐ samma dag, 50 % chans när man besegrar ett monster på kartan, och av bossar. REVANSCH i Arenan: slå en redan besegrad boss igen (2 ⚡, använder stridsuppsättningen) och vinn kort, högst 3 per dag; dubbletter +3, fullt album +100. KISTOR 🎁: varje läxa/prov man lägger in ger en kista (⭐, ⚡ eller kort), prov inlagt ≥3 dagar innan = silverkista, ≥7 dagar = guldkista, max 4 per dag. PROVBOSSAR 📝: varje prov blir en boss, varje pluggdag före provet ger den 15 % skada (allt klart +20 %, max 80 %), slutstriden öppnar dagen före provet och kostar inget ⚡, vinst +20 och provtrofé 🏆. VECKANS KOLL 📅: alla läxor i läxschemat inlagda i tid en vecka = +15, svitskydd och guldkista. MITT SCHEMA 🗓️: en förälder (eller läraren via föräldern) fotar lektionsschemat och AI:n gör en digital kopia (tider, sal, lärare) som barnet kan söka i och skriva ut; bara föräldrar kan ändra schemat; efter skolan frågar husdjuret om det blev läxa (ärligt nej +2); husdjuret frågar också efter studiematerial till ämnen som saknar det, första materialet i ett ämne ger en silverkista. MEDALJER 🏅 +25 var. Var 100:e merit = ny nivå.
+DAGENS UTMANING 🎯: 2–3 mål per dag, alla klara +15. GLOSREKORD ⚡: så många rätt som möjligt på 60 s, nytt rekord +5. DAGENS GÅTA: rätt svar +5, svaret visas dagen efter. FOKUSLÄGE ⏱️: 10/15/20/25 min ger +5/8/10/12, 2 pass per dag. LÄR HUSDJURET 🎓: förklara ett ord med egna ord, bra förklaring +5, jättebra +8. REPETERA 🔁: öva en lista man inte övat på 10 dagar, +10 extra. SYSKONUPPDRAG: gemensamt mål med syskonet, +30 till båda. SAMLARKORT 🃏: kort delas ut när man tjänar 20/60/120 ⭐ samma dag, 50 % chans när man besegrar ett monster på kartan, och av bossar. REVANSCH i Arenan: slå en redan besegrad boss igen (2 ⚡, använder stridsuppsättningen) och vinn kort, högst 3 per dag; dubbletter +3, fullt album +100. KISTOR 🎁: varje läxa/prov man lägger in ger en kista (⭐, ⚡ eller kort), prov inlagt ≥3 dagar innan = silverkista, ≥7 dagar = guldkista, max 4 per dag. PROVBOSSAR 📝: varje prov blir en boss, varje pluggdag före provet ger den 15 % skada (allt klart +20 %, max 80 %), slutstriden öppnar dagen före provet och kostar inget ⚡, vinst +20 och provtrofé 🏆. VECKANS KOLL 📅: alla läxor i läxschemat inlagda i tid en vecka = +15, svitskydd och guldkista. MITT SCHEMA 🗓️: en förälder (eller läraren via föräldern) fotar lektionsschemat och AI:n gör en digital kopia (tider, sal, lärare) som barnet kan söka i och skriva ut; bara föräldrar kan ändra schemat; efter skolan frågar husdjuret om det blev läxa (ärligt nej +2); husdjuret frågar också efter studiematerial till ämnen som saknar det, första materialet i ett ämne ger en silverkista. PLUGGA MED HUSDJURET 📚: husdjuret är hjälplärare och utgår från barnets böcker, glosor och läxor. Tre lägen: Förklara (förklarar och ställer en kontrollfråga), Förhör mig (en fråga i taget, var 5:e rätt svar = +8 ⭐ och svitdag, högst 2 gånger per dag, och plugg inför ett prov räknas som pluggdag mot provbossen) och Hjälp med uppgift (fota uppgiften, husdjuret leder steg för steg men säger aldrig svaret). Knappen finns under husdjuret och vid varje provboss. MEDALJER 🏅 +25 var. Var 100:e merit = ny nivå.
 HUSDJURET 🐾: växer av alla meriter: Ägg → Bebis (30) → Liten (150) → Stor (400) → Jätte (800) → Legend (1500). Blir hungrigt/ledset om man inte pluggar på ett par dagar. Man kan ha flera husdjur: ett nytt kostar 100 ⭐ och börjar som ägg, byte mellan egna djur är gratis. Bara det aktiva djuret växer, får XP och utvecklas, så varje djur blir unikt. Varje djur har egna attacker (med uppgraderingar), egen försvarsträning och egna kompisar, så ett nytt djur börjar om från början. Allt finns kvar när man byter tillbaka. Varje djur har ett element (🔥 eld, 🍃 natur, ⚡ blixt, 🌊 vatten, ❄️ is eller 💥 kraft): attacker av samma typ gör +25 % (💪), en typ passar dåligt och gör −25 % (😕). Eld-djur är dåliga på is, is- och vattendjur på eld, naturdjur på blixt, blixtdjur på vatten, kraftdjur på natur. Bra strategi: välj attacker som passar djuret OCH som monstren är svaga mot. STRIDSUPPSÄTTNING: i arenan och mot världsbossar får djuret bara använda 4 valda attacker (väljs i butiken, låses när bosstriden börjat). I ARENAN är varje djur svagt mot en attacktyp: eld-djur mot vatten, vatten mot blixt, blixt mot natur, natur mot eld, is mot kraft, kraft mot is – träff på svag punkt gör ×1,5. LADDATTACKER (🌀 Snabbladdning 200, 🌟 Stjärnsmäll 300, och ☀️ Solbrand/🌊 Tsunami/🌩️ Superåska/🌳 Urskogens vrede/🧊 Istiden 380 ⭐): kostar ingen ⚡ men en laddmätare måste fyllas med träffar (svag punkt laddar mest), bara 1–2 gånger per strid, bara i arenan och mot bossar, och tar en plats i uppsättningen. Med smart uppsättning kan ett svagare djur vinna. Sköldar, drycker, energi, hattar och andra saker delas mellan djuren. Från Liten utvecklas det efter vad man gör mest (glosrekord, läsläxor, alla rätt på förhör, många övningar, besegrade bossar) och får ett nytt utseende. Husdjuret har också XP-nivå (1–50): högre nivå ger mer ❤️ liv och +2 % skada per nivå. CP visar hur starkt det är.
 HUSDJURSBUTIKEN 🛍️: hattar, bakgrunder, effekter, kompisar, attacker, sköldar, livdrycker och energi. Storleken påverkas inte av att man handlar. Kompisar kan ha en HEMLIG effekt (se reglerna).
 ÄVENTYRSKARTAN 🗺️: världar med 10 nivåer var: Glosskogen, Bläckhavet, Trollberget, Sömnträsket, Robotfabriken, Drakvulkanen, Spökslottet, Tidshavet. Varje merit man tjänar gör skada på nivåns monster. Snabbt klarad nivå ger fler stjärnor. Var 10:e nivå är en världsboss: +50 ⭐ och en unik sak. Monstren är lika svåra som man brukar plugga, så alla har chans.
@@ -97,3 +97,66 @@ def lage(data: dict) -> str:
     if kist:
         rader.append(f"Oöppnade kistor: {kist}.")
     return "\n".join(rader)
+
+
+# ---------- hjälpläraren ----------
+UPPDRAG_TYP = {"prov": "Prov", "las": "Läsläxa", "hogl": "Högläsning", "skriv": "Skrivläxa", "glosor": "Glosläxa"}
+
+
+def alder(data: dict) -> int | None:
+    f = str(data.get("fodelsedag") or "")
+    try:
+        y, m, d = (int(x) for x in f[:10].split("-"))
+    except ValueError:
+        return None
+    nu = dt_util.now().date()
+    return nu.year - y - ((nu.month, nu.day) < (m, d))
+
+
+def studiematerial(data: dict, amne: dict, u: dict | None, ebocker: dict, max_tecken: int = 7000) -> str:
+    """Det barnet pluggar på, i korta rader: uppgiften, anteckningar, glosor och e-bokens sammanfattningar.
+    ebocker: bok-id -> e-bokens cache (fil -> {"sidor": [...]})."""
+    rader = [f"Ämne: {amne.get('namn')}."]
+    if u:
+        r = f"{UPPDRAG_TYP.get(u.get('typ'), 'Läxa')}: {u.get('namn')}"
+        if u.get("datum"):
+            r += f", datum {u['datum']}"
+        if u.get("kapitel"):
+            r += f", kapitel/område: {u['kapitel']}"
+        if u.get("fran") or u.get("till"):
+            r += f", sidor {u.get('fran') or '?'}–{u.get('till') or '?'}"
+        rader.append(r + ".")
+        sid = [f"s. {x.get('sidnr') or '?'}: {x.get('sammanfattning')}" for x in u.get("sidor") or [] if x.get("sammanfattning")]
+        if sid:
+            rader.append("Sidorna i läxan (sammanfattning): " + " | ".join(sid))
+    upg = [x for x in amne.get("uppgifter") or [] if not x.get("klar")][-8:]
+    if upg:
+        rader.append("Uppgifter i ämnet: " + "; ".join(x["text"] + (f" (till {x['datum']})" if x.get("datum") else "") for x in upg))
+    if (amne.get("anteckningar") or "").strip():
+        rader.append("Anteckningar: " + amne["anteckningar"].strip()[:1500])
+    glos = amne.get("glosor") or []
+    if u and u.get("glosor"):
+        glos = [g for g in glos if g.get("id") in u["glosor"]] or glos
+    for g in glos[-3:]:
+        par = [p for p in g.get("par") or [] if len(p) > 1 and str(p[0]).strip()][:40]
+        if par:
+            rader.append(f"Lista \"{g.get('namn')}\" ({g.get('typ') or 'glosor'}): " + "; ".join(f"{p[0]} = {p[1]}" for p in par))
+    if not (u and u.get("sidor")):
+        for b in amne.get("bocker") or []:
+            cache = ebocker.get(b.get("id")) or {}
+            sidor = [s for f in b.get("sidor", []) for s in cache.get(f, {}).get("sidor", [])]
+            if u and (u.get("fran") or u.get("kapitel")):
+                fran, till = str(u.get("fran") or ""), str(u.get("till") or "")
+                if fran.isdigit():
+                    sidor = [s for s in sidor if str(s.get("sidnummer") or "").isdigit() and int(fran) <= int(s["sidnummer"]) <= int(till or fran)] or sidor
+            kap, ut = None, []
+            for s in sidor:
+                if s.get("kapitel"):
+                    kap = s["kapitel"]
+                    ut.append(f"[{kap}]")
+                if s.get("sammanfattning"):
+                    ut.append(f"s. {s.get('sidnummer') or '?'}: {s['sammanfattning']}")
+            if ut:
+                rader.append(f"Boken \"{b.get('namn')}\" (sammanfattningar, inte bokens text): " + " ".join(ut))
+    text = "\n".join(rader)
+    return text[:max_tecken] + (" …" if len(text) > max_tecken else "")
