@@ -1232,6 +1232,10 @@ class SkolanPanel extends HTMLElement {
       title = `💬 Fråga ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "hem" };
       body = this._fragaView();
+    } else if (v.name === "penna") {
+      title = "🖊️ Pennuppdrag";
+      back = { name: v.fran || "hem" };
+      body = this._pennaView();
     } else if (v.name === "skriva") {
       title = "✍️ Skrivverkstad";
       back = { name: "hem" };
@@ -1976,6 +1980,76 @@ class SkolanPanel extends HTMLElement {
       ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
   }
 
+  // ---------- pennuppdrag: skriv för hand, fota, AI:n läser ----------
+  _pennaKort() {
+    const p = this._s.penna;
+    if (!p || this._s.kan_valja || !p.kvar_idag) return "";
+    return `<button class="card penna-kort" id="open-penna"><div class="djur-rubrik">🖊️ Pennuppdrag <span class="small">+${p.p} ⭐</span></div>
+      <div class="small">${p.aktiv ? `📝 ${esc(p.aktiv.uppgift)}` : "Skriv för hand på papper, fota och få extra ⭐!"}</div>
+      <div class="small muted">Steg ${p.steg}: ${esc(p.steg_namn)} · ${p.kvar_idag} kvar idag</div></button>`;
+  }
+
+  _pennaView() {
+    const v = this._view, s = this._s, p = s.penna || {};
+    const STEG = ["1–2 meningar", "3 meningar", "5 meningar", "Ett stycke", "Två stycken", "En hel text"];
+    const trappa = `<div class="penna-trappa">${STEG.map((n, i) => `<div class="pt-steg ${i + 1 < p.steg ? "klar" : i + 1 === p.steg ? "nu" : ""}"><b>${i + 1}</b><span>${n}</span></div>`).join("")}</div>
+      <div class="small center">Steg ${p.steg}: ${Array.from({ length: p.per_steg || 3 }, (_, i) => `<span class="pt-prick ${i < (p.klara_pa_steg || 0) ? "pa" : ""}"></span>`).join("")} · ${p.steg < 6 ? `${(p.per_steg || 3) - (p.klara_pa_steg || 0)} godkända till nästa steg` : "högsta steget!"}</div>`;
+    const res = v.res;
+    const hist = (p.inlamnat || []).slice().reverse();
+    const histHtml = hist.length ? `<h3>📚 ${s.kan_valja ? `${esc(s.namn)}s` : "Dina"} inlämningar</h3><div class="list">${hist.map((x) => `<details class="row hd-rad"><summary>
+        <img class="penna-tumme" data-fil="${esc(x.fil)}" alt=""><span>${x.godkand ? "✅" : "❌"} <b>${esc(x.uppgift)}</b><br><span class="small muted">${esc(x.tid.slice(0, 10))} · steg ${x.steg} · ${x.ord} ord${x.p ? ` · +${x.p} ⭐` : ""}${x.av_foralder ? " · ändrad av förälder" : ""}</span></span></summary>
+        <div class="small" style="margin-top:8px">${x.skal ? `<div>⚠️ ${esc(x.skal)}</div>` : ""}<div class="penna-text">${esc(x.text)}</div>
+          ${x.bra?.length ? `<div>👍 ${x.bra.map(esc).join(" ")}</div>` : ""}${x.tips?.length ? `<div>💡 ${x.tips.map(esc).join(" ")}</div>` : ""}
+          <div class="muted">Handstil ${x.handstil} · Punkt & stor bokstav ${x.tecken}</div>
+          <img class="penna-stor" data-fil="${esc(x.fil)}" alt="">
+          ${s.kan_valja ? `<div class="actions">${x.godkand ? `<button class="mini ghost danger" data-penna-under="${x.id}">❌ Underkänn (tar bort ⭐)</button>` : `<button class="mini" data-penna-godk="${x.id}">✅ Godkänn ändå</button>`}</div>` : ""}</div></details>`).join("")}</div>` : "";
+    if (s.kan_valja) return `${trappa}<p class="small muted">${esc(s.namn)} får skrivuppdrag som skrivs för hand och fotas. AI:n läser texten och godkänner. Ni kan underkänna eller godkänna i efterhand.</p>${histHtml}`;
+    const akt = p.aktiv;
+    return `${trappa}
+      ${res ? `<div class="card hjalp-kort penna-res">${res.godkand ? `<div class="score">✅ Godkänt!</div>${res.p ? `<div class="lar-beloning">+${res.p} ⭐</div>` : `<div class="small">Dagens ⭐ för pennuppdrag är redan tagna, men bra skrivet!</div>`}` : `<div class="score">Inte godkänt än</div><p>${esc(res.skal || "")}</p>`}
+        ${res.nytt_steg ? `<div class="lar-beloning">🎉 Nytt steg: ${esc(STEG[res.nytt_steg - 1])}!</div>` : ""}
+        ${res.pepp ? `<p>${esc(res.pepp)}</p>` : ""}${res.bra?.length ? `<div>👍 ${res.bra.map(esc).join(" ")}</div>` : ""}${res.tips?.length ? `<div>💡 ${res.tips.map(esc).join(" ")}</div>` : ""}
+        <details><summary class="small">Så här läste AI:n din text (${res.ord} ord)</summary><div class="penna-text">${esc(res.text)}</div></details></div>` : ""}
+      ${akt ? `<div class="card hjalp-kort"><div class="small muted">Ditt uppdrag · steg ${akt.steg} · ungefär ${p.mal} ord</div><div class="penna-uppdrag">🖊️ ${esc(akt.uppgift)}</div>
+          ${akt.tips?.length ? `<ul class="lista">${akt.tips.map((t) => `<li class="small">💡 ${esc(t)}</li>`).join("")}</ul>` : ""}
+          <div class="small">1. Skriv för hand på ett papper. 2. Fota papperet rakt uppifrån i bra ljus.</div>
+          <div class="actions"><label class="primary upload">📷 Fota papperet<input type="file" id="penna-foto" accept="image/*" capture="environment" hidden></label>
+            <button class="ghost" id="penna-byt" ${this._busy || !p.byten_kvar ? "disabled" : ""}>🔄 Byt uppdrag (${p.byten_kvar})</button></div>
+          ${this._busy ? `<p class="small muted">AI:n läser din text…</p>` : ""}
+          <div class="small muted">${p.kvar_idag ? `Godkänt: +${p.p} ⭐, snygg handstil och rätt punkter: +${p.bonus} ⭐ extra. ${p.kvar_idag} kvar idag.` : "Dagens ⭐ för pennuppdrag är tagna. Du kan skriva ändå för att öva, nya ⭐ i morgon!"}</div></div>`
+        : `<div class="card hjalp-kort center"><p>Skriv för hand, fota och få <b>+${p.p} ⭐</b>. Uppdragen växer sakta: först några meningar, sedan stycken och till sist hela texter.</p>
+          <button class="primary" id="penna-ny" ${this._busy ? "disabled" : ""}>✨ Ge mig ett pennuppdrag</button>${this._busy ? `<p class="small muted">Hittar på ett uppdrag…</p>` : ""}</div>`}
+      ${histHtml}`;
+  }
+
+  async _penna(op, args = {}, fil = null) {
+    this._busy = true;
+    this._render();
+    try {
+      const json = { barn: this._s.barn, op, ...args };
+      let res;
+      if (fil) {
+        const fd = new FormData();
+        fd.append("json", JSON.stringify(json));
+        fd.append("file", fil, fil.name || "penna.jpg");
+        res = await this._hass.fetchWithAuth("/api/skolan/penna", { method: "POST", body: fd });
+      } else {
+        res = await this._hass.fetchWithAuth("/api/skolan/penna", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) });
+      }
+      const x = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      this._msg = null;
+      await this._load(this._s.barn);
+      return x;
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+      return null;
+    } finally {
+      this._busy = false;
+      this._render();
+    }
+  }
+
   // ---------- skrivverkstad ----------
   async _skriv(op, args = {}) {
     this._busy = true;
@@ -2001,6 +2075,7 @@ class SkolanPanel extends HTMLElement {
     const farg = (p) => (p >= 80 ? "#43a047" : p >= 60 ? "#fb8c00" : "#e53935");
     return `<p class="small muted">Här övar du på att skriva så att andra förstår precis vad du menar: tecken, mellanrum, stycken och att berätta med egna ord.</p>
       <div class="list">
+        ${rad("open-penna", "🖊️", "Pennuppdrag", `Skriv för hand och fota · steg ${s.penna?.steg || 1}: ${esc(s.penna?.steg_namn || "1–2 meningar")} · +${s.penna?.p || 6} ⭐`)}
         ${rad("open-sk-tecken", "🔤", "Punkt & tecken", `Nivå ${st.niva || 1}: ${esc(st.niva_namn || "Punkt och stor bokstav")} · +3 ⭐`)}
         ${rad("open-sk-stycken", "📑", "Stycken", "Var ska ett nytt stycke börja? · +3 ⭐")}
         ${rad("open-sk-fritt", "📝", "Skriv fritt", "Skriv en egen text och få tips · +6 ⭐, förbättra +3 ⭐")}
@@ -5284,6 +5359,7 @@ class SkolanPanel extends HTMLElement {
       ${this._materialKort()}
       ${this._hejaropKort()}
       ${this._dagensListaKort()}
+      ${this._pennaKort()}
       ${this._dagensKort()}
       ${this._syskonKort()}
       ${this._repeteraKort()}
@@ -6864,6 +6940,23 @@ class SkolanPanel extends HTMLElement {
     on("#open-coach", () => this._go({ name: "coach" }));
     on("#open-handstil", () => this._go({ name: "handstil" }));
     on("#open-skriva", () => this._go({ name: "skriva" }));
+    on("#open-penna", () => this._go({ name: "penna", fran: v.name === "skriva" ? "skriva" : "hem" }));
+    if (v.name === "penna") {
+      on("#penna-ny", () => this._penna("nytt"));
+      on("#penna-byt", () => this._penna("nytt", { byt: true }));
+      $("#penna-foto")?.addEventListener("change", async (e) => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        const x = await this._penna("lamna", {}, f);
+        if (x) {
+          v.res = x;
+          if (x.godkand) this._fx({ text: x.nytt_steg ? "🖊️ NYTT STEG!" : "🖊️ GODKÄNT!", sub: x.p ? `+${x.p} ⭐` : "Bra skrivet!", emojis: ["🖊️", "📝", "⭐", "✨"], antal: x.nytt_steg ? 40 : 24, konfetti: !!x.nytt_steg, farg: "#3949ab", ljud: true });
+          this._render();
+        }
+      });
+      r.querySelectorAll("[data-penna-under]").forEach((b) => b.addEventListener("click", () => { if (confirm("Underkänna inlämningen? Stjärnorna tas tillbaka.")) this._penna("underkann", { id: b.dataset.pennaUnder }); }));
+      r.querySelectorAll("[data-penna-godk]").forEach((b) => b.addEventListener("click", () => { if (confirm("Godkänna inlämningen? Barnet får stjärnorna.")) this._penna("godkann", { id: b.dataset.pennaGodk }); }));
+    }
     on("#open-sk-tecken", () => this._go({ name: "skrivovning", typ: "tecken" }));
     on("#open-sk-stycken", () => this._go({ name: "skrivovning", typ: "stycken" }));
     on("#open-sk-fritt", () => this._go({ name: "skrivfritt" }));
@@ -8101,6 +8194,16 @@ const CSS = `
   .pd-text { flex:1; min-width:0; }
   .pd-tankar { border-left:5px solid #7e57c2; }
   .story-bild { width:200px; height:200px; margin:0 auto; }
+  .penna-kort { min-height:0; border-left:6px solid #3949ab; }
+  .penna-trappa { display:grid; grid-template-columns:repeat(6, 1fr); gap:4px; margin:4px 0 6px; }
+  .pt-steg { text-align:center; padding:6px 2px; border-radius:10px; background:var(--divider-color, #e0e0e0); font-size:10px; line-height:1.2; opacity:.6; }
+  .pt-steg b { display:block; font-size:16px; } .pt-steg.klar { background:#c8e6c9; opacity:1; } .pt-steg.nu { background:#3949ab; color:#fff; opacity:1; }
+  .pt-prick { display:inline-block; width:10px; height:10px; border-radius:50%; border:2px solid #3949ab; margin:0 2px; vertical-align:middle; } .pt-prick.pa { background:#3949ab; }
+  .penna-uppdrag { font-size:18px; font-weight:600; margin:6px 0; }
+  .penna-text { white-space:pre-wrap; background:#fffdf7; color:#263238; border-radius:8px; padding:8px; margin:6px 0; font-family:"Andika", system-ui, sans-serif; }
+  .penna-tumme { width:44px; height:44px; object-fit:cover; border-radius:6px; flex-shrink:0; background:#eee; }
+  .penna-stor { width:100%; border-radius:8px; margin-top:6px; }
+  .penna-res { text-align:center; }
   .sk-omr { display:flex; flex-direction:column; gap:6px; margin:8px 0; }
   .sk-omr-rad { display:grid; grid-template-columns:120px 1fr 32px; align-items:center; gap:8px; font-size:13px; }
   .sk-mat { height:10px; border-radius:6px; background:var(--divider-color, #e0e0e0); overflow:hidden; } .sk-mat div { height:100%; border-radius:6px; }

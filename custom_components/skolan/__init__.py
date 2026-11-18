@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import mimetypes
+import hashlib
 import random
 import re
 import smtplib
@@ -39,7 +40,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import dagens, fraga, meriter, plugg, schemavy, skola, skriv, tillsammans, vanner
+from . import dagens, fraga, meriter, penna, plugg, schemavy, skola, skriv, tillsammans, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -161,7 +162,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -913,7 +914,7 @@ class StateView(HomeAssistantView):
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
-                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "skriv": skriv.status(data, fraga.alder(data)), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
+                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "skriv": skriv.status(data, fraga.alder(data)), "penna": penna.status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
@@ -1446,6 +1447,131 @@ class SkrivView(HomeAssistantView):
             if err.content_type == "application/json":
                 return web.json_response(json.loads(err.text), status=err.status)
             raise
+        return self.json_message("Okänd åtgärd.", 400)
+
+
+PENNA_UPPDRAG_PROMPT = (
+    "Hitta på ETT skrivuppdrag på svenska som ett barn{alder} ska skriva FÖR HAND med penna på papper. "
+    "Barnet ska sakta bli bekvämt med att uttrycka sig i skrift, så det ska kännas roligt och lagom, inte som ett prov. "
+    "Längd: {info} (ungefär {mal} ord). Typ: {typ}. Personligt, något barnet kan skriva om direkt utan att leta fakta.{djur}\n"
+    'Svara ENDAST med JSON: {{"uppgift": "uppdraget i 1–2 meningar, riktat till barnet", "tips": ["1–2 korta tips, t.ex. om punkt och stor bokstav"]}}'
+)
+PENNA_BEDOM_PROMPT = (
+    "Bilden ska visa ett barns{alder} text skriven FÖR HAND på papper till uppdraget: \"{uppgift}\" (ungefär {mal} ord).\n"
+    "1) handskrivet: true bara om texten är skriven för hand med penna eller blyerts på papper. false om det är en skärm, tryckt text, en bok eller ingen text. "
+    "2) text: skriv av barnets text så exakt det går, med barnets egen stavning och egna tecken. "
+    "3) ord: antal ord i texten. 4) passar: 0–100, hur väl texten svarar på uppdraget. "
+    "5) handstil: 0–100, hur lätt det är att läsa. 6) tecken: 0–100, punkt och stor bokstav. "
+    "7) bra: 1–2 saker som är bra (om innehållet eller skrivandet). 8) tips: 1–2 små konkreta tips till nästa gång. 9) pepp: en kort peppande mening. "
+    "Var snäll och uppmuntrande, anpassat till åldern.\n"
+    'Svara ENDAST med JSON: {{"handskrivet": true, "text": "...", "ord": 0, "passar": 0, "handstil": 0, "tecken": 0, "bra": ["..."], "tips": ["..."], "pepp": "..."}}'
+)
+
+
+class PennaView(HomeAssistantView):
+    """Pennuppdrag: barnet skriver för hand, fotar papperet och AI:n läser och bedömer."""
+
+    url = "/api/skolan/penna"
+    name = "api:skolan:penna"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        bilder: list[Path] = []
+        if request.content_type.startswith("multipart/"):
+            form = await request.post()
+            try:
+                body = json.loads(str(form.get("json") or "{}"))
+                bilder = await _ta_emot_filer(hass, form, "penna")
+            except ValueError as err:
+                return self.json_message(str(err), 400)
+        else:
+            body = await request.json()
+        try:
+            return await self._op(hass, request, body if isinstance(body, dict) else {}, bilder)
+        finally:
+            if bilder:
+                await hass.async_add_executor_job(lambda: [p.unlink(missing_ok=True) for p in bilder])
+
+    async def _op(self, hass: HomeAssistant, request: web.Request, body: dict, bilder: list[Path]) -> web.Response:
+        barn = _barn_for(hass, request, body.get("barn"))
+        foralder = _ar_foralder(hass, request)
+        path = _dir(hass, barn)
+        lock = hass.data[DOMAIN]["locks"][barn]
+        data = await hass.async_add_executor_job(_load, path)
+        ar = fraga.alder(data)
+        alder = f" ({ar} år)" if ar else ""
+        op = body.get("op")
+        if op in ("godkann", "underkann"):
+            if not foralder:
+                raise web.HTTPForbidden
+            async with lock:
+                data = await hass.async_add_executor_job(_load, path)
+                try:
+                    x = penna.foralder_andra(data, str(body.get("id")), op == "godkann")
+                except ValueError as err:
+                    return self.json_message(str(err), 400)
+                await hass.async_add_executor_job(_save, path, data)
+            return self.json(x)
+        if foralder:
+            return self.json_message("Pennuppdragen gör barnet själv. Ni kan se och underkänna inlämningarna.", 403)
+        if op == "nytt":
+            st = penna.status(data)
+            if st["aktiv"] and not body.get("byt"):
+                return self.json(st["aktiv"])
+            d = meriter._m(data).get("djur") or {}
+            typ = penna.ny_typ(data)
+            info = penna.STEG[st["steg"]]
+            try:
+                x = _parse_json(await _ai_text(hass, PENNA_UPPDRAG_PROMPT.format(
+                    alder=alder, info=info["info"], mal=info["mal"], typ=typ,
+                    djur=f" Om typen gäller husdjuret heter det {d['namn']} och är en {d['art']}." if d.get("namn") else ""), "Läxspelet pennuppdrag"))
+                uppgift = str(x.get("uppgift") or "").strip()[:300]
+                if not uppgift:
+                    raise ValueError("tomt")
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Läxspelet: pennuppdrag: %s", err)
+                return self.json_message("AI:n kunde inte hitta på ett uppdrag just nu. Försök igen om en stund.", 503)
+            async with lock:
+                data = await hass.async_add_executor_job(_load, path)
+                try:
+                    akt = penna.satt_aktiv(data, uppgift, [str(t)[:160] for t in (x.get("tips") or [])][:2], typ, bool(body.get("byt")))
+                except ValueError as err:
+                    return self.json_message(str(err), 400)
+                await hass.async_add_executor_job(_save, path, data)
+            return self.json(akt)
+        if op == "lamna":
+            akt = penna.status(data)["aktiv"]
+            if not akt:
+                return self.json_message("Hämta ett pennuppdrag först.", 400)
+            if not bilder:
+                return self.json_message("Fota papperet först.", 400)
+            innehall = await hass.async_add_executor_job(bilder[0].read_bytes)
+            hash_ = hashlib.sha256(innehall).hexdigest()
+            if penna.dubblett(data, hash_, ""):
+                return self.json_message("Det här fotot har redan lämnats in. Skriv en ny text!", 400)
+            try:
+                x = _parse_json(await _ai_las(hass, bilder[:1], PENNA_BEDOM_PROMPT.format(alder=alder, uppgift=akt["uppgift"], mal=penna.STEG[akt["steg"]]["mal"]),
+                                              "Läxspelet pennuppdrag bedöm"))
+                if not isinstance(x, dict):
+                    raise ValueError("konstigt svar")
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Läxspelet: pennuppdrag bedöm: %s", err)
+                return self.json_message("AI:n kunde inte läsa fotot just nu. Försök igen om en stund.", 503)
+            tal = lambda k: max(0, min(100, int(x.get(k) or 0))) if str(x.get(k) or "0").lstrip("-").isdigit() else 0  # noqa: E731
+            bed = {"handskrivet": x.get("handskrivet") is True or str(x.get("handskrivet")).lower() == "true", "text": str(x.get("text") or "")[:3000],
+                   "ord": tal("ord") if "ord" in x else 0, "passar": tal("passar"), "handstil": tal("handstil"), "tecken": tal("tecken"),
+                   "bra": [str(b)[:200] for b in (x.get("bra") or [])][:2], "tips": [str(t)[:200] for t in (x.get("tips") or [])][:2], "pepp": str(x.get("pepp") or "")[:200]}
+            bed["ord"] = int(x.get("ord") or 0) if str(x.get("ord") or "").isdigit() else len(bed["text"].split())
+            skal = penna.dubblett(data, hash_, bed["text"])
+            if skal:
+                return self.json_message(skal, 400)
+            fil = f"penna_{hash_[:12]}{bilder[0].suffix.lower() or '.jpg'}"
+            async with lock:
+                data = await hass.async_add_executor_job(_load, path)
+                await hass.async_add_executor_job(shutil.copyfile, bilder[0], path / "filer" / fil)
+                ut = penna.lamna_in(data, bed, fil, hash_)
+                await hass.async_add_executor_job(_save, path, data)
+            return self.json(ut)
         return self.json_message("Okänd åtgärd.", 400)
 
 
