@@ -42,7 +42,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import backup, dagens, fraga, meriter, penna, plugg, schemavy, skola, skriv, tillsammans, vanner
+from . import backup, boende, dagens, fraga, meriter, penna, plugg, schemavy, skola, skriv, tillsammans, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, BackupView, HemkopplingView, HemView, FjarrView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, BackupView, HemkopplingView, HemView, FjarrView, BoendeView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -275,7 +275,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
             for titel, text, url in skicka:
                 await _notis(hass, b["notify"], titel, text, url)
             for f, n in larm:
-                for tjanst in conf.get("foralder_notify", {}).values():
+                for tjanst in _foralder_tjanster(hass, data):
                     await _notis(
                         hass, tjanst, f"⚠️ {b['namn']} har inte gjort förhöret",
                         f"{f['namn']}: {n} påminnelser utan att det blivit gjort. Dags att prata med {b['namn']}?",
@@ -362,10 +362,79 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
             nar = f"Imorgon, {VECKODAGAR_SV[date.fromisoformat(dag).weekday()]} {int(dag[8:])}/{int(dag[5:7])}"
             rader = nar + ":\n" + "\n".join(f"📌 {'Kl. ' + x['tid'] + ': ' if x.get('tid') else ''}{x['text']}" for x in imorgon)
             await _notis(hass, b.get("notify"), "🎒 Imorgon i skolan", rader, "/skolan")
-            for tjanst in conf.get("foralder_notify", {}).values():
+            for tjanst in _foralder_tjanster(hass, data, dt_util.now().date() + timedelta(days=1)):
                 await _notis(hass, tjanst, f"🎒 {b['namn']} imorgon", rader, f"/skolan?barn={b['id']}")
 
     async_track_time_change(hass, _skolinfo_notis, hour=18, minute=30, second=0)
+
+    async def _overlamning(now=None) -> None:
+        """Bytesdag (växelvis boende): sammanfattning till hemmet som tar emot barnet, påminnelse om saker till hemmet som lämnar."""
+        now = now or dt_util.now()
+        conf = hass.data[DOMAIN]["conf"]
+        skickat = hass.data[DOMAIN].setdefault("overlamning_skickad", set())
+        for b in conf["barn"]:
+            fj = await hass.async_add_executor_job(_load_fil, _dir(hass, b["id"]) / "fjarr.json")
+            if fj.get("token"):  # barnets konto finns i det andra hemmet: hämta därifrån, notiser till föräldrarna här
+                try:
+                    data = (await _fjarr_state(hass, b["id"]))["data"]
+                except Exception:  # noqa: BLE001
+                    continue
+                vi = lambda h: bool(h and h.get("annat_system"))  # noqa: E731  (sett från hem-systemet är vi "det andra")
+                mottagare = list(conf.get("foralder_notify", {}).values())
+            else:
+                data = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
+                vi = lambda h: bool(h and not h.get("annat_system"))  # noqa: E731
+                mottagare = None
+            if not boende.aktiv(data):
+                continue
+            idag = now.date()
+            bt = (data.get("boende") or {}).get("bytestid", "17:00")
+            h, m = (int(x) for x in bt.split(":"))
+            nyckel = f"{b['id']}:{idag.isoformat()}"
+            if nyckel in skickat or (now.hour, now.minute // 15) != (h - 2 if h >= 2 else 0, (m // 15)):
+                continue  # skickas två timmar före bytet
+            uppdr = [f"{u['namn']} ({u.get('amne_namn')}, {u['datum'][5:]})" for u in data.get("uppdrag", [])
+                     if not u.get("klart") and u.get("datum") and idag.isoformat() <= u["datum"] <= (idag + timedelta(days=7)).isoformat()]
+            info = [x["text"] for x in meriter.skolinfo(data) if x.get("dagar") is not None and 0 <= x["dagar"] <= 3]
+            o = boende.overlamning(data, idag, uppdr, info)
+            if not o:
+                continue
+            skickat.add(nyckel)
+            fn = conf.get("foralder_notify", {})
+            if vi(o["till"]):
+                for tj in mottagare if mottagare is not None else [fn[u] for u in o["till"].get("foraldrar", []) if fn.get(u)] or list(fn.values()):
+                    await _notis(hass, tj, f"🔄 {b['namn']} kommer till er idag kl. {bt}", o["text"], f"/skolan?barn={b['id']}")
+            if vi(o["fran"]):
+                saker = [x["namn"] for x in data.get("saker", []) if x.get("hem") == o["fran"]["id"]]
+                text = (f"Glöm inte att packa: {', '.join(saker)}." if saker else "Allt verkar redan vara på plats.") + " Läxor och prov finns i Läxspelet."
+                for tj in mottagare if mottagare is not None else [fn[u] for u in o["fran"].get("foraldrar", []) if fn.get(u)] or list(fn.values()):
+                    await _notis(hass, tj, f"🔄 {b['namn']} flyttar till {o['till']['namn']} kl. {bt}", text, f"/skolan?barn={b['id']}")
+
+    async_track_time_change(hass, _overlamning, minute=[0, 15, 30, 45], second=5)
+
+    async def _fjarr_skolinfo(_now=None) -> None:
+        """Kl. 18.30 för barn vars konto finns i det andra hemmet: notis till föräldrarna här när barnet är här imorgon."""
+        conf = hass.data[DOMAIN]["conf"]
+        imorgon_d = dt_util.now().date() + timedelta(days=1)
+        for b in conf["barn"]:
+            fj = await hass.async_add_executor_job(_load_fil, _dir(hass, b["id"]) / "fjarr.json")
+            if not fj.get("token"):
+                continue
+            try:
+                data = (await _fjarr_state(hass, b["id"]))["data"]
+            except Exception:  # noqa: BLE001
+                continue
+            h = boende.hem_for(data, imorgon_d)
+            if boende.aktiv(data) and not (h and h.get("annat_system")):
+                continue  # barnet är i hem-systemets hem imorgon: de får notisen därifrån
+            imorgon = [x for x in meriter.skolinfo(data) if x["dagar"] == 1 and (not x.get("kalender") or x.get("ny_start"))]
+            if not imorgon:
+                continue
+            rader = "\n".join(f"📌 {'Kl. ' + x['tid'] + ': ' if x.get('tid') else ''}{x['text']}" for x in imorgon)
+            for tj in conf.get("foralder_notify", {}).values():
+                await _notis(hass, tj, f"🎒 {b['namn']} imorgon", rader, f"/skolan?barn={b['id']}")
+
+    async_track_time_change(hass, _fjarr_skolinfo, hour=18, minute=30, second=20)
 
     async def _kalendrar(_now=None) -> None:
         try:
@@ -541,7 +610,13 @@ def _krymp_mapp(mapp: Path) -> dict:
     return {"bilder": n, "fore_mb": round(fore / 1e6, 1), "efter_mb": round(efter / 1e6, 1)}
 
 
+_MAPP_ANNAN: "contextvars.ContextVar[tuple[str, Path] | None]" = __import__("contextvars").ContextVar("skolan_mapp", default=None)
+
+
 def _dir(hass: HomeAssistant, barn: str) -> Path:
+    o = _MAPP_ANNAN.get()
+    if o and o[0] == barn:  # läser barnets konto ur en molnbackup (det andra hemmet svarar inte)
+        return o[1]
     return hass.data[DOMAIN]["base"] / barn
 
 
@@ -559,6 +634,26 @@ def _save(path: Path, data: dict) -> None:
     tmp = path / "data.json.tmp"
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), "utf-8")
     tmp.replace(path / "data.json")
+
+
+def _foralder_tjanster(hass: HomeAssistant, data: dict, dag: date | None = None) -> list[str]:
+    """Notistjänster för föräldrarna som har barnet en viss dag (växelvis boende). Alla annars."""
+    conf = hass.data[DOMAIN]["conf"]
+    fn = conf.get("foralder_notify", {})
+    vilka = boende.foraldrar_for(data, dag or dt_util.now().date(), list(conf.get("foraldrar", [])))
+    return [fn[u] for u in vilka if fn.get(u)]
+
+
+async def _foralder_namn(hass: HomeAssistant) -> dict[str, str]:
+    ut = {}
+    for uid in hass.data[DOMAIN]["conf"].get("foraldrar", []):
+        try:
+            u = await hass.auth.async_get_user(uid)
+            ut[uid] = u.name if u else uid
+        except Exception:  # noqa: BLE001  (Windows)
+            p = getattr(hass, "konto", None) and hass.konto.person(uid)
+            ut[uid] = (p or {}).get("namn", uid)
+    return ut
 
 
 def _vanner_kort(hass: HomeAssistant, barn: str, v: dict) -> dict | None:
@@ -968,7 +1063,8 @@ class StateView(HomeAssistantView):
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
-                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "skriv": skriv.status(data, fraga.alder(data)), "penna": penna.status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "riktlinjer": plugg.riktlinjer(data) if parent else None, "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
+                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "handstil": meriter.handstil_status(data), "skriv": skriv.status(data, fraga.alder(data)), "penna": penna.status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "riktlinjer": plugg.riktlinjer(data) if parent else None,
+                "boende": boende.status(data, await _foralder_namn(hass) if parent else {}), "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
@@ -1792,7 +1888,9 @@ class HemkopplingView(HomeAssistantView):
                 fj = _load_fil(_dir(hass, b["id"]) / "fjarr.json")
                 ut.append({"id": b["id"], "namn": b["namn"],
                            "lankar": [{"token": t[:8], "namn": l.get("namn"), "skapad": l.get("skapad"), "senast": l.get("senast")} for t, l in lankar.items() if l["barn"] == b["id"]],
-                           "fjarr": {"hem": fj.get("hem"), "url": fj.get("url"), "kopplad": fj.get("kopplad"), "senast": fj.get("senast")} if fj.get("token") else None})
+                           "fjarr": {"hem": fj.get("hem"), "url": fj.get("url"), "kopplad": fj.get("kopplad"), "senast": fj.get("senast"),
+                                     "moln": {"typ": fj["moln"]["typ"], "mapp": fj["moln"].get("mapp"), "url": fj["moln"].get("url"), "anv": fj["moln"].get("anv"),
+                                              "kopia": fj.get("moln_kopia")} if fj.get("moln") else None} if fj.get("token") else None})
             return ut
         return self.json({"barn": await hass.async_add_executor_job(_las), "extern": _hem_extern_url(hass)})
 
@@ -1845,8 +1943,37 @@ class HemkopplingView(HomeAssistantView):
                 except Exception as err:  # noqa: BLE001
                     raise ValueError("Får ingen kontakt med det andra hemmets Läxspelet. Är den datorn igång och har fjärråtkomst?") from err
                 info = {"url": d["u"], "token": d["t"], "hem": plugg._txt(body.get("hem"), 40) or f"{st.get('namn') or d.get('n')}s andra hem",
-                        "kopplad": dt_util.now().isoformat(timespec="minutes")}
+                        "kopplad": dt_util.now().isoformat(timespec="minutes"), "hem_barn": st.get("barn")}
                 await hass.async_add_executor_job(_save_fil, _dir(hass, b["id"]) / "fjarr.json", info)
+                return self.json({"ok": True})
+            if op == "moln":  # det andra hemmet: var hem-systemets backuper finns, om det inte svarar
+                if not b:
+                    raise ValueError("Välj barn.")
+                fil = _dir(hass, b["id"]) / "fjarr.json"
+                k = await hass.async_add_executor_job(_load_fil, fil)
+                if not k.get("token"):
+                    raise ValueError("Barnet är inte kopplat till ett annat hem.")
+                typ = body.get("typ")
+                if typ == "av":
+                    k.pop("moln", None)
+                else:
+                    gammal = k.get("moln") or {}
+                    m = {"typ": "webdav" if typ == "webdav" else "mapp", "mapp": str(body.get("mapp") or "").strip()[:300],
+                         "url": str(body.get("url") or "").strip()[:300], "anv": str(body.get("anv") or "").strip()[:200],
+                         "losen": str(body.get("losen") or "") or gammal.get("losen", ""), "backup_losen": str(body.get("backup_losen") or "") or gammal.get("backup_losen", "")}
+                    if not m["backup_losen"]:
+                        raise ValueError("Skriv lösenordet som backuperna är krypterade med.")
+                    if m["typ"] == "mapp" and not m["mapp"]:
+                        raise ValueError("Skriv vilken mapp backuperna finns i.")
+                    if m["typ"] == "webdav" and not m["url"].startswith("https://"):
+                        raise ValueError("Molnadressen ska börja med https://")
+                    k["moln"] = m
+                await hass.async_add_executor_job(_save_fil, fil, k)
+                if typ != "av":
+                    try:
+                        await _moln_kopia(hass, b["id"], tvinga=True)
+                    except Exception as err:  # noqa: BLE001
+                        return self.json_message(f"Sparat, men backupen gick inte att läsa: {err}", 400)
                 return self.json({"ok": True})
             if op == "koppla_bort":
                 if b:
@@ -1903,6 +2030,109 @@ class HemView(HomeAssistantView):
         return await self._hantera(request, token, rest)
 
 
+async def _fjarr_state(hass: HomeAssistant, barn: str) -> dict:
+    """Barnets state från hem-systemet (för notiser i det andra hemmet)."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    k = await hass.async_add_executor_job(_load_fil, _dir(hass, barn) / "fjarr.json")
+    async with async_get_clientsession(hass).get(f"{k['url'].rstrip('/')}/api/skolan/hem/{k['token']}/state", headers={"X-Lxs-Roll": "foralder"}, timeout=60) as r:
+        if r.status != 200:
+            raise RuntimeError(f"svarade {r.status}")
+        return await r.json()
+
+
+class BoendeView(HomeAssistantView):
+    """Växelvis boende: schema (föräldrar) och var sakerna finns (alla)."""
+
+    url = "/api/skolan/boende"
+    name = "api:skolan:boende"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        body = await request.json()
+        barn = _barn_for(hass, request, body.get("barn"))
+        foralder = _ar_foralder(hass, request)
+        op = body.get("op")
+        path = _dir(hass, barn)
+        alla = list(hass.data[DOMAIN]["conf"].get("foraldrar", []))
+        if op in ("spara", "undantag", "undantag_bort") and not foralder:
+            raise web.HTTPForbidden
+        async with hass.data[DOMAIN]["locks"][barn]:
+            data = await hass.async_add_executor_job(_load, path)
+            try:
+                if op == "spara":
+                    boende.spara(data, body, alla)
+                elif op == "undantag":
+                    boende.undantag(data, str(body.get("fran") or ""), str(body.get("till") or ""), str(body.get("hem") or ""))
+                elif op == "undantag_bort":
+                    boende.undantag(data, "", "", "", bort=str(body.get("id") or ""))
+                elif op in ("sak_ny", "sak_flytta", "sak_bort"):
+                    boende.sak(data, op, body)
+                else:
+                    raise ValueError("Okänd åtgärd.")
+            except ValueError as err:
+                return self.json_message(str(err), 400)
+            await hass.async_add_executor_job(_save, path, data)
+        return self.json({"boende": boende.status(data, await _foralder_namn(hass) if foralder else {})})
+
+
+async def _moln_kopia(hass: HomeAssistant, barn: str, tvinga: bool = False) -> Path:
+    """Hämta barnets konto ur hem-systemets senaste molnbackup (högst var 3:e timme). Returnerar mappen."""
+    import aiohttp
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    base = hass.data[DOMAIN]["base"]
+    fil = _dir(hass, barn) / "fjarr.json"
+    k = await hass.async_add_executor_job(_load_fil, fil)
+    m = k.get("moln") or {}
+    mal = base / ".moln" / barn
+    if not tvinga and (k.get("moln_kopia") or {}).get("hamtad", "") > (dt_util.now() - timedelta(hours=3)).isoformat() and mal.is_dir():
+        return mal
+    tmp = base / ".moln-tmp"
+    await hass.async_add_executor_job(lambda: tmp.mkdir(parents=True, exist_ok=True))
+    if m.get("typ") == "webdav":
+        session = async_get_clientsession(hass)
+        auth = aiohttp.BasicAuth(m.get("anv", ""), m.get("losen", ""))
+        url = m["url"].rstrip("/")
+        async with session.request("PROPFIND", url + "/", auth=auth, headers={"Depth": "1"}, timeout=aiohttp.ClientTimeout(total=60)) as r:
+            if r.status >= 400:
+                raise RuntimeError(f"molnet svarade {r.status}")
+            namn = sorted(set(re.findall(r"(laxspelet-[^<>/\"]+?\.(?:zip|laxspelet))", await r.text())))
+        if not namn:
+            raise RuntimeError("hittade ingen backup i molnet")
+        senaste = tmp / Path(namn[-1]).name
+        async with session.get(f"{url}/{namn[-1]}", auth=auth, timeout=aiohttp.ClientTimeout(total=1800)) as r:
+            if r.status != 200:
+                raise RuntimeError(f"molnet svarade {r.status}")
+            with senaste.open("wb") as f:
+                async for bit in r.content.iter_chunked(1 << 20):
+                    await hass.async_add_executor_job(f.write, bit)
+    else:
+        def _hitta():
+            filer = sorted([f for f in Path(m.get("mapp", "")).glob("laxspelet-*") if f.suffix in (".zip", ".laxspelet")], key=lambda f: f.stat().st_mtime)
+            if not filer:
+                raise RuntimeError("hittade ingen backup i mappen")
+            return filer[-1]
+        senaste = await hass.async_add_executor_job(_hitta)
+
+    def _packa_upp():
+        manifest, zipf = backup.oppna(senaste, m.get("backup_losen") or None, tmp)
+        ids = [x["id"] for x in manifest["barn"]]
+        hem_barn = k.get("hem_barn") if k.get("hem_barn") in ids else (ids[0] if len(ids) == 1 else None)
+        if not hem_barn:
+            raise RuntimeError("backupen innehåller inte barnet")
+        shutil.rmtree(mal, ignore_errors=True)
+        backup.aterstall(zipf, base / ".moln", {hem_barn: barn}, False)
+        for f in tmp.glob("*"):
+            f.unlink(missing_ok=True)
+        return manifest.get("skapad")
+    skapad = await hass.async_add_executor_job(_packa_upp)
+    kk = await hass.async_add_executor_job(_load_fil, fil)
+    kk["moln_kopia"] = {"hamtad": dt_util.now().isoformat(timespec="minutes"), "skapad": skapad}
+    await hass.async_add_executor_job(_save_fil, fil, kk)
+    return mal
+
+
 class FjarrView(HomeAssistantView):
     """Det andra hemmet: skickar barnets anrop vidare till hem-systemet (och visar en sparad kopia om det inte svarar)."""
 
@@ -1949,6 +2179,23 @@ class FjarrView(HomeAssistantView):
                         await hass.async_add_executor_job(_save_fil, fil, {**await hass.async_add_executor_job(_load_fil, fil), "url": ny})
                         continue
                 break
+        if k.get("moln") and request.method == "GET" and rest in ("state", "fil", "ebok"):
+            try:  # läs ur hem-systemets senaste molnbackup
+                mapp = await _moln_kopia(hass, barn)
+                kk = await hass.async_add_executor_job(_load_fil, fil)
+                ny = request.clone(rel_url=request.rel_url.with_path(f"/api/skolan/{rest}"))
+                ny["skolan_bara_barn"] = barn
+                tok = _MAPP_ANNAN.set((barn, mapp))
+                try:
+                    vy = {"state": StateView, "fil": FileView, "ebok": EbokView}[rest]()
+                    svar = await vy.get(ny)
+                finally:
+                    _MAPP_ANNAN.reset(tok)
+                if rest == "state" and svar.status == 200:
+                    return self.json({**json.loads(svar.body), "offline": f"molnbackupen {(kk.get('moln_kopia') or {}).get('skapad') or ''}".strip()})
+                return svar
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.info("Läxspelet: molnkopian gick inte att läsa: %s", err)
         if rest == "state" and request.method == "GET" and k.get("cache"):
             return self.json({**k["cache"], "offline": k.get("senast") or True})
         return self.json_message("Det andra hemmets Läxspelet svarar inte just nu (datorn kan vara avstängd). Försök igen senare.", 503)
@@ -5893,4 +6140,5 @@ class KlassView(HomeAssistantView):
 
 # Det barnets andra hem får använda (barnets egna funktioner och föräldrarnas läxfunktioner för just det barnet).
 HEM_VYER = [StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, UploadView,
-            FileView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, UttalView, ExempelView, InspelningView]
+            FileView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, UttalView, ExempelView, InspelningView,
+            BoendeView]

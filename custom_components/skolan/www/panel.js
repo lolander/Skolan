@@ -779,7 +779,7 @@ const idagISO = () => {
 const TYP_IKON = { prov: "📝", las: "📖", hogl: "🗣️", skriv: "✍️" };
 const TYP_NAMN = { prov: "Prov", las: "Läsläxa", hogl: "Högläsning", skriv: "Läxboken" };
 const FJARR_VYER = new Set(["state", "action", "glosstrid", "lar", "fraga", "hjalp", "plan", "handstil", "skriv", "penna", "upload", "fil", "ebok", "utskrift",
-  "forhor", "uppdrag", "veckobrev", "lektionsschema", "schema_sida", "uttal", "exempel", "inspelning"]);
+  "forhor", "uppdrag", "veckobrev", "lektionsschema", "schema_sida", "uttal", "exempel", "inspelning", "boende"]);
 const PLAN_IKON = { las: "📖", forhor: "📝", ovningsprov: "🧪", repetera: "🔁", uppgifter: "✏️", glosor: "🗣️", sammanfatta: "🗒️", forklara: "🙋" };
 const VECKODAG = ["måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag"];
 const veckodag = (iso) => VECKODAG[(new Date(`${iso}T12:00:00`).getDay() + 6) % 7];
@@ -1258,6 +1258,10 @@ class SkolanPanel extends HTMLElement {
       title = `💬 Fråga ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "hem" };
       body = this._fragaView();
+    } else if (v.name === "boende") {
+      title = "🔄 Växelvis boende";
+      back = { name: "foralder" };
+      body = this._boendeView();
     } else if (v.name === "hem2") {
       title = "🏡 Två hem";
       back = { name: "foralder" };
@@ -2020,6 +2024,54 @@ class SkolanPanel extends HTMLElement {
       ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
   }
 
+  // ---------- växelvis boende ----------
+  async _boende(op, args = {}) {
+    try {
+      const res = await this._f("/api/skolan/boende", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, op, ...args }) });
+      const x = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      this._s.boende = x.boende;
+      this._msg = null;
+      return x;
+    } catch (e) { this._msg = { type: "error", text: e.message || String(e) }; return null; }
+    finally { this._render(); }
+  }
+
+  _boendeKort() {
+    const b = this._s.boende;
+    if (!b?.aktiv) return "";
+    const hem = Object.fromEntries(b.hem.map((h) => [h.id, h.namn]));
+    const nb = b.nasta_byte ? `${veckodag(b.nasta_byte)} ${Number(b.nasta_byte.slice(8))}/${Number(b.nasta_byte.slice(5, 7))}` : "";
+    return `<div class="card boende-kort"><div class="djur-rubrik">🏠 ${this._s.kan_valja ? `${esc(this._s.namn)} är hos` : "Du är hos"} ${esc(b.idag_namn || "")}</div>
+      ${nb ? `<div class="small">🔄 Byte ${esc(nb)} kl. ${esc(b.bytestid)} → ${esc(b.nasta_hem || "")}</div>` : ""}
+      <details ${this._boendeOppen ? "open" : ""} id="boende-det"><summary class="small"><b>🎒 Var finns grejerna?</b> ${(b.saker || []).filter((x) => x.hem !== b.idag).length ? `<span class="muted">· ${(b.saker || []).filter((x) => x.hem !== b.idag).length} hos ${esc(hem[b.hem.find((h) => h.id !== b.idag)?.id] || "")}</span>` : ""}</summary>
+        ${(b.saker || []).map((x) => `<div class="sak-rad"><span>${esc(x.namn)}</span><span class="sak-hem">${b.hem.map((h) => `<button class="mini ${x.hem === h.id ? "primary" : ""}" data-sak-hem="${x.id}|${h.id}">${esc(h.namn)}</button>`).join("")}<button class="mini" data-sak-bort="${x.id}">✕</button></span></div>`).join("")}
+        <div class="pg-ny"><input id="sak-ny" maxlength="40" placeholder="Lägg till en sak, t.ex. 🎻 Fiolen"><button class="mini" id="sak-ny-ok">➕</button></div></details></div>`;
+  }
+
+  _boendeView() {
+    const s = this._s, b = s.boende || {}, v = this._view;
+    const namn = b.foraldrar_namn || {};
+    const hem = b.hem?.length === 2 ? b.hem : [{ namn: "Mammas hem", foraldrar: [], annat_system: false }, { namn: "Pappas hem", foraldrar: [], annat_system: false }];
+    const DAGAR = ["måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag"];
+    const hemRuta = (h, i) => `<div class="card hjalp-kort"><b>Hem ${i + 1}</b><input class="bk-in" data-bo-namn="${i}" value="${esc(h.namn)}" maxlength="30">
+      <div class="small" style="margin-top:6px">Föräldrar här som ska få notiser när ${esc(s.namn)} bor här:</div>
+      ${Object.entries(namn).map(([id, n]) => `<label class="small" style="display:block"><input type="checkbox" data-bo-for="${i}|${id}" ${(h.foraldrar || []).includes(id) ? "checked" : ""}> ${esc(n)}</label>`).join("") || `<div class="small muted">Inga föräldrar här.</div>`}
+      <label class="small" style="display:block;margin-top:4px"><input type="checkbox" data-bo-annat="${i}" ${h.annat_system ? "checked" : ""}> Den här föräldern har ett eget Läxspelet (kopplat under 🏡 Två hem) och får notiserna därifrån</label></div>`;
+    return `<p class="small muted">Bor ${esc(s.namn)} växelvis i två hem? Då får föräldern som har ${esc(s.namn)} påminnelserna (t.ex. ”matsäck imorgon”), och på bytesdagen kommer en sammanfattning: läxor, prov och vad som ska med.</p>
+      <label class="small"><input type="checkbox" id="bo-aktiv" ${b.aktiv ? "checked" : ""}> Slå på växelvis boende för ${esc(s.namn)}</label>
+      ${hem.map(hemRuta).join("")}
+      <div class="card hjalp-kort"><b>Schema</b>
+        <div class="small">Byte <select id="bo-dagar">${Object.entries({ 7: "varannan vecka", 14: "varannan tvåveckorsperiod", 3: "var tredje dag", 2: "varannan dag" }).map(([k, t]) => `<option value="${k}" ${Number(b.dagar || 7) === Number(k) ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+        <div class="small" style="margin-top:6px">Bytesdag <select id="bo-bytesdag">${DAGAR.map((d, i) => `<option value="${i}" ${(b.bytesdag ?? 4) === i ? "selected" : ""}>${d}</option>`).join("")}</select> kl. <input id="bo-tid" type="time" value="${esc(b.bytestid || "17:00")}"></div>
+        <div class="small" style="margin-top:6px">Just nu bor ${esc(s.namn)} hos <select id="bo-nu">${hem.map((h, i) => `<option value="${i}" ${b.idag === `h${i + 1}` ? "selected" : ""}>${esc(h.namn)}</option>`).join("")}</select></div>
+        <div class="actions"><button class="primary" id="bo-spara">💾 Spara</button></div>
+        ${b.aktiv && b.nasta_byte ? `<div class="small">Nästa byte: ${esc(b.nasta_byte)} → ${esc(b.nasta_hem || "")}</div>` : ""}</div>
+      ${b.aktiv ? `<div class="card hjalp-kort"><b>Undantag</b> <span class="small muted">(lov, resor, byte av helg)</span>
+        ${(b.undantag || []).map((u) => `<div class="small">${esc(u.fran)} – ${esc(u.till)}: ${esc(b.hem.find((h) => h.id === u.hem)?.namn || "")} <button class="mini" data-bo-ubort="${u.id}">✕</button></div>`).join("")}
+        <div class="small" style="margin-top:6px"><input type="date" id="bo-ufran"> – <input type="date" id="bo-utill"> hos <select id="bo-uhem">${b.hem.map((h) => `<option value="${h.id}">${esc(h.namn)}</option>`).join("")}</select> <button class="mini" id="bo-uny">➕</button></div></div>` : ""}`;
+  }
+
   // ---------- barnets två hem ----------
   _hemView() {
     const v = this._view;
@@ -2035,6 +2087,15 @@ class SkolanPanel extends HTMLElement {
       ${v.d.barn.map((b) => `<div class="card hjalp-kort"><b>${esc(b.namn)}</b>
         ${b.fjarr ? `<p>🏠 ${esc(b.namn)}s konto finns i <b>${esc(b.fjarr.hem)}</b>. Allt ${esc(b.namn)} gör här sparas där.</p>
             <div class="small muted">Kopplad ${datum(b.fjarr.kopplad)} · senaste kontakt ${datum(b.fjarr.senast)}</div>
+            <details class="small" style="margin-top:8px" ${b.fjarr.moln ? "" : ""}><summary>☁️ Om ${esc(b.fjarr.hem)} inte svarar: läs från deras molnbackup ${b.fjarr.moln ? "✅" : ""}</summary>
+              <p>Om det andra hemmet har automatisk backup (💾 Backup och flytt) till en mapp eller ett moln som ni båda kommer åt, kan ${esc(b.namn)}s konto läsas därifrån när deras Läxspelet är avstängt. Det blir en kopia att läsa, med läxor, prov, schema och böcker. Ändringar sparas när de är igång igen.</p>
+              ${b.fjarr.moln?.kopia ? `<div class="msg ok">Senaste kopian: backup från ${esc(b.fjarr.moln.kopia.skapad || "")}, hämtad ${datum(b.fjarr.moln.kopia.hamtad)}</div>` : ""}
+              <div class="fraga-forslag"><button class="mini ${(v.moln?.[b.id] || b.fjarr.moln?.typ || "mapp") === "mapp" ? "primary" : ""}" data-moln-typ="${b.id}|mapp">📁 Delad mapp</button><button class="mini ${(v.moln?.[b.id] || b.fjarr.moln?.typ) === "webdav" ? "primary" : ""}" data-moln-typ="${b.id}|webdav">☁️ WebDAV</button></div>
+              ${(v.moln?.[b.id] || b.fjarr.moln?.typ || "mapp") === "mapp"
+                ? `<input class="bk-in" id="moln-mapp-${b.id}" value="${esc(b.fjarr.moln?.mapp || "")}" placeholder="Mappen med deras backuper (t.ex. en delad OneDrive- eller Google Drive-mapp)">`
+                : `<input class="bk-in" id="moln-url-${b.id}" value="${esc(b.fjarr.moln?.url || "")}" placeholder="https://… (WebDAV-mappen med deras backuper)"><input class="bk-in" id="moln-anv-${b.id}" value="${esc(b.fjarr.moln?.anv || "")}" placeholder="Användarnamn"><input class="bk-in" type="password" id="moln-losen-${b.id}" placeholder="Lösenord till molnet${b.fjarr.moln ? " (lämna tomt för att behålla)" : ""}">`}
+              <input class="bk-in" type="password" id="moln-blosen-${b.id}" placeholder="Backupernas lösenord${b.fjarr.moln ? " (lämna tomt för att behålla)" : ""}">
+              <div class="actions"><button class="primary" data-moln-spara="${b.id}" ${this._busy ? "disabled" : ""}>💾 Spara och prova</button>${b.fjarr.moln ? `<button class="ghost" data-moln-av="${b.id}">Stäng av</button>` : ""}</div></details>
             <div class="actions"><button class="ghost danger" data-hem-bort="${b.id}">Koppla bort</button></div>`
           : `<p class="small"><b>Det här är ${esc(b.namn)}s hem-system.</b> Skapa en länk och skicka den till den andra föräldern, som klistrar in den i sitt Läxspelet.</p>
             ${b.lankar.length ? `<ul class="lista">${b.lankar.map((l) => `<li>🔗 ${esc(l.namn)} <span class="small muted">· skapad ${datum(l.skapad)} · senast använd ${datum(l.senast)}</span> <button class="mini" data-hem-tabort="${b.id}|${l.token}">✕</button></li>`).join("")}</ul>` : ""}
@@ -2493,6 +2554,7 @@ class SkolanPanel extends HTMLElement {
         l({ name: "coach" }, "🧠", "Studiecoach"),
         l({ name: "veckobrev" }, "📸", "Veckobrev"),
         l({ name: "kalender" }, "📅", "Skolkalendrar"),
+        l({ name: "boende" }, "🔄", "Växelvis boende"),
         l({ name: "hem2" }, "🏡", "Två hem"),
         l({ name: "backup" }, "💾", "Backup och flytt"),
       ]) : ""}
@@ -3895,6 +3957,7 @@ class SkolanPanel extends HTMLElement {
         <button class="row foralder-knapp" id="open-kalender" style="margin-top:4px"><span>📅 <b>Skolkalendrar</b><br><span class="muted small">${s.kalender ? `${s.kalender.antal} händelser för ${esc(s.namn)} · ` : ""}Koppla in skolans kalender: länk, Home Assistant, webbsida, fil eller foto</span></span><span>›</span></button>
         ${this._hass?.fristaende ? `<button class="row foralder-knapp" id="fs-koppla" style="margin-top:4px"><span>📱 <b>Koppla en telefon till ${esc(s.namn)}</b><br><span class="muted small">Visa en QR-kod. ${esc(s.namn)} skannar den med sin telefon och är inloggad direkt, utan PIN-kod.</span></span><span>›</span></button>` : ""}
         <button class="row foralder-knapp" id="open-coach" style="margin-top:4px"><span>🧠 <b>Studiecoach och lärarens riktlinjer</b><br><span class="muted small">Påverka hur ${esc(s.namn)}s pluggplaner görs, lägg in hur läraren vill ha det och prata med AI:n om studietaktiken</span></span><span>›</span></button>
+        <button class="row foralder-knapp" id="open-boende" style="margin-top:4px"><span>🔄 <b>Växelvis boende</b><br><span class="muted small">Veckoschema, notiser till föräldern som har ${esc(s.namn)}, överlämning och var grejerna finns</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-hem2" style="margin-top:4px"><span>🏡 <b>Två hem</b><br><span class="muted small">Bor ${esc(s.namn)} i två hem? Koppla ihop hemmens Läxspelet så att kontot är detsamma i båda</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-backup" style="margin-top:4px"><span>💾 <b>Backup och flytt</b><br><span class="muted small">Ladda ner allt, automatisk backup till moln eller mapp, eller flytta till ett annat Läxspelet (Windows ↔ Home Assistant)</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-rapport" style="margin-top:4px"><span>📊 <b>Veckorapport</b><br><span class="muted small">Vad ${esc(s.namn)} har pluggat, vad som är svårt, AI:ns tankar om studietaktiken och frågor till middagen</span></span><span>›</span></button>
@@ -5607,6 +5670,7 @@ class SkolanPanel extends HTMLElement {
       ${this._laxfragaKort()}
       ${this._materialKort()}
       ${this._hejaropKort()}
+      ${this._boendeKort()}
       ${this._dagensListaKort()}
       ${this._pennaKort()}
       ${this._dagensKort()}
@@ -7189,6 +7253,24 @@ class SkolanPanel extends HTMLElement {
     on("#open-coach", () => this._go({ name: "coach" }));
     on("#open-backup", () => this._go({ name: "backup" }));
     on("#open-hem2", () => this._go({ name: "hem2" }));
+    on("#open-boende", () => this._go({ name: "boende" }));
+    $("#boende-det")?.addEventListener("toggle", (e) => { this._boendeOppen = e.target.open; });
+    r.querySelectorAll("[data-sak-hem]").forEach((b) => b.addEventListener("click", () => { const [id, hem] = b.dataset.sakHem.split("|"); this._boende("sak_flytta", { id, hem }); }));
+    r.querySelectorAll("[data-sak-bort]").forEach((b) => b.addEventListener("click", () => { if (confirm("Ta bort saken från listan?")) this._boende("sak_bort", { id: b.dataset.sakBort }); }));
+    const sakNy = () => { const t = ($("#sak-ny")?.value || "").trim(); if (t) this._boende("sak_ny", { namn: t, hem: this._s.boende?.idag }); };
+    on("#sak-ny-ok", sakNy);
+    $("#sak-ny")?.addEventListener("keydown", (e) => { if (e.key === "Enter") sakNy(); });
+    if (v.name === "boende") {
+      on("#bo-spara", async () => {
+        const hem = [0, 1].map((i) => ({ namn: r.querySelector(`[data-bo-namn="${i}"]`).value, annat_system: r.querySelector(`[data-bo-annat="${i}"]`).checked,
+          foraldrar: [...r.querySelectorAll(`[data-bo-for^="${i}|"]`)].filter((x) => x.checked).map((x) => x.dataset.boFor.split("|")[1]) }));
+        if (await this._boende("spara", { aktiv: $("#bo-aktiv").checked, hem, dagar: Number($("#bo-dagar").value), bytesdag: Number($("#bo-bytesdag").value), bytestid: $("#bo-tid").value, nu: $("#bo-nu").value }))
+          this._msg = { type: "ok", text: "Sparat. 🔄" };
+        this._render();
+      });
+      on("#bo-uny", () => this._boende("undantag", { fran: $("#bo-ufran").value, till: $("#bo-utill").value, hem: $("#bo-uhem").value }));
+      r.querySelectorAll("[data-bo-ubort]").forEach((b) => b.addEventListener("click", () => this._boende("undantag_bort", { id: b.dataset.boUbort })));
+    }
     if (v.name === "hem2") {
       const hk = async (body, ok) => {
         this._busy = true; this._render();
@@ -7214,6 +7296,13 @@ class SkolanPanel extends HTMLElement {
         if (!confirm("Koppla? Barnets konto i det andra hemmet används då här också.")) return;
         if (await hk({ op: "koppla", barn: id, lank }, "Kopplat! 🏡 Barnets konto hämtas nu från det andra hemmet.")) { this._fjarrAktiv = null; await this._load(this._s.barn); }
       }));
+      r.querySelectorAll("[data-moln-typ]").forEach((b) => b.addEventListener("click", () => { const [id, t] = b.dataset.molnTyp.split("|"); v.moln = { ...(v.moln || {}), [id]: t }; this._render(); }));
+      r.querySelectorAll("[data-moln-spara]").forEach((b) => b.addEventListener("click", () => {
+        const id = b.dataset.molnSpara, typ = (v.moln || {})[id] || (v.d.barn.find((x) => x.id === id)?.fjarr?.moln?.typ) || "mapp";
+        hk({ op: "moln", barn: id, typ, mapp: $(`#moln-mapp-${id}`)?.value, url: $(`#moln-url-${id}`)?.value, anv: $(`#moln-anv-${id}`)?.value,
+          losen: $(`#moln-losen-${id}`)?.value, backup_losen: $(`#moln-blosen-${id}`)?.value }, "Sparat, och backupen gick att läsa. ☁️");
+      }));
+      r.querySelectorAll("[data-moln-av]").forEach((b) => b.addEventListener("click", () => hk({ op: "moln", barn: b.dataset.molnAv, typ: "av" }, "Avstängt.")));
       r.querySelectorAll("[data-hem-bort]").forEach((b) => b.addEventListener("click", async () => { if (confirm("Koppla bort? Barnet använder då kontot här i det här hemmet igen.")) { await hk({ op: "koppla_bort", barn: b.dataset.hemBort }, "Bortkopplat."); this._fjarrAktiv = null; await this._load(this._s.barn); } }));
     }
     if (v.name === "backup") {
@@ -8535,6 +8624,9 @@ const CSS = `
   .meny-bak { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.25); }
   .meny-grupp { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--secondary-text-color, #777); padding:10px 18px 2px; border-top:1px solid var(--divider-color, #eee); }
   .fs-meny button { background:none; border:none; text-align:left; padding:12px 18px; font-size:15px; color:var(--primary-text-color); cursor:pointer; } .fs-meny button:hover { background:rgba(0,0,0,.06); }
+  .boende-kort { min-height:0; border-left:6px solid #26a69a; cursor:default; }
+  .sak-rad { display:flex; justify-content:space-between; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--divider-color); font-size:14px; }
+  .sak-hem { display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; }
   .bk-in { width:100%; box-sizing:border-box; font:inherit; padding:9px 10px; border-radius:10px; border:1px solid var(--divider-color); background:var(--card-background-color); color:var(--primary-text-color); margin-top:8px; }
   .penna-kort { min-height:0; border-left:6px solid #3949ab; }
   .penna-trappa { display:grid; grid-template-columns:repeat(6, 1fr); gap:4px; margin:4px 0 6px; }
