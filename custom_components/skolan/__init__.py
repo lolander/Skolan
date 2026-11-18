@@ -913,7 +913,7 @@ class StateView(HomeAssistantView):
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
-                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
+                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "husdjur_stats": meriter.husdjur_stats(data) if parent else None, "alla_djur": (meriter.DJUR + meriter.PAKET_DJUR) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,

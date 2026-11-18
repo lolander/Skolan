@@ -1318,6 +1318,34 @@ def husdjur_lista(data: dict) -> list[dict]:
     return ut
 
 
+def husdjur_stats(data: dict) -> list[dict]:
+    """Statistik för alla barnets husdjur (för föräldrasidan). Inaktiva djur räknas fram på en kopia, som om man bytt till dem."""
+    import copy
+
+    d = _m(data).get("djur") or {}
+    ut = []
+    for h in d.get("husdjur", []):
+        kopia = copy.deepcopy(data)
+        hk = next(x for x in _m(kopia)["djur"]["husdjur"] if x["id"] == h["id"])
+        _byt_till(kopia, hk)
+        mk = _m(kopia)
+        t = hk.get("tillvaxt", 0)
+        steg = max(i for i, (grans, _n) in enumerate(DJUR_STEG) if t >= grans)
+        nasta = DJUR_STEG[steg + 1][0] if steg + 1 < len(DJUR_STEG) else None
+        liv, mx = djur_liv(kopia)
+        r = hk.get("raknare", {})
+        nivaer = mk.get("attack_niva", {})
+        ut.append({
+            "id": h["id"], "art": h["art"], "namn": h["namn"], "aktiv": h["id"] == d.get("aktiv"), "skapad": h.get("skapad"),
+            "steg": steg, "steg_namn": DJUR_STEG[steg][1], "tillvaxt": t, "nasta": nasta, "form": _form_av(r, steg),
+            "element": djur_element(h["art"]), "niva": djur_niva(kopia)["niva"], "cp": djur_cp(kopia), "liv": liv, "liv_max": mx,
+            "attacker": [{"ikon": a["ikon"], "namn": a["namn"], "niva": nivaer.get(a["id"], 1)} for a in ATTACKER if a["id"] in mk.get("attacker", [])],
+            "kompisar": [f"{(_sak(x) or {}).get('ikon', '')} {(_sak(x) or {}).get('namn', x)}" for x in mk["djur"].get("agt", []) if _ar_kompis(x)],
+            "raknare": {k: r.get(k, 0) for k in FORM_RAKNARE},
+        })
+    return ut
+
+
 def djur_kop(data: dict, sak_id: str) -> None:
     m = _m(data)
     d = m.get("djur")

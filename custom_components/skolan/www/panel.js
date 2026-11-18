@@ -1234,7 +1234,7 @@ class SkolanPanel extends HTMLElement {
       body = this._fragaView();
     } else if (v.name === "djurstory") {
       title = `📖 ${v.art} Story`;
-      back = { name: "djurbutik" };
+      back = { name: v.fran || "djurbutik" };
       body = this._djurStoryView();
     } else if (v.name === "plan") {
       title = "📅 Pluggplan";
@@ -1934,7 +1934,14 @@ class SkolanPanel extends HTMLElement {
       <div class="small muted center">Samling: ${antalAgt} saker (${antalAlla} vanliga + säsongssaker)</div>
       ${paketHtml}${sasong}${nasta}${attackHtml}
       ${typer.map(([typ, rubrik]) => `<h3>${rubrik}</h3>${typ === "kompis" ? this._kompisRetas(d) : ""}<div class="sak-rutnat">${vanliga(typ).map(kort).join("")}</div>`).join("")}
-      ${titta ? "" : (() => {
+      ${titta ? (() => {
+        const mina = d.mina || [];
+        return `<h3>🐾 ${esc(s.namn)}s husdjur</h3><div class="small muted">Statistik för varje djur finns på föräldrasidan. Tryck på ett djur för att läsa dess story.</div>
+        <div class="mina-djur">${mina.map((h) => `<div class="mitt-djur ${h.aktiv ? "aktiv" : ""}"><button class="rit-val" data-djur-story="${h.art}" data-mitt="${h.id}">${ritaDjur(h.art, "glad", h.steg, { form: h.form })}</button>
+          <div class="small"><b>${esc(h.namn)}</b><br>${h.form ? `${h.form.ikon} ${esc(h.form.namn)}` : esc(h.steg_namn)}<br>${h.element ? h.element.namn : ""}</div>${h.aktiv ? `<div class="small"><b>✅ Aktiv</b></div>` : ""}</div>`).join("")}</div>
+        <h3>📖 Alla husdjur i spelet (${(s.alla_djur || []).length})</h3><div class="small muted">Tryck på ett djur för att läsa dess story. ${esc(s.namn)} skaffar nya djur själv för ${s.nytt_djur_pris} ⭐.</div>
+        <div class="djur-val">${(s.alla_djur || []).map((a) => `<button data-djur-story="${a}" class="rit-val">${ritaDjur(a, "glad", 2)}</button>`).join("")}</div>`;
+      })() : (() => {
         const mina = d.mina || [], har = new Set(mina.map((h) => h.art));
         const paket = (d.agda_djur || []).filter((a) => !har.has(a)), nya = (s.djurlista || []).filter((a) => !har.has(a));
         const pris = s.nytt_djur_pris;
@@ -1953,6 +1960,24 @@ class SkolanPanel extends HTMLElement {
       ${titta ? "" : `<div class="actions"><button class="ghost" id="djur-dop">✏️ Döp om ${esc(d.namn)} (gratis)</button></div>`}`;
   }
 
+  // Föräldrasidan: barnets husdjur med statistik.
+  _husdjurForalder() {
+    const s = this._s, lista = s.husdjur_stats || [];
+    if (!lista.length) return "";
+    const R = { ovningar: "📝 övningar", las_klara: "📖 lästa läxor", full_pott: "💯 alla rätt", bossar: "👹 bossar", rekord_max: "⚡ glosrekord" };
+    return `<h3 style="margin-top:4px">🐾 ${esc(s.namn)}s husdjur</h3><div class="list">${lista.map((h) => `<details class="row hd-rad"><summary>
+        <span class="hd-bild">${ritaDjur(h.art, "glad", Math.max(1, h.steg), { form: h.form })}</span>
+        <span><b>${esc(h.namn)}</b> ${h.aktiv ? `<span class="small">· ✅ aktiv</span>` : ""}<br><span class="small muted">${h.form ? `${h.form.ikon} ${esc(h.form.namn)}` : esc(h.steg_namn)} · nivå ${h.niva} · CP ${h.cp} · ${h.element?.namn || ""}</span></span></summary>
+        <div class="hd-stats small">
+          <div>🌱 Tillväxt: <b>${h.tillvaxt} ⭐</b>${h.nasta ? ` (${h.nasta - h.tillvaxt} kvar till nästa steg)` : " (fullvuxen)"}</div>
+          <div>❤️ Liv: <b>${h.liv ?? h.liv_max}/${h.liv_max}</b></div>
+          <div>⚔️ Attacker: ${h.attacker.length ? h.attacker.map((a) => `${a.ikon} ${esc(a.namn)} (nivå ${a.niva})`).join(", ") : "inga än"}</div>
+          <div>🤝 Kompisar: ${h.kompisar.length ? h.kompisar.map(esc).join(", ") : "inga än"}</div>
+          <div>📊 ${Object.entries(R).map(([k, t]) => `${h.raknare[k] || 0} ${t}`).join(" · ")}</div>
+          ${h.skapad ? `<div class="muted">Skaffad ${esc(h.skapad.slice(0, 10))}</div>` : ""}
+          <button class="mini" data-djur-story="${h.art}" data-mitt="${h.id}">📖 Story</button></div></details>`).join("")}</div>`;
+  }
+
   _djurStoryView() {
     const v = this._view, s = this._s, d = s.meriter?.djur || {};
     const h = v.mitt ? (d.mina || []).find((x) => x.id === v.mitt) : null;
@@ -1961,10 +1986,11 @@ class SkolanPanel extends HTMLElement {
     return `<div class="djur-kort" style="justify-content:center"><div class="story-bild">${ritaDjur(v.art, "glad", h ? Math.max(1, h.steg) : 3, h ? { form: h.form } : {})}</div></div>
       <div class="card hjalp-kort story-text">${h ? `<div class="djur-rubrik">${esc(h.namn)}</div>` : ""}<p>${esc(DJUR_STORY[v.art] || "Det här husdjuret är så hemligt att ingen vet dess historia än. Kanske får du ta reda på den själv?")}</p>
         ${e ? `<div class="small">Element: <b>${esc(typ(e))}</b> · attacker av samma typ gör +25 %, ${esc(typ((s.element_dalig || {})[e]))} passar dåligt (−25 %).</div>` : ""}</div>
-      <div class="actions">${h ? (h.aktiv ? `<span class="small"><b>✅ Med dig nu</b></span>` : `<button class="primary" data-djur-till="${h.id}">🔄 Byt till ${esc(h.namn)}</button>`)
+      <div class="actions">${s.kan_valja ? (h ? `<span class="small">${h.aktiv ? "✅ Aktivt husdjur" : `Ett av ${esc(s.namn)}s husdjur`}</span>` : `<span class="small muted">Bara ${esc(s.namn)} kan skaffa husdjur.</span>`)
+        : h ? (h.aktiv ? `<span class="small"><b>✅ Med dig nu</b></span>` : `<button class="primary" data-djur-till="${h.id}">🔄 Byt till ${esc(h.namn)}</button>`)
         : v.gratis ? `<button class="primary" data-djur-nytt="${v.art}" data-gratis="1">🥚 Kläck mig (redan betald)</button>`
         : `<button class="primary" data-djur-nytt="${v.art}" ${saldo >= pris ? "" : "disabled"}>🥚 Skaffa för ${pris} ⭐</button>${saldo >= pris ? "" : `<span class="small muted">Du behöver ${pris - saldo} ⭐ till.</span>`}`}
-        <button class="ghost" id="story-tillbaka">← Tillbaka till butiken</button></div>`;
+        <button class="ghost" id="story-tillbaka">← Tillbaka</button></div>`;
   }
 
   // ---------- läxpasset ----------
@@ -3302,6 +3328,7 @@ class SkolanPanel extends HTMLElement {
           ${s.djurbrev.rader.map((x) => `<p>${esc(x)}</p>`).join("")}</div>` : ""}
         <div class="row static"><span>🎂 Födelsedag för ${esc(s.namn)}<br><span class="muted small">Då väntar en present i appen</span></span>
           <span><input type="date" id="fd-datum" value="${esc(s.data.fodelsedag || "")}"> <button class="mini" id="fd-spara">Spara</button></span></div>
+        ${this._husdjurForalder()}
         ${this._hejaropForalder()}
         <button class="row foralder-knapp" id="open-lektioner" style="margin-top:4px"><span>🗓️ <b>Schema</b><br><span class="muted small">Fota ${esc(s.namn)}s lektionsschema så läser AI:n av lektioner och ämnen</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-kalender" style="margin-top:4px"><span>📅 <b>Skolkalendrar</b><br><span class="muted small">${s.kalender ? `${s.kalender.antal} händelser för ${esc(s.namn)} · ` : ""}Koppla in skolans kalender: länk, Home Assistant, webbsida, fil eller foto</span></span><span>›</span></button>
@@ -6952,8 +6979,8 @@ class SkolanPanel extends HTMLElement {
       }
       this._render();
     }));
-    r.querySelectorAll("[data-djur-story]").forEach((b) => b.addEventListener("click", () => this._go({ name: "djurstory", art: b.dataset.djurStory, gratis: b.dataset.gratis === "1", mitt: b.dataset.mitt || null })));
-    on("#story-tillbaka", () => this._go({ name: "djurbutik" }));
+    r.querySelectorAll("[data-djur-story]").forEach((b) => b.addEventListener("click", () => this._go({ name: "djurstory", art: b.dataset.djurStory, gratis: b.dataset.gratis === "1", mitt: b.dataset.mitt || null, fran: this._view.name === "foralder" ? "foralder" : "djurbutik" })));
+    on("#story-tillbaka", () => this._go({ name: this._view.fran || "djurbutik" }));
     r.querySelectorAll("[data-djur-nytt]").forEach((b) => b.addEventListener("click", async () => {
       const art = b.dataset.djurNytt, gratis = b.dataset.gratis === "1";
       if (!confirm(`Skaffa ${art}${gratis ? "" : ` för ${this._s.nytt_djur_pris} ⭐`}? Det börjar om från början, utan attacker och kompisar. Dina andra djur finns kvar med allt de har.`)) return;
@@ -7765,6 +7792,11 @@ const CSS = `
   .pd-text { flex:1; min-width:0; }
   .pd-tankar { border-left:5px solid #7e57c2; }
   .story-bild { width:200px; height:200px; margin:0 auto; }
+  .hd-rad { display:block; cursor:default; }
+  .hd-rad summary { display:flex; align-items:center; gap:10px; cursor:pointer; list-style:none; }
+  .hd-rad summary::-webkit-details-marker { display:none; }
+  .hd-bild { width:56px; height:56px; flex-shrink:0; }
+  .hd-stats { margin-top:8px; display:flex; flex-direction:column; gap:4px; }
   .story-text p { font-size:16px; line-height:1.5; margin:6px 0 10px; }
   .mitt-djur button.rit-val { background:none; border:none; padding:0; cursor:pointer; }
   .coach-svar { white-space:pre-wrap; }
