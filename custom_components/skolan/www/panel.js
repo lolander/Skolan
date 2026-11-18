@@ -1984,9 +1984,9 @@ class SkolanPanel extends HTMLElement {
   _pennaKort() {
     const p = this._s.penna;
     if (!p || this._s.kan_valja || !p.kvar_idag) return "";
-    return `<button class="card penna-kort" id="open-penna"><div class="djur-rubrik">🖊️ Pennuppdrag <span class="small">+${p.p} ⭐</span></div>
-      <div class="small">${p.aktiv ? `📝 ${esc(p.aktiv.uppgift)}` : "Skriv för hand på papper, fota och få extra ⭐!"}</div>
-      <div class="small muted">Steg ${p.steg}: ${esc(p.steg_namn)} · ${p.kvar_idag} kvar idag</div></button>`;
+    return `<button class="card penna-kort" id="open-penna"><div class="djur-rubrik">🖊️ Pennuppdrag <span class="penna-pris">+${p.p + (p.idag ? 0 : p.svit_bonus)} ⭐ + ${p.steg >= 4 ? "👑" : "💎"} kista</span></div>
+      <div class="small">${p.aktiv ? `📝 ${esc(p.aktiv.uppgift)}` : "Skriv några meningar för hand, fota och få massor av ⭐!"}</div>
+      <div class="small muted">${p.svit ? `🔥 ${p.svit} dagar i rad · ` : ""}🏆 ${p.vecka}/${p.vecka_mal} den här veckan · ${p.kvar_idag} kvar idag</div></button>`;
   }
 
   _pennaView() {
@@ -2004,21 +2004,35 @@ class SkolanPanel extends HTMLElement {
           <img class="penna-stor" data-fil="${esc(x.fil)}" alt="">
           ${s.kan_valja ? `<div class="actions">${x.godkand ? `<button class="mini ghost danger" data-penna-under="${x.id}">❌ Underkänn (tar bort ⭐)</button>` : `<button class="mini" data-penna-godk="${x.id}">✅ Godkänn ändå</button>`}</div>` : ""}</div></details>`).join("")}</div>` : "";
     if (s.kan_valja) return `${trappa}<p class="small muted">${esc(s.namn)} får skrivuppdrag som skrivs för hand och fotas. AI:n läser texten och godkänner. Ni kan underkänna eller godkänna i efterhand.</p>${histHtml}`;
-    const akt = p.aktiv;
-    return `${trappa}
-      ${res ? `<div class="card hjalp-kort penna-res">${res.godkand ? `<div class="score">✅ Godkänt!</div>${res.p ? `<div class="lar-beloning">+${res.p} ⭐</div>` : `<div class="small">Dagens ⭐ för pennuppdrag är redan tagna, men bra skrivet!</div>`}` : `<div class="score">Inte godkänt än</div><p>${esc(res.skal || "")}</p>`}
-        ${res.nytt_steg ? `<div class="lar-beloning">🎉 Nytt steg: ${esc(STEG[res.nytt_steg - 1])}!</div>` : ""}
+    const akt = p.aktiv, d = s.meriter?.djur;
+    const belon = `<div class="card hjalp-kort penna-belon"><b>Det här får du för ett godkänt uppdrag:</b>
+      <div class="penna-chips"><span>⭐ +${p.p}</span><span>${p.steg >= 4 ? "👑 Guldkista" : "💎 Silverkista"}</span>${!p.idag && p.svit_bonus ? `<span>🔥 +${p.svit_bonus} svit</span>` : ""}<span>✨ +${p.bonus} för fin handstil</span></div>
+      <div class="small">🏆 Veckans penna: ${p.vecka}/${p.vecka_mal} ${p.vecka >= p.vecka_mal ? "✅" : `→ +${p.vecka_p} ⭐ och guldkista`}${p.nasta_sak ? ` · 🔓 Steg ${p.nasta_sak.steg_penna}: <b>${p.nasta_sak.ikon} ${esc(p.nasta_sak.namn)}</b> (finns bara här)` : ""}</div>
+      ${p.saker?.length ? `<div class="small muted">Dina pennsaker: ${p.saker.map((x) => `${x.ikon} ${esc(x.namn)}`).join(", ")}</div>` : ""}</div>`;
+    const valHtml = !akt ? (p.val?.length ? `<h3>Välj ett uppdrag</h3><div class="list">${p.val.map((x, i) => `<button class="row penna-val" data-penna-val="${i}"><span><span class="penna-val-ikon">${esc(x.ikon || "🖊️")}</span> ${esc(x.uppgift)}</span><span>›</span></button>`).join("")}</div>
+        <div class="pg-ny"><input id="penna-egen" maxlength="120" placeholder="…eller skriv om något du själv vill"><button class="mini" id="penna-egen-ok">✏️ Välj</button></div>
+        <div class="actions"><button class="ghost" id="penna-byt" ${this._busy || !p.byten_kvar ? "disabled" : ""}>🔄 Nya förslag (${p.byten_kvar})</button></div>${this._busy ? `<p class="small muted">Hittar på nya uppdrag…</p>` : ""}`
+      : `<div class="card hjalp-kort center"><p>Uppdragen växer sakta: först några meningar, sedan stycken och till sist hela texter.</p>
+          <button class="primary" id="penna-ny" ${this._busy ? "disabled" : ""}>✨ Visa uppdrag</button>${this._busy ? `<p class="small muted">Hittar på roliga uppdrag…</p>` : ""}</div>`) : "";
+    return `${trappa}${belon}
+      ${res ? `<div class="card hjalp-kort penna-res">${res.godkand ? `<div class="score">✅ Godkänt!</div>${res.p ? `<div class="lar-beloning">+${res.p} ⭐</div>
+          <div class="small">${res.extra?.bas ? `${res.extra.bas} för uppdraget` : ""}${res.extra?.kvalitet ? ` + ${res.extra.kvalitet} för fin handstil` : ""}${res.extra?.svit ? ` + ${res.extra.svit} 🔥 svit` : ""}</div>
+          ${res.extra?.kista ? `<div class="penna-chips"><span>${res.extra.kista === "guld" ? "👑 Guldkista" : "💎 Silverkista"} väntar på startsidan!</span></div>` : ""}`
+            : `<div class="small">Dagens ⭐ för pennuppdrag är redan tagna, men bra skrivet!</div>`}` : `<div class="score">Inte godkänt än</div><p>${esc(res.skal || "")}</p>`}
+        ${res.nytt_steg ? `<div class="lar-beloning">🎉 Nytt steg: ${esc(STEG[res.nytt_steg - 1])}! + 👑 guldkista</div>` : ""}
+        ${res.ny_sak ? `<div class="lar-beloning">🔓 ${res.ny_sak.ikon} ${esc(res.ny_sak.namn)} är din!</div><div class="small">Den finns bara för den som gör pennuppdrag. Sätt på den i husdjursbutiken.</div>` : ""}
+        ${res.vecka ? `<div class="lar-beloning">🏆 Veckans penna! +${res.vecka} ⭐</div>` : ""}
+        ${res.djur && d ? `<div class="lar-rad djur" style="text-align:left;margin-top:8px"><div class="lar-ikon">${d.art}</div><div class="lar-bubbla">${esc(res.djur)}</div></div>` : ""}
         ${res.pepp ? `<p>${esc(res.pepp)}</p>` : ""}${res.bra?.length ? `<div>👍 ${res.bra.map(esc).join(" ")}</div>` : ""}${res.tips?.length ? `<div>💡 ${res.tips.map(esc).join(" ")}</div>` : ""}
         <details><summary class="small">Så här läste AI:n din text (${res.ord} ord)</summary><div class="penna-text">${esc(res.text)}</div></details></div>` : ""}
       ${akt ? `<div class="card hjalp-kort"><div class="small muted">Ditt uppdrag · steg ${akt.steg} · ungefär ${p.mal} ord</div><div class="penna-uppdrag">🖊️ ${esc(akt.uppgift)}</div>
           ${akt.tips?.length ? `<ul class="lista">${akt.tips.map((t) => `<li class="small">💡 ${esc(t)}</li>`).join("")}</ul>` : ""}
           <div class="small">1. Skriv för hand på ett papper. 2. Fota papperet rakt uppifrån i bra ljus.</div>
           <div class="actions"><label class="primary upload">📷 Fota papperet<input type="file" id="penna-foto" accept="image/*" capture="environment" hidden></label>
-            <button class="ghost" id="penna-byt" ${this._busy || !p.byten_kvar ? "disabled" : ""}>🔄 Byt uppdrag (${p.byten_kvar})</button></div>
+            <button class="ghost" id="penna-annat" ${this._busy || !p.byten_kvar ? "disabled" : ""}>🔄 Nya förslag (${p.byten_kvar})</button></div>
           ${this._busy ? `<p class="small muted">AI:n läser din text…</p>` : ""}
-          <div class="small muted">${p.kvar_idag ? `Godkänt: +${p.p} ⭐, snygg handstil och rätt punkter: +${p.bonus} ⭐ extra. ${p.kvar_idag} kvar idag.` : "Dagens ⭐ för pennuppdrag är tagna. Du kan skriva ändå för att öva, nya ⭐ i morgon!"}</div></div>`
-        : `<div class="card hjalp-kort center"><p>Skriv för hand, fota och få <b>+${p.p} ⭐</b>. Uppdragen växer sakta: först några meningar, sedan stycken och till sist hela texter.</p>
-          <button class="primary" id="penna-ny" ${this._busy ? "disabled" : ""}>✨ Ge mig ett pennuppdrag</button>${this._busy ? `<p class="small muted">Hittar på ett uppdrag…</p>` : ""}</div>`}
+          <div class="small muted">${p.kvar_idag ? `${p.kvar_idag} kvar idag som ger ⭐.` : "Dagens ⭐ för pennuppdrag är tagna. Du kan skriva ändå för att öva, nya ⭐ i morgon!"}</div></div>`
+        : valHtml}
       ${histHtml}`;
   }
 
@@ -6944,6 +6958,11 @@ class SkolanPanel extends HTMLElement {
     if (v.name === "penna") {
       on("#penna-ny", () => this._penna("nytt"));
       on("#penna-byt", () => this._penna("nytt", { byt: true }));
+      on("#penna-annat", () => this._penna("nytt", { byt: true }));
+      r.querySelectorAll("[data-penna-val]").forEach((b) => b.addEventListener("click", () => { v.res = null; this._penna("valj", { i: Number(b.dataset.pennaVal) }); }));
+      const egen = () => { const t = ($("#penna-egen")?.value || "").trim(); if (t) { v.res = null; this._penna("valj", { egen: t }); } };
+      on("#penna-egen-ok", egen);
+      $("#penna-egen")?.addEventListener("keydown", (e) => { if (e.key === "Enter") egen(); });
       $("#penna-foto")?.addEventListener("change", async (e) => {
         const f = e.target.files?.[0];
         if (!f) return;
@@ -8199,6 +8218,10 @@ const CSS = `
   .pt-steg { text-align:center; padding:6px 2px; border-radius:10px; background:var(--divider-color, #e0e0e0); font-size:10px; line-height:1.2; opacity:.6; }
   .pt-steg b { display:block; font-size:16px; } .pt-steg.klar { background:#c8e6c9; opacity:1; } .pt-steg.nu { background:#3949ab; color:#fff; opacity:1; }
   .pt-prick { display:inline-block; width:10px; height:10px; border-radius:50%; border:2px solid #3949ab; margin:0 2px; vertical-align:middle; } .pt-prick.pa { background:#3949ab; }
+  .penna-pris { font-size:13px; background:#fff3cd; color:#8a5a00; border-radius:10px; padding:2px 8px; margin-left:4px; }
+  .penna-belon { min-height:0; }
+  .penna-chips { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; justify-content:center; } .penna-chips span { background:#e8eaf6; color:#283593; border-radius:12px; padding:3px 10px; font-size:13px; font-weight:600; }
+  .penna-val { width:100%; box-sizing:border-box; } .penna-val-ikon { font-size:22px; margin-right:4px; }
   .penna-uppdrag { font-size:18px; font-weight:600; margin:6px 0; }
   .penna-text { white-space:pre-wrap; background:#fffdf7; color:#263238; border-radius:8px; padding:8px; margin:6px 0; font-family:"Andika", system-ui, sans-serif; }
   .penna-tumme { width:44px; height:44px; object-fit:cover; border-radius:6px; flex-shrink:0; background:#eee; }

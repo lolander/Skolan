@@ -359,6 +359,14 @@ DJURBUTIK = [
 SKOLAVSLUTNING: dict[int, str] = {}  # t.ex. {2027: "2027-06-11"} om skolan slutar en annan dag än fredag v.24
 # Saker som BARA finns i paket (säljs inte styckvis)
 # Gåvor som bara går att få: födelsedagen och julkalendern
+# Saker som bara finns genom pennuppdrag (en per nytt steg).
+PENNA_SAKER = [
+    {"id": "pe_penna", "typ": "hatt", "ikon": "🖋️", "namn": "Reservoarpennan", "steg_penna": 2},
+    {"id": "pe_stank", "typ": "effekt", "ikon": "✒️", "namn": "Bläckstänk", "partikel": "✒️", "steg_penna": 3},
+    {"id": "pe_uggla", "typ": "kompis", "ikon": "🦉", "namn": "Skrivugglan", "steg_penna": 4},
+    {"id": "pe_pergament", "typ": "bakgrund", "ikon": "📜", "namn": "Pergamentet", "bg": "linear-gradient(160deg,#fff3d6,#e8c88f 60%,#c79a55)", "fg": "#4e342e", "deko": "🪶", "steg_penna": 5},
+    {"id": "pe_mossa", "typ": "hatt", "ikon": "🎓", "namn": "Författarmössan", "steg_penna": 6},
+]
 GAVO_SAKER = [
     {"id": "g_partyhatt", "typ": "hatt", "ikon": "🥳", "namn": "Födelsedagshatten"},
     {"id": "g_tomteluva", "typ": "hatt", "ikon": "🎅", "namn": "Tomteluvan"},
@@ -468,7 +476,8 @@ def butik_lista() -> list[dict]:
         {**x, "kan_kopas": True} for x in RUM_SAKER] + [
         {**x, "pris": 0, "steg": 0, "bara_paket": True, "kalla": "pass", "kan_kopas": False} for x in PASS_SAKER] + [
         {**b["sak"], "pris": 0, "steg": 0, "bara_paket": True, "kalla": "boss", "kan_kopas": False} for b in BOSSAR] + [
-        {**x, "pris": 0, "steg": 0, "bara_paket": True, "kalla": "gava", "kan_kopas": False} for x in GAVO_SAKER]
+        {**x, "pris": 0, "steg": 0, "bara_paket": True, "kalla": "gava", "kan_kopas": False} for x in GAVO_SAKER] + [
+        {**x, "pris": 0, "steg": 0, "bara_paket": True, "kalla": "penna", "kan_kopas": False} for x in PENNA_SAKER]
 
 
 def ge_sak(data: dict, sak_id: str) -> bool:
@@ -481,7 +490,7 @@ def ge_sak(data: dict, sak_id: str) -> bool:
 
 
 def _sak(sak_id: str) -> dict | None:
-    alla = DJURBUTIK + PAKET_SAKER + RUM_SAKER + PASS_SAKER + GAVO_SAKER + [b["sak"] for b in BOSSAR]
+    alla = DJURBUTIK + PAKET_SAKER + RUM_SAKER + PASS_SAKER + GAVO_SAKER + PENNA_SAKER + [b["sak"] for b in BOSSAR]
     return next((x for x in alla if x["id"] == sak_id), None)
 
 

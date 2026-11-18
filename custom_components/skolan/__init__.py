@@ -1451,10 +1451,11 @@ class SkrivView(HomeAssistantView):
 
 
 PENNA_UPPDRAG_PROMPT = (
-    "Hitta på ETT skrivuppdrag på svenska som ett barn{alder} ska skriva FÖR HAND med penna på papper. "
-    "Barnet ska sakta bli bekvämt med att uttrycka sig i skrift, så det ska kännas roligt och lagom, inte som ett prov. "
-    "Längd: {info} (ungefär {mal} ord). Typ: {typ}. Personligt, något barnet kan skriva om direkt utan att leta fakta.{djur}\n"
-    'Svara ENDAST med JSON: {{"uppgift": "uppdraget i 1–2 meningar, riktat till barnet", "tips": ["1–2 korta tips, t.ex. om punkt och stor bokstav"]}}'
+    "Hitta på TRE olika skrivuppdrag på svenska som ett barn{alder} ska skriva FÖR HAND med penna på papper. "
+    "Barnet tycker att skriva är tråkigt, så uppdragen MÅSTE kännas roliga, lockande och lätta att komma igång med: busiga, fantasifulla, "
+    "om barnet självt, dess intressen eller husdjuret i spelet, gärna med en twist (t.ex. 'Du vaknar och är 5 cm lång. Vad gör du först?'). Aldrig skoligt eller som ett prov. "
+    "Längd: {info} (ungefär {mal} ord). Typerna ska vara olika, t.ex.: {typer}. Barnet ska kunna skriva direkt utan att leta fakta.{djur}\n"
+    'Svara ENDAST med JSON: {{"val": [{{"uppgift": "uppdraget i 1–2 meningar, riktat till barnet", "ikon": "en emoji", "tips": ["1 kort tips för att komma igång"]}}, {{...}}, {{...}}]}}'
 )
 PENNA_BEDOM_PROMPT = (
     "Bilden ska visa ett barns{alder} text skriven FÖR HAND på papper till uppdraget: \"{uppgift}\" (ungefär {mal} ord).\n"
@@ -1462,9 +1463,10 @@ PENNA_BEDOM_PROMPT = (
     "2) text: skriv av barnets text så exakt det går, med barnets egen stavning och egna tecken. "
     "3) ord: antal ord i texten. 4) passar: 0–100, hur väl texten svarar på uppdraget. "
     "5) handstil: 0–100, hur lätt det är att läsa. 6) tecken: 0–100, punkt och stor bokstav. "
-    "7) bra: 1–2 saker som är bra (om innehållet eller skrivandet). 8) tips: 1–2 små konkreta tips till nästa gång. 9) pepp: en kort peppande mening. "
-    "Var snäll och uppmuntrande, anpassat till åldern.\n"
-    'Svara ENDAST med JSON: {{"handskrivet": true, "text": "...", "ord": 0, "passar": 0, "handstil": 0, "tecken": 0, "bra": ["..."], "tips": ["..."], "pepp": "..."}}'
+    "7) bra: 1–2 saker som är bra (om innehållet eller skrivandet). 8) tips: 1 litet konkret tips till nästa gång. 9) pepp: en kort peppande mening. "
+    "10) djur: vad husdjuret {djur} säger när det har läst texten: max 2 meningar, glatt och nyfiket, nämn något KONKRET ur texten (en detalj, en rolig idé), gärna en fråga eller ett skämt. "
+    "Var snäll och uppmuntrande, anpassat till åldern. Barnet tycker att skriva är jobbigt, så lyft det som är bra.\n"
+    'Svara ENDAST med JSON: {{"handskrivet": true, "text": "...", "ord": 0, "passar": 0, "handstil": 0, "tecken": 0, "bra": ["..."], "tips": ["..."], "pepp": "...", "djur": "..."}}'
 )
 
 
@@ -1516,27 +1518,44 @@ class PennaView(HomeAssistantView):
             return self.json_message("Pennuppdragen gör barnet själv. Ni kan se och underkänna inlämningarna.", 403)
         if op == "nytt":
             st = penna.status(data)
-            if st["aktiv"] and not body.get("byt"):
-                return self.json(st["aktiv"])
+            if st["val"] and not body.get("byt"):
+                return self.json({"val": st["val"]})
             d = meriter._m(data).get("djur") or {}
-            typ = penna.ny_typ(data)
             info = penna.STEG[st["steg"]]
+            typer = random.sample(penna.TYPER, 3)
             try:
                 x = _parse_json(await _ai_text(hass, PENNA_UPPDRAG_PROMPT.format(
-                    alder=alder, info=info["info"], mal=info["mal"], typ=typ,
-                    djur=f" Om typen gäller husdjuret heter det {d['namn']} och är en {d['art']}." if d.get("namn") else ""), "Läxspelet pennuppdrag"))
-                uppgift = str(x.get("uppgift") or "").strip()[:300]
-                if not uppgift:
+                    alder=alder, info=info["info"], mal=info["mal"], typer="; ".join(typer),
+                    djur=f" Barnets husdjur i spelet heter {d['namn']} och är en {d['art']}." if d.get("namn") else ""), "Läxspelet pennuppdrag"))
+                val = [{"uppgift": str(v.get("uppgift") or "").strip()[:300], "ikon": str(v.get("ikon") or "🖊️")[:4],
+                        "tips": [str(t)[:160] for t in (v.get("tips") or [])][:1], "typ": typer[i] if i < 3 else ""}
+                       for i, v in enumerate(x.get("val") or []) if isinstance(v, dict) and str(v.get("uppgift") or "").strip()][:3]
+                if not val:
                     raise ValueError("tomt")
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("Läxspelet: pennuppdrag: %s", err)
-                return self.json_message("AI:n kunde inte hitta på ett uppdrag just nu. Försök igen om en stund.", 503)
+                return self.json_message("AI:n kunde inte hitta på uppdrag just nu. Försök igen om en stund.", 503)
             async with lock:
                 data = await hass.async_add_executor_job(_load, path)
                 try:
-                    akt = penna.satt_aktiv(data, uppgift, [str(t)[:160] for t in (x.get("tips") or [])][:2], typ, bool(body.get("byt")))
+                    val = penna.satt_val(data, val, bool(body.get("byt")))
                 except ValueError as err:
                     return self.json_message(str(err), 400)
+                await hass.async_add_executor_job(_save, path, data)
+            return self.json({"val": val})
+        if op == "valj":
+            st = penna.status(data)
+            egen = re.sub(r"\s+", " ", str(body.get("egen") or "")).strip()[:120]
+            if egen:
+                v = {"uppgift": f"Skriv om något du själv har valt: {egen}", "tips": ["Börja med det roligaste!"], "typ": "eget ämne"}
+            else:
+                try:
+                    v = (st["val"] or [])[int(body.get("i"))]
+                except (TypeError, ValueError, IndexError):
+                    return self.json_message("Välj ett av uppdragen.", 400)
+            async with lock:
+                data = await hass.async_add_executor_job(_load, path)
+                akt = penna.satt_aktiv(data, v["uppgift"], v.get("tips", []), v.get("typ", ""), False)
                 await hass.async_add_executor_job(_save, path, data)
             return self.json(akt)
         if op == "lamna":
@@ -1550,7 +1569,8 @@ class PennaView(HomeAssistantView):
             if penna.dubblett(data, hash_, ""):
                 return self.json_message("Det här fotot har redan lämnats in. Skriv en ny text!", 400)
             try:
-                x = _parse_json(await _ai_las(hass, bilder[:1], PENNA_BEDOM_PROMPT.format(alder=alder, uppgift=akt["uppgift"], mal=penna.STEG[akt["steg"]]["mal"]),
+                x = _parse_json(await _ai_las(hass, bilder[:1], PENNA_BEDOM_PROMPT.format(alder=alder, uppgift=akt["uppgift"], mal=penna.STEG[akt["steg"]]["mal"],
+                                                                                  djur=f"{(meriter._m(data).get('djur') or {}).get('namn', '')} ({(meriter._m(data).get('djur') or {}).get('art', '🐾')})".strip()),
                                               "Läxspelet pennuppdrag bedöm"))
                 if not isinstance(x, dict):
                     raise ValueError("konstigt svar")
@@ -1560,7 +1580,8 @@ class PennaView(HomeAssistantView):
             tal = lambda k: max(0, min(100, int(x.get(k) or 0))) if str(x.get(k) or "0").lstrip("-").isdigit() else 0  # noqa: E731
             bed = {"handskrivet": x.get("handskrivet") is True or str(x.get("handskrivet")).lower() == "true", "text": str(x.get("text") or "")[:3000],
                    "ord": tal("ord") if "ord" in x else 0, "passar": tal("passar"), "handstil": tal("handstil"), "tecken": tal("tecken"),
-                   "bra": [str(b)[:200] for b in (x.get("bra") or [])][:2], "tips": [str(t)[:200] for t in (x.get("tips") or [])][:2], "pepp": str(x.get("pepp") or "")[:200]}
+                   "bra": [str(b)[:200] for b in (x.get("bra") or [])][:2], "tips": [str(t)[:200] for t in (x.get("tips") or [])][:2], "pepp": str(x.get("pepp") or "")[:200],
+                   "djur": str(x.get("djur") or "")[:300]}
             bed["ord"] = int(x.get("ord") or 0) if str(x.get("ord") or "").isdigit() else len(bed["text"].split())
             skal = penna.dubblett(data, hash_, bed["text"])
             if skal:
