@@ -1744,7 +1744,7 @@ def karta_status(data: dict) -> dict:
             "liv": djur_liv(data)[0], "liv_max": djur_liv(data)[1], "p_liv": P_LIV,
             "drycker": [{**x, "antal": k.get("drycker", {}).get(x["id"], 0)} for x in DRYCKER], "dryck_max": DRYCK_MAX,
             "energi": k.get("energi", 0), "energi_max": ENERGI_MAX, "p_energi": _p_energi(),
-            "energi_pris": ENERGI_PRIS, "energi_kop_kvar": ENERGI_KOP_DAG - _energi_kopt(k), "attacker": lista, "typer": TYPER,
+            "energi_pris": ENERGI_PRIS, "energi_kop_kvar": ENERGI_KOP_DAG + _energi_extra(k) - _energi_kopt(k), "attacker": lista, "typer": TYPER,
             "super_anvand": k.get("super") == vecka, "senaste": k.get("senaste"), "karta": karta,
             "stjarnor_tot": sum(k["stjarnor"].values()), "klara": k.get("klara", [])[-3:], "laxor": laxor, "prov": prov,
             "forsvar": skold_status(data), "def_halv": DEF_HALV, "slag": info.get("slag", "kraft"),
@@ -2019,6 +2019,21 @@ ENERGI_PRIS = 20  # ⭐ per köpt ⚡ (pluggar man får man 1 ⚡ per 25 ⭐ och
 ENERGI_KOP_DAG = 5  # högst så många ⚡ köpta per dag, så att plugget är det viktiga
 
 
+def _energi_extra(k: dict) -> int:
+    """Extra energiköp idag, upplåsta genom skrivande."""
+    x = k.get("energi_extra") or {}
+    return x.get("n", 0) if x.get("dag") == dt_util.now().date().isoformat() else 0
+
+
+def energi_bonus(data: dict, n: int, extra_kop: int) -> dict:
+    """Skrivande ger energi direkt och låser upp fler energiköp idag."""
+    k = _karta(data)
+    fore = k.get("energi", 0)
+    k["energi"] = min(ENERGI_MAX, fore + n)
+    k["energi_extra"] = {"dag": dt_util.now().date().isoformat(), "n": _energi_extra(k) + extra_kop}
+    return {"energi": k["energi"] - fore, "extra_kop": extra_kop}
+
+
 def _energi_kopt(k: dict) -> int:
     idag = dt_util.now().date().isoformat()
     x = k.get("energi_kopt") or {}
@@ -2032,9 +2047,10 @@ def energi_kop(data: dict, n: int) -> None:
     n = max(1, min(ENERGI_KOP_DAG, int(n or 1)))
     if k.get("energi", 0) + n > ENERGI_MAX:
         raise ValueError(f"Du får bara ha {ENERGI_MAX} ⚡ (du har {k.get('energi', 0)}).")
-    kopt = _energi_kopt(k)
-    if kopt + n > ENERGI_KOP_DAG:
-        raise ValueError(f"Du kan köpa högst {ENERGI_KOP_DAG} ⚡ per dag ({ENERGI_KOP_DAG - kopt} kvar idag). Plugga så laddas den!")
+    kopt, tak = _energi_kopt(k), ENERGI_KOP_DAG + _energi_extra(k)
+    if kopt + n > tak:
+        raise ValueError(f"Du har köpt {kopt} ⚡ idag och kan inte köpa fler just nu. 🖊️ Gör ett pennuppdrag så får du +3 ⚡ direkt och kan köpa 5 till! "
+                         "(En skrivövning i Skrivverkstaden ger +1 ⚡ och 2 köp till.)")
     pris = n * ENERGI_PRIS
     if m.get("saldo", 0) < pris:
         raise ValueError(f"Du behöver {pris} ⭐ (du har {m.get('saldo', 0)}).")

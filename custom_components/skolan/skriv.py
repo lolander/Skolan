@@ -140,6 +140,7 @@ def spara_resultat(data: dict, typ: str, poang: int, omraden: dict, alder: int |
         for k in range(1, OVNING_MAX + 1):
             if meriter.ge(data, P_OVNING, f"✍️ Skrivövning: {OMRADEN.get(typ, typ)} ({poang} %)", f"skrivovn:{idag}:{k}", "✍️"):
                 p = P_OVNING
+                meriter.energi_bonus(data, 1, 2)
                 break
     elif typ == "fritt" and meriter.ge(data, P_FRITT, "✍️ Skrev en egen text", f"skrivfritt:{idag}", "✍️"):
         p = P_FRITT

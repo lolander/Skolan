@@ -1927,6 +1927,7 @@ class SkolanPanel extends HTMLElement {
       <div class="sak-rutnat">${am.attacker.filter((x) => x.ladd).map(attackKort).join("")}</div>
       <h3>⚡ Energi</h3>
       <div class="small muted">Du har ⚡ ${am.energi} av ${am.energi_max}. Pluggar du får du 1 ⚡ per ${am.p_energi} ⭐ och behåller stjärnorna. Du kan också köpa energi, högst ${am.energi_kop_kvar ?? 0} till idag.</div>
+      ${(am.energi_kop_kvar ?? 0) < 3 && !titta ? `<button class="row penna-kort" id="open-penna" style="margin:6px 0"><span>🖊️ <b>Vill du ha mer ⚡?</b><br><span class="small">Gör ett pennuppdrag: +3 ⚡ direkt, 5 köp till idag och massor av ⭐. En skrivövning ger +1 ⚡ och 2 köp till.</span></span><span>›</span></button>` : ""}
       <div class="sak-rutnat">${[1, 3].map((n) => {
         const pris = n * am.energi_pris, kan = saldo >= pris && am.energi + n <= am.energi_max && (am.energi_kop_kvar ?? 0) >= n;
         return `<div class="sak-kort"><div class="sak-ikon">⚡</div><div class="small"><b>${n} energi</b></div>
@@ -2008,7 +2009,7 @@ class SkolanPanel extends HTMLElement {
     if (s.kan_valja) return `${trappa}<p class="small muted">${esc(s.namn)} får skrivuppdrag som skrivs för hand och fotas. AI:n läser texten och godkänner. Ni kan underkänna eller godkänna i efterhand.</p>${histHtml}`;
     const akt = p.aktiv, d = s.meriter?.djur;
     const belon = `<div class="card hjalp-kort penna-belon"><b>Det här får du för ett godkänt uppdrag:</b>
-      <div class="penna-chips"><span>⭐ +${p.p}</span><span>${p.steg >= 4 ? "👑 Guldkista" : "💎 Silverkista"}</span>${!p.idag && p.svit_bonus ? `<span>🔥 +${p.svit_bonus} svit</span>` : ""}<span>✨ +${p.bonus} för fin handstil</span></div>
+      <div class="penna-chips"><span>⭐ +${p.p}</span><span>⚡ +3 energi</span><span>${p.steg >= 4 ? "👑 Guldkista" : "💎 Silverkista"}</span>${!p.idag && p.svit_bonus ? `<span>🔥 +${p.svit_bonus} svit</span>` : ""}<span>✨ +${p.bonus} för fin handstil</span></div>
       <div class="small">🏆 Veckans penna: ${p.vecka}/${p.vecka_mal} ${p.vecka >= p.vecka_mal ? "✅" : `→ +${p.vecka_p} ⭐ och guldkista`}${p.nasta_sak ? ` · 🔓 Steg ${p.nasta_sak.steg_penna}: <b>${p.nasta_sak.ikon} ${esc(p.nasta_sak.namn)}</b> (finns bara här)` : ""}</div>
       ${p.saker?.length ? `<div class="small muted">Dina pennsaker: ${p.saker.map((x) => `${x.ikon} ${esc(x.namn)}`).join(", ")}</div>` : ""}</div>`;
     const valHtml = !akt ? (p.val?.length ? `<h3>Välj ett uppdrag</h3><div class="list">${p.val.map((x, i) => `<button class="row penna-val" data-penna-val="${i}"><span><span class="penna-val-ikon">${esc(x.ikon || "🖊️")}</span> ${esc(x.uppgift)}</span><span>›</span></button>`).join("")}</div>
@@ -2019,7 +2020,7 @@ class SkolanPanel extends HTMLElement {
     return `${trappa}${belon}
       ${res ? `<div class="card hjalp-kort penna-res">${res.godkand ? `<div class="score">✅ Godkänt!</div>${res.p ? `<div class="lar-beloning">+${res.p} ⭐</div>
           <div class="small">${res.extra?.bas ? `${res.extra.bas} för uppdraget` : ""}${res.extra?.kvalitet ? ` + ${res.extra.kvalitet} för fin handstil` : ""}${res.extra?.svit ? ` + ${res.extra.svit} 🔥 svit` : ""}</div>
-          ${res.extra?.kista ? `<div class="penna-chips"><span>${res.extra.kista === "guld" ? "👑 Guldkista" : "💎 Silverkista"} väntar på startsidan!</span></div>` : ""}`
+          <div class="penna-chips">${res.extra?.kista ? `<span>${res.extra.kista === "guld" ? "👑 Guldkista" : "💎 Silverkista"} väntar på startsidan!</span>` : ""}${res.extra?.energi ? `<span>⚡ +${res.extra.energi.energi} energi och ${res.extra.energi.extra_kop} köp till idag</span>` : ""}</div>`
             : `<div class="small">Dagens ⭐ för pennuppdrag är redan tagna, men bra skrivet!</div>`}` : `<div class="score">Inte godkänt än</div><p>${esc(res.skal || "")}</p>`}
         ${res.nytt_steg ? `<div class="lar-beloning">🎉 Nytt steg: ${esc(STEG[res.nytt_steg - 1])}! + 👑 guldkista</div>` : ""}
         ${res.ny_sak ? `<div class="lar-beloning">🔓 ${res.ny_sak.ikon} ${esc(res.ny_sak.namn)} är din!</div><div class="small">Den finns bara för den som gör pennuppdrag. Sätt på den i husdjursbutiken.</div>` : ""}

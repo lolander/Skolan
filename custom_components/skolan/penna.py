@@ -150,6 +150,7 @@ def lamna_in(data: dict, bedomning: dict, fil: str, hash_: str) -> dict:
             poang = poang_for(steg) + (BONUS_KVALITET if kvalitet >= 80 else 0) + sv_bonus
             extra = {"bas": poang_for(steg), "kvalitet": BONUS_KVALITET if kvalitet >= 80 else 0, "svit": sv_bonus}
             meriter.ge(data, poang, f"🖊️ Pennuppdrag steg {steg}: {akt.get('uppgift', '')[:40]}", f"penna:{akt.get('id') or hash_}", "🖊️")
+            extra["energi"] = meriter.energi_bonus(data, 3, 5)
             kista = "guld" if steg >= 4 else "silver"
             if meriter.kista_ge(data, kista, "🖊️ Pennuppdrag", f"pennakista:{akt.get('id') or hash_}"):
                 extra["kista"] = kista
