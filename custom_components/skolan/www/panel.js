@@ -264,6 +264,21 @@ const DJUR_UTSEENDE = {
     `<path d="M50 120 q-10 40 -26 50 M72 128 q-4 40 -20 54 M100 130 v56 M128 128 q4 40 20 54 M150 120 q10 40 26 50" stroke="#ab47bc" stroke-width="16" fill="none" stroke-linecap="round"/>
      <ellipse cx="100" cy="92" rx="56" ry="54" fill="#ba68c8" stroke="#8e24aa" stroke-width="3"/>
      <circle cx="70" cy="60" r="6" fill="#e1bee7"/><circle cx="132" cy="56" r="8" fill="#e1bee7"/>` },
+  // Snake: Emils lila gosorm (ihoprullad, krämvit mage, ljust nätmönster, kluven tunga)
+  "🐍": { ansikte: [100, 80, 32], topp: 46, form: () =>
+    `<path d="M152 172 q26 2 30 -14 q2 -6 -4 -4" stroke="#b57edc" stroke-width="13" fill="none" stroke-linecap="round"/>
+     <ellipse cx="100" cy="166" rx="62" ry="17" fill="none" stroke="#f3ead2" stroke-width="26"/>
+     <ellipse cx="100" cy="160" rx="62" ry="17" fill="none" stroke="#b57edc" stroke-width="24"/>
+     <ellipse cx="100" cy="160" rx="62" ry="17" fill="none" stroke="#efe2fa" stroke-width="24" stroke-dasharray="3 15" opacity=".8"/>
+     <ellipse cx="100" cy="142" rx="46" ry="13" fill="none" stroke="#f3ead2" stroke-width="22"/>
+     <ellipse cx="100" cy="137" rx="46" ry="13" fill="none" stroke="#b57edc" stroke-width="20"/>
+     <ellipse cx="100" cy="137" rx="46" ry="13" fill="none" stroke="#efe2fa" stroke-width="20" stroke-dasharray="3 13" opacity=".8"/>
+     <path d="M128 136 Q142 112 112 100" stroke="#b57edc" stroke-width="30" fill="none" stroke-linecap="round"/>
+     <path d="M118 140 Q130 116 104 108" stroke="#f3ead2" stroke-width="10" fill="none" stroke-linecap="round"/>
+     <ellipse cx="100" cy="80" rx="50" ry="38" fill="#b57edc" stroke="#8e5bb5" stroke-width="3"/>
+     <path d="M70 52 l14 -6 l14 6 l-2 12 l-14 4 l-12 -6 z M104 46 l16 -2 l12 8 l-4 12 l-14 0 l-8 -8 z M56 72 l8 -10 M140 70 l-6 -10" fill="none" stroke="#efe2fa" stroke-width="3" stroke-linejoin="round" opacity=".9"/>
+     <ellipse cx="100" cy="102" rx="36" ry="15" fill="#f3ead2"/>
+     <path d="M97 99 h6 l-1 13 l7 9 l-9 -4 l-1 3 l-1 -3 l-9 4 l7 -9 z" fill="#d9b8f0" stroke="#b08ad0" stroke-width="1.5"/>` },
   "🍩": { ansikte: [100, 130, 28], topp: 52, form: () =>
     `<circle cx="100" cy="116" r="64" fill="#d7a35a" stroke="#a1662f" stroke-width="3"/>
      <path d="M40 104 C44 60 156 60 160 104 q-10 14 -20 2 q-10 14 -20 2 q-10 14 -20 2 q-10 14 -20 2 q-10 14 -20 2 q-10 14 -20 2 z" fill="#f48fb1"/>

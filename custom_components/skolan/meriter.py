@@ -220,7 +220,8 @@ REKORD_MIN = 5  # så många rätt krävs för att Glosrekord ska räknas för s
 DJUR = ["🐶", "🐱", "🦊", "🐼", "🐉", "🐢", "🦄", "🐧", "🐰", "🦖",
         "🐻", "🐨", "🐷", "🐸", "🐯", "🦁", "🐭", "🐮", "🐵", "🐹", "🦉", "🦝",
         "🌭", "🍉", "🍞", "🌵", "🍕", "🍦", "🧦", "🪨", "🍌",  # larviga husdjur
-        "🐙", "🍩", "🥑", "🍄", "☁️", "🦷", "🥔", "👻", "🤖", "🍫"]
+        "🐙", "🍩", "🥑", "🍄", "☁️", "🦷", "🥔", "👻", "🤖", "🍫",
+        "🐍"]  # Snake: Emils gosorm
 P_BYT_DJUR = 50  # byta till ett annat djur (första valet är gratis)
 # Husdjursbutiken: saker köps för saldot (intjänade meriter och djurets storlek påverkas inte)
 DJURBUTIK = [
@@ -2163,7 +2164,7 @@ DJUR_ELEMENT = {
     "🐻": "natur", "🐨": "vatten", "🐷": "kraft", "🐸": "vatten", "🐯": "eld", "🦁": "eld", "🐭": "blixt", "🐮": "kraft", "🐵": "blixt",
     "🐹": "blixt", "🦉": "blixt", "🦝": "natur", "🌭": "eld", "🍉": "vatten", "🍞": "eld", "🌵": "natur", "🍕": "eld", "🍦": "is",
     "🧦": "kraft", "🪨": "kraft", "🍌": "natur", "🐙": "vatten", "🍩": "kraft", "🥑": "natur", "🍄": "natur", "☁️": "blixt", "🦷": "is",
-    "🥔": "kraft", "👻": "is", "🤖": "blixt", "🍫": "eld",
+    "🥔": "kraft", "👻": "is", "🤖": "blixt", "🍫": "eld", "🐍": "natur",
     "⛄": "is", "🎃": "natur", "🐣": "natur", "🍓": "vatten", "🍭": "kraft", "🕯️": "eld", "🚀": "kraft", "❤️": "kraft", "👽": "blixt", "🐲": "eld",
 }
 ELEMENT_DALIG = {"eld": "is", "is": "eld", "vatten": "eld", "natur": "blixt", "blixt": "vatten", "kraft": "natur"}
