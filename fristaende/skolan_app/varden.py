@@ -3,7 +3,7 @@
 Skolans kod (custom_components/skolan) körs oförändrad. Här finns:
 - hass.data, hass.config, executor-jobb och bakgrundsuppgifter
 - tidsstyrda jobb (async_track_time_change)
-- tjänster: ai_task.generate_data (Gemini), notify.* (webbnotiser), mqtt finns inte
+- tjänster: ai_task.generate_data (vald AI: Gemini, Claude, OpenAI, lokal m.fl.), notify.* (webbnotiser), mqtt finns inte
 - http: vyer och statiska filer i en aiohttp-app, med inloggning via konto.py
 """
 from __future__ import annotations
@@ -92,7 +92,7 @@ class _Services:
         data = data or {}
         if domain == "ai_task" and service == "generate_data":
             if not self._v.ai:
-                raise RuntimeError("Ingen AI-nyckel är inlagd. En förälder kan lägga in den under Inställningar.")
+                raise RuntimeError("Ingen AI är vald. En förälder kan välja AI under Inställningar.")
             return await self._v.ai.generate_data(data, self._v.config.media_dirs["local"])
         if domain == "notify":
             if self._v.push:

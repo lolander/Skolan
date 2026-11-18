@@ -93,7 +93,8 @@ function forstaStart() {
       </div>
       <div class="kort"><h2 style="margin-top:0">🤖 AI-nyckel (rekommenderas)</h2>
         <p class="liten">Läxspelet använder Googles AI Gemini för att läsa glosor från foton, göra förhör och e-böcker. Nyckeln är gratis:
-        gå till <b>aistudio.google.com/apikey</b>, logga in med ett Google-konto och tryck "Create API key". Du kan lägga in den senare också.</p>
+        gå till <b>aistudio.google.com/apikey</b>, logga in med ett Google-konto och tryck "Create API key". Du kan lägga in den senare också.
+        Vill ni hellre använda en annan AI (Claude, ChatGPT, Mistral, en lokal AI på datorn m.fl.) väljer ni det under Inställningar.</p>
         <input id="gemini" placeholder="Klistra in nyckeln (valfritt)"></div>
       <div class="fel">${esc(fel)}</div>
       <button class="primar" id="klar">Klart, starta Läxspelet</button></div>`;
@@ -133,7 +134,24 @@ function koppla(info) {
 
 // ---------- inställningar (föräldrar) ----------
 async function installning(info) {
-  let s, up;
+  let s, up, aiv = null;
+  const aiKort = () => {
+    const L = s.leverantorer || [];
+    aiv = aiv || { lev: s.ai_val?.leverantor || "gemini", modell: s.ai_val?.modell || "", url: s.ai_val?.url || "", nyckel: "", modeller: [] };
+    const cur = L.find((x) => x.id === aiv.lev) || L[0];
+    const sparad = s.ai_val?.leverantor === cur.id;
+    const GRUPP = { moln: "☁️ I molnet", lokal: "🏠 Lokalt på datorn (inget lämnar hemmet)", egen: "🔧 Egen" };
+    return `<div class="kort"><h2 style="margin-top:0">🤖 AI</h2>
+      <p>${s.ai_val ? `✅ Används nu: <b>${esc(s.ai_val.beskrivning)}</b>` : "❌ Ingen AI vald: glosor från foton, förhör, e-böcker och husdjurets hjälp fungerar inte."}</p>
+      <div class="rad"><select id="ai-lev">${Object.entries(GRUPP).map(([g, t]) => `<optgroup label="${t}">${L.filter((x) => x.grupp === g).map((x) => `<option value="${x.id}" ${x.id === cur.id ? "selected" : ""}>${esc(x.namn)}${x.rek ? " (rekommenderas)" : ""}</option>`).join("")}</optgroup>`).join("")}</select></div>
+      <p class="liten">${esc(cur.info)}${cur.bild ? "" : " ⚠️ Kan inte läsa bilder."}${cur.pdf ? "" : " PDF-filer behöver fotas av."}</p>
+      ${cur.nyckel || cur.grupp === "egen" ? `<div class="rad"><input id="ai-nyckel" type="password" autocomplete="off" value="${esc(aiv.nyckel || "")}" placeholder="${sparad && s.ai_val.har_nyckel ? "Nyckeln är sparad (lämna tomt för att behålla)" : cur.nyckel ? "Klistra in API-nyckeln" : "API-nyckel (om tjänsten kräver det)"}"></div>` : ""}
+      ${cur.lokal || cur.grupp === "egen" ? `<div class="rad"><input id="ai-url" value="${esc(aiv.url || cur.url)}" placeholder="Adress, t.ex. http://localhost:11434/v1"></div>` : ""}
+      <div class="rad"><input id="ai-modell" value="${esc(aiv.modell || cur.modell)}" placeholder="Modell"><button id="ai-hamta">🔍 Hämta modeller</button></div>
+      ${aiv.modeller.length ? `<div class="rad"><select id="ai-modell-val"><option value="">Välj bland ${aiv.modeller.length} modeller…</option>${aiv.modeller.map((m) => `<option ${m === aiv.modell ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></div>` : ""}
+      <button class="primar" id="spara-ai">Testa och spara</button>
+      <p class="liten">Testet kollar att AI:n svarar och kan läsa bilder. Nyckeln sparas bara på den här datorn.</p></div>`;
+  };
   const ladda = async (meddelande = "", fel = "") => {
     try { s = await api("/app/installningar"); up = await api("/app/uppdatering"); } catch (e) { return visaFel(e.message); }
     rot.innerHTML = `<div class="mitt"><h1>⚙️ Inställningar</h1>
@@ -143,8 +161,7 @@ async function installning(info) {
         <div class="rad"><input id="namn" placeholder="Namn" maxlength="30"><select id="roll"><option value="barn">Barn</option><option value="foralder">Förälder</option></select></div>
         <div class="rad"><input id="pin1" placeholder="PIN-kod" inputmode="numeric" maxlength="8"><button id="lagg">Lägg till</button></div>
         <p class="liten">Att lägga till eller ta bort någon startar om Läxspelet (några sekunder).</p></div>
-      <div class="kort"><h2 style="margin-top:0">🤖 AI-nyckel</h2><p>${s.ai ? "✅ Inlagd" : "❌ Saknas: glosor från foton, förhör och e-böcker fungerar inte."}</p>
-        <div class="rad"><input id="nyckel" placeholder="Ny Gemini-nyckel från aistudio.google.com/apikey"><button id="spara-ai">Spara</button></div></div>
+      ${aiKort()}
       <div class="kort"><h2 style="margin-top:0">🌍 Fjärråtkomst</h2>
         <p class="liten">Gör Läxspelet nåbar utanför hemmet med en gratis, krypterad Cloudflare-tunnel. Behövs för notiser på iPhone och för vänner.</p>
         <p>Status: <b>${esc(s.fjarr_status)}</b>${s.fjarr_adress ? `<br><code>${esc(s.fjarr_adress)}</code>` : ""}</p>
@@ -161,6 +178,30 @@ async function installning(info) {
       <div class="kort"><h2 style="margin-top:0">🔔 Notiser på den här enheten</h2><button id="notiser">Slå på notiser</button> <button id="testa">Skicka test</button></div>
       <div class="ok">${esc(meddelande)}</div><div class="fel">${esc(fel)}</div>
       <p><a href="/app/koppla">📱 Koppla en mobil</a> · <a href="/skolan">← Till Läxspelet</a></p></div>`;
+    const aiLas = () => {
+      aiv.nyckel = $("#ai-nyckel")?.value ?? aiv.nyckel;
+      aiv.url = $("#ai-url")?.value ?? aiv.url;
+      aiv.modell = $("#ai-modell")?.value ?? aiv.modell;
+      return { leverantor: aiv.lev, nyckel: aiv.nyckel || "", url: aiv.url || "", modell: aiv.modell || "" };
+    };
+    $("#ai-lev").addEventListener("change", (e) => { aiv = { lev: e.target.value, modell: "", url: "", nyckel: "", modeller: [] }; ladda(); });
+    $("#ai-modell-val")?.addEventListener("change", (e) => { if (e.target.value) $("#ai-modell").value = e.target.value; });
+    $("#ai-hamta").addEventListener("click", async () => {
+      const b = aiLas();
+      $("#ai-hamta").disabled = true;
+      try { aiv.modeller = (await api("/app/installningar", { op: "ai_modeller", ...b })).modeller || []; ladda(aiv.modeller.length ? `Hittade ${aiv.modeller.length} modeller.` : "", aiv.modeller.length ? "" : "Inga modeller hittades."); }
+      catch (e) { ladda("", e.message); }
+    });
+    $("#spara-ai").addEventListener("click", async () => {
+      const b = aiLas();
+      $("#spara-ai").disabled = true;
+      $("#spara-ai").textContent = "Testar… (lokal AI kan ta en stund)";
+      try {
+        const d = await api("/app/installningar", { op: "ai", ...b });
+        aiv = null;
+        ladda(d.varning ? "Sparad. ⚠️ " + d.varning : "AI:n fungerar och kan läsa bilder! ✅");
+      } catch (e) { ladda("", e.message); }
+    });
     const andra = async (body, ok) => {
       try {
         const d = await api("/app/installningar", body);
@@ -176,7 +217,6 @@ async function installning(info) {
     rot.querySelectorAll("[data-bort]").forEach((b) => b.addEventListener("click", () => {
       if (confirm("Ta bort personen? Barnets läxor sparas på datorn men syns inte längre.")) andra({ op: "ta_bort", id: b.dataset.bort });
     }));
-    $("#spara-ai").addEventListener("click", () => andra({ op: "ai", nyckel: $("#nyckel").value }, "AI-nyckeln fungerar! ✅"));
     $("#fjarr").addEventListener("click", () => andra({ op: "fjarr", pa: !s.fjarr }, s.fjarr ? "Avstängd." : "Startar… det tar en halv minut. Ladda om sidan sedan."));
     const upp = async (body, ok) => {
       try { await api("/app/uppdatering", body); ladda(ok); } catch (e) { ladda("", e.message); }

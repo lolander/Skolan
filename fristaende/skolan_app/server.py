@@ -88,8 +88,7 @@ class App:
         self.hass = Varden(mapp, self.app, self.konto, None, self.push)
         self.hass.config.internal_url = (lokala_adresser(port) or [f"http://localhost:{port}"])[0]
         inst = self.konto.inst
-        if (inst.get("gemini") or {}).get("nyckel"):
-            self.hass.ai = ai_mod.Gemini(inst["gemini"]["nyckel"], inst["gemini"].get("modell", ""), self.hass.http_session)
+        self.hass.ai = ai_mod.fran_inst(inst, self.hass.http_session)
         self.tunnel = Tunnel(mapp, port, self.hass.http_session)
         self.uppd = Uppdaterare(mapp, self.hass.http_session, _version(), inst, self.konto.spara)
 
@@ -231,7 +230,7 @@ class App:
                 self.konto.lagg_till(p.get("namn"), p.get("roll"), p.get("pin"))
             nyckel = str(body.get("gemini") or "").strip()
             if nyckel:
-                self.konto.inst["gemini"] = {"nyckel": nyckel, "modell": ""}
+                self.konto.inst["ai"] = {"leverantor": "gemini", "nyckel": nyckel, "modell": ""}
                 self.konto.spara()
         except ValueError as err:
             self.konto.inst["personer"] = []
@@ -245,7 +244,10 @@ class App:
         inst = self.konto.inst
         return web.json_response({
             "personer": [{**p, "notiser": self.push.har(p["id"])} for p in self.konto.publika()],
-            "ai": bool((inst.get("gemini") or {}).get("nyckel")),
+            "ai": bool(self.hass.ai),
+            "ai_val": ({"leverantor": self.hass.ai.lev, "modell": self.hass.ai.modell, "url": self.hass.ai.url, "beskrivning": self.hass.ai.beskrivning,
+                        "har_nyckel": bool(self.hass.ai.nyckel)} if self.hass.ai else None),
+            "leverantorer": ai_mod.publik_lista(),
             "fjarr": bool(inst.get("fjarr")), "fjarr_status": self.tunnel.status, "fjarr_adress": self.tunnel.adress,
             "lokala": lokala_adresser(self.port),
         })
@@ -265,16 +267,34 @@ class App:
             elif op == "ta_bort":
                 self.konto.ta_bort(str(body.get("id")))
                 omstart = True
-            elif op == "ai":
+            elif op in ("ai", "ai_modeller"):
+                lev = body.get("leverantor") if body.get("leverantor") in ai_mod.LEVERANTORER else "gemini"
                 nyckel = str(body.get("nyckel") or "").strip()
-                test = ai_mod.Gemini(nyckel, "", self.hass.http_session)
+                gammal = inst.get("ai") or {}
+                if not nyckel and gammal.get("leverantor") == lev:  # samma leverantör: behåll sparad nyckel
+                    nyckel = gammal.get("nyckel", "")
+                url = str(body.get("url") or "").strip()
+                if url and not url.startswith(("http://", "https://")):
+                    raise ValueError("Adressen ska börja med http:// eller https://")
+                ny = {"leverantor": lev, "nyckel": nyckel, "modell": str(body.get("modell") or "").strip()[:120], "url": url[:300]}
+                test = ai_mod.AI(ny, self.hass.http_session)
+                if not test.url:
+                    raise ValueError("Fyll i adressen till AI-tjänsten.")
+                if op == "ai_modeller":
+                    try:
+                        return web.json_response({"modeller": await test.modeller()})
+                    except Exception as err:  # noqa: BLE001
+                        raise ValueError(f"Kunde inte hämta modeller: {err}") from err
                 try:
-                    await test.testa()
+                    res = await test.testa()
                 except Exception as err:  # noqa: BLE001
-                    raise ValueError(f"Nyckeln fungerade inte: {err}") from err
-                inst["gemini"] = {"nyckel": nyckel, "modell": ""}
+                    raise ValueError(f"AI:n fungerade inte: {err}") from err
+                inst["ai"] = ny
+                inst.pop("gemini", None)
                 self.konto.spara()
                 self.hass.ai = test
+                if res.get("varning"):
+                    return web.json_response({"ok": True, "varning": res["varning"]})
             elif op == "fjarr":
                 inst["fjarr"] = bool(body.get("pa"))
                 self.konto.spara()

@@ -7,7 +7,7 @@ Skillnaden är ett litet "låtsas-Home Assistant" runt den:
 |---|---|
 | Användare och inloggning | Personer med PIN-kod (`skolan_app/konto.py`) |
 | Sidopanelen | Egen startsida som laddar samma panel (`skolan_app/webb/`) |
-| `ai_task` | Google Gemini med familjens egen nyckel (`skolan_app/ai.py`) |
+| `ai_task` | Familjens val av AI (`skolan_app/ai.py`): Gemini, Claude, OpenAI, Mistral, OpenRouter, Groq, xAI, DeepSeek, Together, lokalt via Ollama/LM Studio eller egen OpenAI-kompatibel adress |
 | Notiser via mobilappen | Webbnotiser (`skolan_app/push.py`) |
 | Nabu Casa / fjärråtkomst | Gratis Cloudflare-snabbtunnel (`skolan_app/tunnel.py`) |
 | Molnröst för uppläsning | Telefonens/webbläsarens egen röst |
