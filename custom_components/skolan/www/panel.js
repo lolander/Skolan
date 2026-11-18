@@ -214,6 +214,8 @@ const DJUR_UTSEENDE = {
   "🐵": { kropp: "#795548", mage: "#d7ccc8", ora: "rund", oraFarg: "#a1887f", ansiktLjust: "#ffe0b2" },
   "🐹": { kropp: "#ffcc80", mage: "#fff8e1", ora: "rund", oraInne: "#f8bbd0", nos: "#f06292", ansiktLjust: "#fff8e1" },
   "🦉": { kropp: "#8d6e63", mage: "#d7ccc8", ora: "spets", oraFarg: "#5d4037", nabb: "#ffb300", ansiktLjust: "#d7ccc8" },
+  // Layla: familjens hund (svart och brun, vit bröstfläck, hängöron, halsband)
+  "🐕": { kropp: "#2b2523", mage: "#fbfaf6", ben: "#c98a4b", ora: "hang", oraFarg: "#1f1a19", nos: "#111", muleStor: "#c98a4b", ogonbak: "#f6ead9", bryn: "#d39a5a", halsband: "#263238", tar: "#fbfaf6" },
   "🦝": { kropp: "#9e9e9e", mage: "#eeeeee", ora: "spets", oraInne: "#eeeeee", mask: "#37474f", nos: "#212121", rander: true, randFarg: "#616161" },
   // ---- exklusiva paketdjur ----
   "🐲": { kropp: "#ffc107", mage: "#fff8e1", ora: "horn", taggar: "#ff8f00", lejonman: null },
@@ -639,18 +641,20 @@ function ritaDjur(art, humor, steg, x = {}) {
   ut += `<ellipse cx="100" cy="152" rx="36" ry="30" fill="${K}" stroke="rgba(0,0,0,.12)" stroke-width="2"/>`;
   ut += `<ellipse cx="100" cy="158" rx="22" ry="19" fill="${M}"/>`;
   ut += `<ellipse cx="80" cy="180" rx="13" ry="7" fill="${u.ben || K}"/><ellipse cx="120" cy="180" rx="13" ry="7" fill="${u.ben || K}"/>`;
+  if (u.tar) ut += `<ellipse cx="80" cy="183" rx="8" ry="4" fill="${u.tar}"/><ellipse cx="120" cy="183" rx="8" ry="4" fill="${u.tar}"/>`;
   if (u.lejonman) ut += `<circle cx="100" cy="98" r="62" fill="${u.lejonman}"/><circle cx="100" cy="98" r="62" fill="none" stroke="#bf360c" stroke-width="6" stroke-dasharray="10 8"/>`;
   if (u.grodogon) ut += `<circle cx="78" cy="62" r="16" fill="${K}"/><circle cx="122" cy="62" r="16" fill="${K}"/>`;
   // öron
   const oF = u.oraFarg || K, oI = u.oraInne || "#ffccbc";
   if (u.oraStor) ut += `<circle cx="62" cy="62" r="24" fill="${oF}"/><circle cx="138" cy="62" r="24" fill="${oF}"/><circle cx="62" cy="62" r="13" fill="${oI}"/><circle cx="138" cy="62" r="13" fill="${oI}"/>`;
   if (u.ora === "spets") ut += `<path d="M64 80 L70 40 L92 62 Z" fill="${oF}"/><path d="M136 80 L130 40 L108 62 Z" fill="${oF}"/><path d="M70 72 L73 50 L86 63 Z" fill="${oI}"/><path d="M130 72 L127 50 L114 63 Z" fill="${oI}"/>`;
-  if (u.ora === "hang") ut += `<ellipse cx="58" cy="92" rx="13" ry="28" fill="#8d5524" transform="rotate(18 58 92)"/><ellipse cx="142" cy="92" rx="13" ry="28" fill="#8d5524" transform="rotate(-18 142 92)"/>`;
+  if (u.ora === "hang") ut += `<ellipse cx="58" cy="92" rx="13" ry="28" fill="${u.oraFarg || "#8d5524"}" transform="rotate(18 58 92)"/><ellipse cx="142" cy="92" rx="13" ry="28" fill="${u.oraFarg || "#8d5524"}" transform="rotate(-18 142 92)"/>`;
   if (u.ora === "rund") ut += `<circle cx="66" cy="62" r="15" fill="${oF}"/><circle cx="134" cy="62" r="15" fill="${oF}"/>`;
   if (u.ora === "lang") ut += `<ellipse cx="80" cy="38" rx="11" ry="34" fill="${oF}"/><ellipse cx="120" cy="38" rx="11" ry="34" fill="${oF}"/><ellipse cx="80" cy="40" rx="5" ry="25" fill="${oI}"/><ellipse cx="120" cy="40" rx="5" ry="25" fill="${oI}"/>`;
   if (u.ora === "horn") ut += `<path d="M72 64 l-6 -26 l16 18 z M128 64 l6 -26 l-16 18 z" fill="#fff59d" stroke="#f9a825" stroke-width="2"/>`;
   // huvud
   ut += `<circle cx="${hx}" cy="${hy}" r="${hr}" fill="${K}" stroke="rgba(0,0,0,.12)" stroke-width="2"/>`;
+  if (u.halsband) ut += `<path d="M72 140 q28 12 56 0" stroke="${u.halsband}" stroke-width="8" fill="none" stroke-linecap="round"/><path d="M74 140 q26 11 52 0" stroke="#cfd8dc" stroke-width="1.5" stroke-dasharray="4 4" fill="none"/><circle cx="100" cy="152" r="5" fill="#b0bec5" stroke="#78909c" stroke-width="1.5"/>`;
   if (u.ansiktVitt) ut += `<ellipse cx="${hx}" cy="${hy + 6}" rx="32" ry="30" fill="#fff"/>`;
   if (u.nosvit) ut += `<path d="M${hx - 34} ${hy + 4} Q${hx} ${hy + 50} ${hx + 34} ${hy + 4} Q${hx} ${hy + 22} ${hx - 34} ${hy + 4}" fill="#fff"/>`;
   if (u.rander) ut += `<path d="M${hx - 10} ${hy - 42} l4 12 M${hx} ${hy - 44} v13 M${hx + 10} ${hy - 42} l-4 12" stroke="${u.randFarg || "#e8590c"}" stroke-width="4" stroke-linecap="round"/>`;
@@ -658,6 +662,9 @@ function ritaDjur(art, humor, steg, x = {}) {
   if (u.flackar) ut += `<ellipse cx="${hx - 24}" cy="${hy - 26}" rx="12" ry="9" fill="${u.flackar}"/><ellipse cx="${hx + 30}" cy="${hy + 14}" rx="9" ry="12" fill="${u.flackar}"/><ellipse cx="118" cy="150" rx="10" ry="8" fill="${u.flackar}"/><ellipse cx="80" cy="140" rx="8" ry="6" fill="${u.flackar}"/>`;
   if (u.ansiktLjust) ut += `<ellipse cx="${hx}" cy="${hy + 8}" rx="32" ry="28" fill="${u.ansiktLjust}"/>`;
   if (u.mule) ut += `<ellipse cx="${hx}" cy="${hy + 20}" rx="26" ry="16" fill="${u.mule}"/>`;
+  if (u.muleStor) ut += `<ellipse cx="${hx - 13}" cy="${hy + 18}" rx="15" ry="13" fill="${u.muleStor}"/><ellipse cx="${hx + 13}" cy="${hy + 18}" rx="15" ry="13" fill="${u.muleStor}"/><ellipse cx="${hx}" cy="${hy + 26}" rx="18" ry="11" fill="${u.muleStor}"/>`;
+  if (u.ogonbak) ut += `<ellipse cx="${hx - hr * 0.36}" cy="${hy - hr * 0.05}" rx="10" ry="9.5" fill="${u.ogonbak}"/><ellipse cx="${hx + hr * 0.36}" cy="${hy - hr * 0.05}" rx="10" ry="9.5" fill="${u.ogonbak}"/>`;
+  if (u.bryn) ut += `<ellipse cx="${hx - 17}" cy="${hy - 20}" rx="6" ry="4.5" fill="${u.bryn}"/><ellipse cx="${hx + 17}" cy="${hy - 20}" rx="6" ry="4.5" fill="${u.bryn}"/>`;
   if (u.mask) ut += `<path d="M${hx - 40} ${hy - 10} Q${hx} ${hy - 26} ${hx + 40} ${hy - 10} L${hx + 34} ${hy + 8} Q${hx} ${hy - 4} ${hx - 34} ${hy + 8} Z" fill="${u.mask}"/>`;
   if (u.ogonflack) ut += `<ellipse cx="${hx - 16}" cy="${hy - 2}" rx="12" ry="15" fill="#222" transform="rotate(20 ${hx - 16} ${hy - 2})"/><ellipse cx="${hx + 16}" cy="${hy - 2}" rx="12" ry="15" fill="#222" transform="rotate(-20 ${hx + 16} ${hy - 2})"/>`;
   if (u.horn) ut += `<path d="M${hx - 7} ${hy - 40} L${hx} ${hy - 78} L${hx + 7} ${hy - 40} Z" fill="#ffd54f" stroke="#ffa000" stroke-width="2"/>`;
@@ -724,6 +731,7 @@ const DJUR_STORY = {
   "👻": "Spöket har bott på en vind i hundra år, men egentligen är det jätterädd för mörker. Det kan gå genom väggar, men inte genom läxor, de måste man göra på riktigt. Bu betyder god natt på spökspråk.",
   "🤖": "Roboten byggdes i Robotfabriken men vägrade att bara göra som den blev tillsagd. Den vill lära sig själv, en sak i taget. Den piper glatt och laddar batterierna med rätt svar.",
   "🍫": "Chokladkakan ramlade ner i en kakaofabrik och kom ut med superkrafter. Den smälter inte av värme, bara av kramar. Varje ruta är en liten belöning för något du har kämpat med.",
+  "🐕": "Layla är familjens egen hund, och nu har hon hoppat in i spelet! Hon är svart och brun med två bruna prickar ovanför ögonen, som gör att hon alltid ser ut som om hon tänker väldigt noga. När du förklarar något lägger hon huvudet på sned och lyssnar, och hon blir aldrig trött på att höra det en gång till. Hon är snabb som blixten på promenader, älskar soffan och vaktar dig medan du pluggar. Bästa belöningen? En klapp och ett bra jobbat!",
   "🐍": "Snake bor under sängen, men inte för att skrämmas. Varje natt, när du har somnat, ringlar han runt och letar efter mardrömmar, och så äter han upp dem, en efter en. De smakar lakrits med salt, säger han. Därför är Snake extra stark mot monstren i Sömnträsket och Spökslottet, och ju mer du pluggar, desto större mardrömmar orkar han äta. 🌙",
   "⛄": "Snögubben byggdes av tre barn en kall vintermorgon och vaknade till liv när den första snöflingan landade på hans näsa. Han smälter aldrig så länge någon tror på honom. Han har morotsnäsa och ett hjärta av is som är varmare än man tror.",
   "🎃": "Pumpan växte på en halloweenåker och fick sitt ansikte av en snäll trollkarl. På natten lyser den inifrån som en lykta. Den älskar läskiga sagor, men blir lite rädd själv efteråt.",
@@ -6949,7 +6957,7 @@ class SkolanPanel extends HTMLElement {
     r.querySelectorAll("[data-djur-nytt]").forEach((b) => b.addEventListener("click", async () => {
       const art = b.dataset.djurNytt, gratis = b.dataset.gratis === "1";
       if (!confirm(`Skaffa ${art}${gratis ? "" : ` för ${this._s.nytt_djur_pris} ⭐`}? Det börjar om från början, utan attacker och kompisar. Dina andra djur finns kvar med allt de har.`)) return;
-      const namn = this._ask("Vad ska ditt nya husdjur heta?", "");
+      const namn = this._ask("Vad ska ditt nya husdjur heta?", { "🐕": "Layla", "🐍": "Snake" }[art] || "");
       if (namn === null) return;
       if (await this._act("djur", { art, namn: namn || "" })) {
         this._fx({ text: "🥚 NYTT HUSDJUR!", sub: `${art} ${namn || ""}`, emojis: ["🥚", art, "✨", "💖"], antal: 28, farg: "#ffb300" });

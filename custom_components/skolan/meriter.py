@@ -221,7 +221,8 @@ DJUR = ["🐶", "🐱", "🦊", "🐼", "🐉", "🐢", "🦄", "🐧", "🐰", 
         "🐻", "🐨", "🐷", "🐸", "🐯", "🦁", "🐭", "🐮", "🐵", "🐹", "🦉", "🦝",
         "🌭", "🍉", "🍞", "🌵", "🍕", "🍦", "🧦", "🪨", "🍌",  # larviga husdjur
         "🐙", "🍩", "🥑", "🍄", "☁️", "🦷", "🥔", "👻", "🤖", "🍫",
-        "🐍"]  # Snake: Emils gosorm
+        "🐍",  # Snake: Emils gosorm
+        "🐕"]  # Layla: familjens hund
 P_BYT_DJUR = 50  # byta till ett annat djur (första valet är gratis)
 # Husdjursbutiken: saker köps för saldot (intjänade meriter och djurets storlek påverkas inte)
 DJURBUTIK = [
@@ -2164,7 +2165,7 @@ DJUR_ELEMENT = {
     "🐻": "natur", "🐨": "vatten", "🐷": "kraft", "🐸": "vatten", "🐯": "eld", "🦁": "eld", "🐭": "blixt", "🐮": "kraft", "🐵": "blixt",
     "🐹": "blixt", "🦉": "blixt", "🦝": "natur", "🌭": "eld", "🍉": "vatten", "🍞": "eld", "🌵": "natur", "🍕": "eld", "🍦": "is",
     "🧦": "kraft", "🪨": "kraft", "🍌": "natur", "🐙": "vatten", "🍩": "kraft", "🥑": "natur", "🍄": "natur", "☁️": "blixt", "🦷": "is",
-    "🥔": "kraft", "👻": "is", "🤖": "blixt", "🍫": "eld", "🐍": "natur",
+    "🥔": "kraft", "👻": "is", "🤖": "blixt", "🍫": "eld", "🐍": "natur", "🐕": "blixt",
     "⛄": "is", "🎃": "natur", "🐣": "natur", "🍓": "vatten", "🍭": "kraft", "🕯️": "eld", "🚀": "kraft", "❤️": "kraft", "👽": "blixt", "🐲": "eld",
 }
 ELEMENT_DALIG = {"eld": "is", "is": "eld", "vatten": "eld", "natur": "blixt", "blixt": "vatten", "kraft": "natur"}
