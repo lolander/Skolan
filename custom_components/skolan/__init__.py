@@ -39,7 +39,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import dagens, fraga, meriter, schemavy, skola, tillsammans, vanner
+from . import dagens, fraga, meriter, plugg, schemavy, skola, tillsammans, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -161,7 +161,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
 
     async def _ateruppta(_event: Event | None = None) -> None:
@@ -913,7 +913,7 @@ class StateView(HomeAssistantView):
                 "pass": meriter.pass_status(data),
                 "karta": meriter.karta_status(data), "arena": meriter.arena_status(data), "revansch": {"bossar": meriter.revansch_lista(data), "kort_kvar": meriter.revansch_kort_kvar(data), "energi": meriter.REVANSCH_ENERGI},
                 "kistor": meriter.kista_status(data), "provbossar": meriter.provboss_lista(data),
-                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "material": meriter.material_fraga(data) if not parent else None,
+                "laxfraga": meriter.laxfraga(data) if not parent else None, "veckokoll": meriter.veckokoll(data), "hjalp": meriter.hjalp_status(data), "studieprofil": plugg.profil(data, fraga.alder(data)), "onskemal": plugg.onskemal(data) if parent else None, "svaga": plugg.svaga_status(data), "svaga_idag": plugg.svaga_idag(data), "dagens_lista": plugg.dagens_lista(data), "material": meriter.material_fraga(data) if not parent else None,
                 "lektioner": data.get("lektioner", []), "skolinfo": meriter.skolinfo(data),
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
@@ -1123,6 +1123,12 @@ HJALP_LAGE = {
                "Börja med att kort säga vad uppgiften handlar om och fråga hur barnet vill börja, eller ge första ledtråden. "
                "Kontrollera barnets steg ett i taget. Skriver barnet ett eget slutsvar: säg om det stämmer, och berömm i så fall.",
 }
+HJALP_LAGE["las"] = ("Barnet har läst läxans sidor. Prata om boken som en nyfiken kompis: ställ EN öppen fråga i taget (vem, vad, varför, hur kändes det, vad tror du händer sen). "
+                     "Bedöm om svaret visar att barnet förstått det som står i sammanfattningarna (egna tankar om varför/vad som händer sen är alltid rätt om de är rimliga). "
+                     "Säg kort vad du tycker och ställ nästa fråga.")
+HJALP_LAGE["skriv"] = ("Barnet visar en egen text (foto eller inskriven) och vill ha tips. Skriv INTE om texten och skriv inga egna meningar åt barnet. "
+                       "Säg först 2 saker som är bra. Ge sedan högst 3 konkreta tips (t.ex. 'kolla stavningen på ordet i rad 2', 'börja ett nytt stycke när ni kommer hem', 'berätta mer om hur det kändes'). "
+                       "Peka ut ord som är felstavade men låt barnet rätta själv. Anpassa till åldern och till uppgiften om den står i materialet.")
 HJALP_PER_DAG = 80  # AI-frågor per barn och dag
 
 
@@ -1155,7 +1161,7 @@ class HjalpView(HomeAssistantView):
         barn = _barn_for(hass, request, body.get("barn"))
         foralder = _ar_foralder(hass, request)
         lage = body.get("lage") if body.get("lage") in HJALP_LAGE else "forklara"
-        text = re.sub(r"\s+", " ", str(body.get("text") or "")).strip()[:600]
+        text = re.sub(r"\s+", " ", str(body.get("text") or "")).strip()[:3000 if lage == "skriv" else 600]
         if not text and not bilder:
             return self.json_message("Skriv något först.", 400)
         idag = dt_util.now().date().isoformat()
@@ -1190,7 +1196,7 @@ class HjalpView(HomeAssistantView):
             lage=HJALP_LAGE[lage] + (" Bilden är uppgiften barnet behöver hjälp med." if bilder else "")
             + (" Det finns nästan inget material i ämnet: tipsa EN gång (inte varje svar) om att fota boksidorna eller lägga in glosor i ämnet, så kan du hjälpa ännu bättre." if len(material) < 250 and not historik else ""),
             ratt_regel=("ratt = true om barnets SENASTE meddelande var ett rätt svar på din senaste förhörsfråga, false om det var fel, "
-                        "null om det inte var ett svar (t.ex. första gången, eller om barnet bad om en ny fråga)." if lage == "forhor" else "ratt ska alltid vara null."))
+                        "null om det inte var ett svar (t.ex. första gången, eller om barnet bad om en ny fråga)." "Om ratt är false: lägg också till \"fraga\" (din fråga, kort) och \"facit\" (rätt svar, kort) i JSON." if lage in ("forhor", "las") else "ratt ska alltid vara null."))
         try:
             if bilder:
                 raw = await _ai_las(hass, bilder, instr, "Läxspelet hjälpläraren")
@@ -1203,18 +1209,275 @@ class HjalpView(HomeAssistantView):
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Läxspelet: hjälpläraren misslyckades: %s", err)
             return self.json_message("Husdjuret hörde inte riktigt. Försök igen om en stund.", 503)
-        ratt = x.get("ratt") if lage == "forhor" and len(historik) >= 1 else None
+        ratt = x.get("ratt") if lage in ("forhor", "las") and len(historik) >= 1 else None
         ratt = {"true": True, "false": False}.get(ratt.lower()) if isinstance(ratt, str) else ratt
         ut = {"svar": svar, "ratt": ratt if isinstance(ratt, bool) else None}
-        if ut["ratt"] and not foralder:
+        if ut["ratt"] is not None and not foralder:
             async with hass.data[DOMAIN]["locks"][barn]:
                 data = await hass.async_add_executor_job(_load, path)
-                uu = next((y for y in data.get("uppdrag", []) if u and y.get("id") == u["id"]), None)
-                ut["poang"] = meriter.hjalp_ratt(data, uu)
+                if ut["ratt"]:
+                    uu = next((y for y in data.get("uppdrag", []) if u and y.get("id") == u["id"]), None)
+                    ut["poang"] = meriter.hjalp_ratt(data, uu)
+                else:  # fel svar: tillbaka som svag punkt om några dagar
+                    plugg.svag_ny(data, a["id"], u["id"] if u else None, x.get("fraga"), x.get("facit"), "forhor")
+                    ut["poang"] = meriter.hjalp_status(data)
                 await hass.async_add_executor_job(_save, path, data)
         else:
             ut["poang"] = meriter.hjalp_status(data)
         return self.json(ut)
+
+
+OMRADEN_PROMPT = (
+    "Du hjälper {namn}{alder} att förbereda sig för ett prov.\nProv: {prov}. Provtyp: {typ}.\nVad som ska ingå (enligt läraren eller barnet): {omfattning}\n"
+    "Material i ämnet:\n{material}\n{bild}"
+    "Dela upp det provet handlar om i 3–8 områden med korta namn (t.ex. 'Bråk: förlänga och förkorta', 'Fotosyntesen', 'Verb i presens'), i den ordning de brukar läras ut. "
+    "info = en kort mening om vad området innehåller. Ta bara med sådant som hör till provet. Skriv inte av bokens text. "
+    'Svara ENDAST med JSON: {{"omraden": [{{"namn": "...", "info": "..."}}], "omfattning": "..."}}. '
+    "omfattning = om en bild är bifogad: kort vad som står där om provet (mål, kapitel, sidor, datum), annars tom text."
+)
+PLAN_PROMPT = (
+    "Du är en skicklig och varm studiecoach. Gör en PERSONLIG pluggplan för {namn}{alder} inför ett prov.\n"
+    "Prov: {prov}, datum {datum} (idag är {idag}). Provtyp: {typ}. Barnets mål: {mal}.\n"
+    "Vad som ska ingå: {omfattning}\n"
+    "Områden och hur säker barnet känner sig: {omraden}\n"
+    "Så pluggar barnet bäst: {profil}\n"
+    "Pluggdagar (använd BARA dessa datum): {dagar}. Ungefär {min} min per dag.\n"
+    "Annat barnet har samma period: {andra}\n"
+    "Material i ämnet:\n{material}\n\n"
+    "TIDIGARE PLANER OCH RESULTAT (lär av dem):\n{historik}\n\n"
+    "FÖRÄLDRARNAS ÖNSKEMÅL (förslag, inte order: väg in dem, men barnets bästa och barnets egna svar går först): {foralder}\n\n"
+    "Se över tidigare planer: vilka typer av delar gör barnet och vilka hoppas över, hur mycket hinns faktiskt med, vad gav bra provresultat? "
+    "Förbättra den nya planen utifrån det (t.ex. kortare pass om barnet ofta missar, mer av det som fungerar, mer övning i det som gick dåligt).\n"
+    "REGLER: Lägg mest tid på det barnet inte kan eller är osäkert på, mindre på det barnet redan kan. Först förstå/läsa, sedan öva, sedan repetera. "
+    "Låt områden komma tillbaka efter några dagar (spridd repetition). Sista pluggdagen: ett övningsprov (typ ovningsprov) och lätt repetition, inget nytt. "
+    "Anpassa delarna efter hur barnet lär sig bäst och efter målet (högre mål = lite mer och svårare övning). 1–3 delar per dag, sammanlagt ungefär {min} min, mindre de dagar barnet har annat. "
+    "Färre pluggdagar än områden: slå ihop. Gör 'vad' mycket konkret (t.ex. 'Läs s. 34–37 och skriv 3 viktiga saker', 'Be husdjuret förhöra dig på fotosyntesen', 'Förklara för mamma eller pappa hur ...'). "
+    "Typer: las, forhor (husdjuret förhör i appen), ovningsprov (i appen), repetera (svaga punkter i appen), uppgifter, glosor, sammanfatta, forklara. "
+    "Glosförhör: mest glosor och forhor. Muntligt: mycket forklara. Inlämning: bygg arbetet steg för steg (planera, skriva, förbättra) i stället för övningsprov. Skriv inte av bokens text.\n"
+    'Svara ENDAST med JSON: {{"delar": [{{"dag": "ÅÅÅÅ-MM-DD", "titel": "kort", "vad": "konkret instruktion", "min": 15, "typ": "las", "omrade": "områdets namn exakt"}}], "tips": "en kort peppande mening till barnet", '
+    '"tankar": "till FÖRÄLDRARNA, 2–5 meningar: dina tankar om barnets studietaktik utifrån tidigare planer, resultat och profil, vad du ändrat i den här planen och varför, hur du vägt in föräldrarnas önskemål (och var du gjort annorlunda och varför), och hur föräldrarna kan stötta"}}'
+)
+OVNINGSPROV_PROMPT = (
+    "Gör ett övningsprov för {namn}{alder} inför provet \"{prov}\" ({typ}).\nOmråden och hur säker barnet är: {omraden}\nMaterial:\n{material}\n\n"
+    "{antal} frågor, som på ett riktigt prov och lagom svåra för åldern. Fler frågor om områden barnet är osäkert på. "
+    "Blanda korta frågor (svar med några ord eller en mening) och några flervalsfrågor (3–4 alternativ, facit exakt likadant som ett av alternativen). "
+    "I matte: räkneuppgifter med ett tydligt svar. Bygg på materialet, men skriv inte av bokens text. "
+    'Svara ENDAST med JSON: {{"fragor": [{{"fraga": "...", "facit": "kort rätt svar", "alternativ": [], "omrade": "områdets namn exakt"}}]}}'
+)
+RATTA_PROMPT = (
+    "Rätta ett övningsprov för ett barn{alder}. För varje fråga: ratt = true om svaret visar rätt kunskap "
+    "(stavning och ordval spelar ingen roll, rätt kärna räcker), annars false. kommentar = en kort, snäll förklaring till barnet: "
+    "vid fel varför och vad som är rätt, vid rätt ett kort beröm eller tillägg.\n{fragor}\n"
+    'Svara ENDAST med JSON: {{"bedomning": [{{"ratt": true, "kommentar": "..."}}]}} med lika många objekt som frågor, i samma ordning.'
+)
+RAPPORT_PROMPT = (
+    "Skriv en kort veckorapport från Läxspelet till föräldrarna om {namn}{alder}. Var varm, ärlig och konkret. Överdriv inte och hitta inte på något som inte står i underlaget.\n"
+    "UNDERLAG:\n{underlag}\n\n"
+    'Svara ENDAST med JSON: {{"sammanfattning": "2–3 meningar", "bra": ["vad som gått bra"], "svart": ["vad som verkar svårt eller behöver mer övning"], '
+    '"kommande": ["viktigt nästa vecka"], "tips": ["1–3 sätt föräldrarna kan hjälpa"], '
+    '"middagsfragor": ["3 nyfikna frågor om innehållet barnet pluggat på, som man kan ställa vid middagen (inte förhör)"], '
+    '"studietaktik": "3–6 meningar: dina tankar om barnets studietaktik (hur och när barnet pluggar, vad som fungerar och inte, mönster i planer och resultat) och konkreta förbättringar"}}. Tomma listor om underlaget saknas.'
+)
+
+
+COACH_PROMPT = (
+    "Du är en klok, varm och kunnig studiecoach i Läxspelet. Du pratar med en förälder till {namn}{alder}. "
+    "Föräldern vill förstå och påverka barnets studietaktik. Du ger råd och förklarar, men barnets bästa går först: säg ifrån snällt om något verkar för hårt eller kan ta bort lusten.\n"
+    "STUDIEPROFIL (barnets egna svar): {profil}\nFÖRÄLDRARNAS ÖNSKEMÅL NU: {onskemal}\n"
+    "PLANER OCH PROV:\n{historik}\n\nSENASTE VECKAN:\n{vecka}\n\n"
+    "Det ni har sagt hittills:\n{samtal}\n\n"
+    "REGLER: Svara på svenska, konkret och kort (högst 6 meningar eller en kort lista). Hitta inte på något om barnet som inte står ovan; säg om du inte vet. "
+    "Om föräldern vill ändra hur planerna ska göras (t.ex. mer/mindre strikt, mer läsning, kortare pass): föreslå nya önskemål i onskemal, annars null. "
+    "strikthet är mild, lagom eller strang; text är föräldrarnas önskemål i en kort mening eller två (ta med det som redan gäller om det fortfarande stämmer).\n"
+    'Svara ENDAST med JSON: {{"svar": "...", "onskemal": null}} eller {{"svar": "...", "onskemal": {{"strikthet": "lagom", "text": "..."}}}}'
+)
+
+
+class PlanView(HomeAssistantView):
+    """Pluggplan inför prov, övningsprov, svaga punkter, studieprofil och veckorapport."""
+
+    url = "/api/skolan/plan"
+    name = "api:skolan:plan"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        bilder: list[Path] = []
+        try:
+            if request.content_type.startswith("multipart/"):
+                form = await request.post()
+                body = json.loads(str(form.get("json") or "{}"))
+                if form.getall("file", []):
+                    bilder = await _ta_emot_filer(hass, form, "plan")
+            else:
+                body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("Fel format.")
+            return self.json(await self._op(hass, request, body, bilder))
+        except ValueError as err:
+            return self.json_message(str(err), 400)
+        except RuntimeError as err:
+            _LOGGER.warning("Läxspelet: pluggplan: %s", err)
+            return self.json_message(str(err), 503)
+        finally:
+            if bilder:
+                await hass.async_add_executor_job(lambda: [p.unlink(missing_ok=True) for p in bilder])
+
+    async def _ai(self, hass: HomeAssistant, prompt: str, uppgift: str, bilder: list[Path] | None = None) -> dict:
+        try:
+            raw = await (_ai_las(hass, bilder, prompt, uppgift) if bilder else _ai_text(hass, prompt, uppgift))
+            x = _parse_json(raw)
+        except Exception as err:  # noqa: BLE001
+            raise RuntimeError(f"AI:n svarade inte ({err}). Försök igen om en stund.") from err
+        if not isinstance(x, dict):
+            raise RuntimeError("AI:n svarade konstigt. Försök igen.")
+        return x
+
+    async def _op(self, hass: HomeAssistant, request: web.Request, body: dict, bilder: list[Path]) -> dict:
+        barn = _barn_for(hass, request, body.get("barn"))
+        foralder = _ar_foralder(hass, request)
+        op = body.get("op")
+        path = _dir(hass, barn)
+        lock = hass.data[DOMAIN]["locks"][barn]
+        namn = next((b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn), "")
+        data = await hass.async_add_executor_job(_load, path)
+        ar = fraga.alder(data)
+        alder = f" ({ar} år)" if ar else ""
+
+        async def spara(fn):
+            async with lock:
+                d = await hass.async_add_executor_job(_load, path)
+                ut = fn(d)
+                await hass.async_add_executor_job(_save, path, d)
+                return ut
+
+        def prov(d: dict) -> dict:
+            u = next((x for x in d.get("uppdrag", []) if x.get("id") == body.get("uppdrag")), None)
+            if not u or u.get("typ") != "prov":
+                raise ValueError("Provet finns inte.")
+            return u
+
+        async def material(u: dict) -> str:
+            a = next((x for x in data.get("amnen", []) if x["id"] == u.get("amne")), None)
+            if not a:
+                return "(inget material)"
+            eb = await hass.async_add_executor_job(lambda: {b["id"]: _load_fil(path / "filer" / _ebok_fil(b["id"])).get("cache", {}) for b in a.get("bocker", []) if b.get("sidor")})
+            return fraga.studiematerial(data, a, u, eb, 6000)
+
+        if op == "profil":
+            return {"profil": await spara(lambda d: plugg.profil_spara(d, body))}
+        if op == "svag_svar":
+            return await spara(lambda d: plugg.svag_svar(d, str(body.get("id")), bool(body.get("kunde"))))
+        if op == "onskemal":
+            if not foralder:
+                raise web.HTTPForbidden
+            return {"onskemal": await spara(lambda d: plugg.onskemal_spara(d, body, request["hass_user"].name))}
+        if op == "coach":
+            if not foralder:
+                raise web.HTTPForbidden
+            text = plugg._txt(body.get("text"), 800)
+            if not text:
+                raise ValueError("Skriv något först.")
+            hist = [x for x in body.get("historik") or [] if isinstance(x, dict)][-12:]
+            samtal = "\n".join(f"{'Föräldern' if x.get('vem') == 'jag' else 'Du'}: {plugg._txt(x.get('text'), 800)}" for x in hist) + f"\nFöräldern: {text}"
+            x = await self._ai(hass, COACH_PROMPT.format(namn=namn, alder=alder, profil=plugg.profil_text(plugg.profil(data, ar)), onskemal=plugg.onskemal_text(data),
+                                                         historik=plugg.plan_historik(data), vecka=plugg.vecko_underlag(data, namn), samtal=samtal), "Läxspelet studiecoach")
+            o = x.get("onskemal") if isinstance(x.get("onskemal"), dict) else None
+            if o:
+                o = {"strikthet": o.get("strikthet") if o.get("strikthet") in plugg.STRIKTHET else plugg.onskemal(data)["strikthet"], "text": plugg._txt(o.get("text"), 800)}
+            return {"svar": str(x.get("svar") or "").strip()[:2000] or "Jag förstod inte riktigt, kan du säga det på ett annat sätt?", "onskemal": o}
+        if op == "rapport":
+            if not foralder:
+                raise web.HTTPForbidden
+            vecka = dt_util.now().strftime("%G-%V")
+            gammal = data.get("veckorapport") or {}
+            if gammal.get("vecka") == vecka and not body.get("ny"):
+                return gammal
+            x = await self._ai(hass, RAPPORT_PROMPT.format(namn=namn, alder=alder, underlag=plugg.vecko_underlag(data, namn) + "\nPLUGGPLANER OCH PROV:\n" + plugg.plan_historik(data) + "\nSTUDIEPROFIL: " + plugg.profil_text(plugg.profil(data, ar)) + "\nFÖRÄLDRARNAS ÖNSKEMÅL: " + plugg.onskemal_text(data)), "Läxspelet veckorapport")
+            rap = {k: ([str(v)[:300] for v in x.get(k) or []][:6] if k not in ("sammanfattning", "studietaktik") else str(x.get(k) or "")[:1500])
+                   for k in ("sammanfattning", "bra", "svart", "kommande", "tips", "middagsfragor", "studietaktik")}
+            ut = {"vecka": vecka, "skapad": dt_util.now().isoformat(timespec="minutes"), "rapport": rap}
+            await spara(lambda d: d.__setitem__("veckorapport", ut))
+            return ut
+
+        u = prov(data)
+        if op == "omraden":
+            typ = plugg.PROVTYPER.get(body.get("provtyp"), "Skriftligt prov")
+            x = await self._ai(hass, OMRADEN_PROMPT.format(
+                namn=namn, alder=alder, prov=u["namn"], typ=typ, omfattning=plugg._txt(body.get("omfattning"), 1500) or u.get("kapitel") or "(okänt)",
+                material=await material(u), bild="Bilden är lärarens information om provet (t.ex. mål eller planering).\n" if bilder else ""),
+                "Läxspelet provområden", bilder)
+            return {"omraden": plugg.omraden_spara({}, [o for o in x.get("omraden") or [] if isinstance(o, dict)]), "omfattning": plugg._txt(x.get("omfattning"), 1500)}
+        if op == "plan_skapa":
+            inst = {"provtyp": body.get("provtyp") if body.get("provtyp") in plugg.PROVTYPER else "skriftligt",
+                    "mal": body.get("mal") if body.get("mal") in plugg.MAL else "bra",
+                    "omfattning": plugg._txt(body.get("omfattning"), 1500),
+                    "uteslut": [str(x)[:10] for x in body.get("uteslut") or []][:30]}
+            prof = await spara(lambda d: plugg.profil_spara(d, body))
+            omraden = plugg.omraden_spara(u, body.get("omraden") or [])
+            dagar = plugg.plan_dagar(u, prof["dagar"], inst["uteslut"])
+            if not dagar:
+                raise ValueError("Provet har redan varit, eller så finns det inga dagar kvar att plugga.")
+            andra = [f"{x['datum']}: {x['namn']} ({x.get('amne_namn')})" for x in data.get("uppdrag", [])
+                     if x["id"] != u["id"] and not x.get("klart") and x.get("datum") and dagar[0] <= x["datum"] <= u["datum"]]
+            x = await self._ai(hass, PLAN_PROMPT.format(
+                namn=namn, alder=alder, prov=u["namn"], datum=u["datum"], idag=dt_util.now().date().isoformat(), typ=plugg.PROVTYPER[inst["provtyp"]],
+                mal=plugg.MAL[inst["mal"]], omfattning=inst["omfattning"] or u.get("kapitel") or "(okänt)",
+                omraden="; ".join(f"{o['namn']}: {plugg.KAN[o['kan']]}" for o in omraden) or "(inga angivna)",
+                profil=plugg.profil_text(prof), dagar=", ".join(f"{d} ({meriter.VECKODAGAR[date.fromisoformat(d).weekday()]})" for d in dagar),
+                min=prof["min_dag"], andra="; ".join(andra) or "inget", material=await material(u),
+                historik=plugg.plan_historik(data, u["id"]), foralder=plugg.onskemal_text(data)), "Läxspelet pluggplan")
+            inst["tips"] = plugg._txt(x.get("tips"), 200)
+            inst["tankar"] = plugg._txt(x.get("tankar"), 1200)
+
+            def _s(d):
+                uu = prov(d)
+                plan = plugg.plan_spara(uu, inst, omraden, x.get("delar") or [], dagar)
+                if not plan["delar"]:
+                    raise ValueError("AI:n kunde inte göra någon plan. Försök igen.")
+                return plugg.plan_lage(uu)
+            return {"plan": await spara(_s)}
+        if op == "plan_bort":
+            await spara(lambda d: prov(d).pop("plan", None))
+            return {}
+        if op == "del_klar":
+            return await spara(lambda d: plugg.del_klar(d, prov(d), str(body.get("del")), bool(body.get("klar"))))
+        if op == "ovningsprov_skapa":
+            omraden = (u.get("plan") or {}).get("omraden", [])
+            x = await self._ai(hass, OVNINGSPROV_PROMPT.format(
+                namn=namn, alder=alder, prov=u["namn"], typ=plugg.PROVTYPER.get((u.get("plan") or {}).get("inst", {}).get("provtyp"), "skriftligt prov"),
+                omraden="; ".join(f"{o['namn']}: {plugg.KAN[o['kan']]}" for o in omraden) or "(inga angivna)",
+                material=await material(u), antal=6 if (ar or 12) < 11 else 8), "Läxspelet övningsprov")
+            op_ = await spara(lambda d: plugg.ovningsprov_spara(prov(d), x.get("fragor") or [], omraden))
+            return {"prov": plugg.ovningsprov_ut(op_, foralder)}
+        if op == "ovningsprov_ratta":
+            o = next((y for y in (u.get("plan") or {}).get("ovningsprov", []) if y["id"] == body.get("prov")), None)
+            if not o:
+                raise ValueError("Övningsprovet finns inte.")
+            if o.get("resultat"):
+                raise ValueError("Det här övningsprovet är redan rättat.")
+            svar = [plugg._txt(v, 300) for v in body.get("svar") or []]
+            oppna = [(i, q) for i, q in enumerate(o["fragor"]) if not q["alternativ"] and i < len(svar) and svar[i]]
+            bed = [{} for _ in o["fragor"]]
+            if oppna:
+                x = await self._ai(hass, RATTA_PROMPT.format(alder=alder, fragor="\n".join(
+                    f"{n + 1}. Fråga: {q['fraga']} | Facit: {q['facit']} | Barnets svar: {svar[i]}" for n, (i, q) in enumerate(oppna))), "Läxspelet rätta övningsprov")
+                for n, (i, _q) in enumerate(oppna):
+                    b = (x.get("bedomning") or [])[n:n + 1]
+                    bed[i] = b[0] if b and isinstance(b[0], dict) else {}
+
+            def _r(d):
+                uu = prov(d)
+                oo = next(y for y in uu["plan"]["ovningsprov"] if y["id"] == o["id"])
+                return {**plugg.ovningsprov_ratta(d, uu, oo, svar, bed, uu["amne"]), "facit": [q["facit"] for q in oo["fragor"]], "omraden": uu["plan"].get("omraden", [])}
+            if foralder:  # föräldern provar: rättas men ger inga meriter och sparas inte
+                res = []
+                for i, q in enumerate(o["fragor"]):
+                    s_ = svar[i] if i < len(svar) else ""
+                    ratt = s_ == q["facit"] if q["alternativ"] else bool(bed[i].get("ratt")) if s_ else False
+                    res.append({"svar": s_, "ratt": ratt, "kommentar": plugg._txt(bed[i].get("kommentar"), 300)})
+                return {"resultat": res, "ratt": sum(r["ratt"] for r in res), "av": len(res), "p": 0, "facit": [q["facit"] for q in o["fragor"]], "prov_lage": True}
+            return await spara(_r)
+        raise ValueError("Okänd åtgärd.")
 
 
 class GlosstridView(HomeAssistantView):
@@ -2741,6 +3004,16 @@ def _ut(data: dict, foralder: bool) -> dict:
             else u
             for u in data.get("uppdrag", [])
         ]
+    if not foralder:  # övningsprov: facit först när provet är inlämnat
+        data["uppdrag"] = [
+            {**{k: v for k, v in u.items() if k != "plan_historik"}, "plan": {**u["plan"], "inst": {k: v for k, v in (u["plan"].get("inst") or {}).items() if k != "tankar"},
+                                    "ovningsprov": [x if x.get("resultat") else plugg.ovningsprov_ut(x, False) for x in u["plan"].get("ovningsprov", [])]}}
+            if u.get("plan") else u
+            for u in data.get("uppdrag", [])
+        ]
+    data.pop("veckorapport", None)
+    if not foralder:
+        data.pop("foralder_onskemal", None)
     if "meriter" in data:
         data["meriter"] = {k: v for k, v in data["meriter"].items() if k != "nycklar"}
     data.pop("kalender", None)  # gamla länken per barn: aldrig till webbläsaren

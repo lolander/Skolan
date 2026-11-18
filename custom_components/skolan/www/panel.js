@@ -699,6 +699,7 @@ const idagISO = () => {
 };
 const TYP_IKON = { prov: "📝", las: "📖", hogl: "🗣️", skriv: "✍️" };
 const TYP_NAMN = { prov: "Prov", las: "Läsläxa", hogl: "Högläsning", skriv: "Läxboken" };
+const PLAN_IKON = { las: "📖", forhor: "📝", ovningsprov: "🧪", repetera: "🔁", uppgifter: "✏️", glosor: "🗣️", sammanfatta: "🗒️", forklara: "🙋" };
 const VECKODAG = ["måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag"];
 const veckodag = (iso) => VECKODAG[(new Date(`${iso}T12:00:00`).getDay() + 6) % 7];
 const plusDagar = (iso, n) => {
@@ -1152,6 +1153,26 @@ class SkolanPanel extends HTMLElement {
       title = `💬 Fråga ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "hem" };
       body = this._fragaView();
+    } else if (v.name === "plan") {
+      title = "📅 Pluggplan";
+      back = v.g && (s.data.uppdrag || []).find((x) => x.id === v.uppdrag)?.plan?.delar?.length ? { name: "plan", uppdrag: v.uppdrag } : { name: "hem" };
+      body = this._planView();
+    } else if (v.name === "ovningsprov") {
+      title = "🧪 Övningsprov";
+      back = { name: "plan", uppdrag: v.uppdrag };
+      body = this._ovningsprovView();
+    } else if (v.name === "svaga") {
+      title = "🔁 Svaga punkter";
+      back = { name: "hem" };
+      body = this._svagaView();
+    } else if (v.name === "coach") {
+      title = "🧠 Studiecoach";
+      back = { name: "foralder" };
+      body = this._coachView();
+    } else if (v.name === "rapport") {
+      title = "📊 Veckorapport";
+      back = { name: "foralder" };
+      body = this._rapportView();
     } else if (v.name === "hjalp") {
       title = `📚 Plugga med ${esc(this._s.meriter?.djur?.namn || "husdjuret")}`;
       back = { name: "hem" };
@@ -3093,6 +3114,12 @@ class SkolanPanel extends HTMLElement {
         `<b>📷 Hjälp med uppgift</b>: fota uppgiften så hjälper husdjuret dig steg för steg. Svaret säger det aldrig, det ska du klura ut själv! 😉`,
       ])}
 
+      ${kort("📅", "Pluggplan, övningsprov och svaga punkter", [
+        `<b>📅 Pluggplan:</b> tryck på ett prov eller en provboss och välj Pluggplan. Svara på några frågor (vad som ingår, vad du kan, hur mycket tid du har, hur du pluggar bäst) så gör AI:n en plan bara för dig. Varje klar del ger +3 ⭐ och skadar provbossen.`,
+        `<b>🧪 Övningsprov:</b> ett prov på ditt material, +10 ⭐. <b>🔁 Svaga punkter:</b> det du svarar fel på kommer tillbaka efter 1, 3 och 7 dagar tills det sitter.`,
+        `<b>📋 Dagens läxlista</b> på startsidan visar vad du ska göra idag och i vilken ordning.`,
+      ])}
+
       ${kort("🏠", "Husdjurets rum", [
         `Inred ditt husdjurs rum med tapet, säng, lampa, fönster och mycket mer.`,
       ])}
@@ -3180,6 +3207,8 @@ class SkolanPanel extends HTMLElement {
         ${this._hejaropForalder()}
         <button class="row foralder-knapp" id="open-lektioner" style="margin-top:4px"><span>🗓️ <b>Schema</b><br><span class="muted small">Fota ${esc(s.namn)}s lektionsschema så läser AI:n av lektioner och ämnen</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-kalender" style="margin-top:4px"><span>📅 <b>Skolkalendrar</b><br><span class="muted small">${s.kalender ? `${s.kalender.antal} händelser för ${esc(s.namn)} · ` : ""}Koppla in skolans kalender: länk, Home Assistant, webbsida, fil eller foto</span></span><span>›</span></button>
+        <button class="row foralder-knapp" id="open-coach" style="margin-top:4px"><span>🧠 <b>Studiecoach</b><br><span class="muted small">Påverka hur ${esc(s.namn)}s pluggplaner görs (t.ex. hur strikta) och prata med AI:n om studietaktiken</span></span><span>›</span></button>
+        <button class="row foralder-knapp" id="open-rapport" style="margin-top:4px"><span>📊 <b>Veckorapport</b><br><span class="muted small">Vad ${esc(s.namn)} har pluggat, vad som är svårt, AI:ns tankar om studietaktiken och frågor till middagen</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
         <h3 style="margin-top:4px">📅 Läxschema för ${esc(s.namn)}</h3>
         <p class="muted small">När läxan brukar komma. Lägger ${esc(s.namn)} in den samma dag eller dagen efter blir det +${p.i_tid} ⭐. Glosor får förhörsdagen ifylld automatiskt. ${esc(s.namn)} får en påminnelse kl. 17.15 den dagen läxan brukar komma.</p>
@@ -3504,6 +3533,8 @@ class SkolanPanel extends HTMLElement {
               .join("")}</div>`
           : ""
       }
+      ${u.typ === "prov" && u.datum > idagISO() ? `<div class="actions"><button class="primary" data-plan="${u.id}">📅 ${u.plan?.delar?.length ? `Pluggplan (${u.plan.delar.filter((x) => x.klar).length}/${u.plan.delar.length})` : "Gör en pluggplan"}</button><button class="ghost" data-ovp="${u.id}">🧪 Övningsprov</button>${s.meriter?.djur ? `<button class="ghost" data-hjalp-prov="${u.id}">📚 Plugga med ${esc(s.meriter.djur.namn)}</button>` : ""}</div>` : ""}
+      ${(u.typ === "las" || u.typ === "hogl") && s.meriter?.djur && u.sidor?.length ? `<button class="row" data-hjalp-las="${u.amne}|${u.id}"><span>🧠 <b>Prata om boken med ${esc(s.meriter.djur.namn)}</b><br><span class="muted small">Husdjuret ställer frågor om det du har läst. Rätt svar räknas mot ⭐</span></span><span>›</span></button>` : ""}
       ${u.typ === "prov" ? this._provResultat(u) : ""}
       ${s.kan_valja && !u.klart ? `<button class="row foralder-knapp" id="u-manuell"><span>✅ <b>Gjord i boken</b><br><span class="muted small">Registrera att ${esc(s.namn)} har gjort den utanför appen, så blir meriterna rätt</span></span><span>›</span></button>` : ""}
       ${u.manuell ? `<p class="muted small">Registrerad som gjord i boken.</p>` : ""}
@@ -4130,7 +4161,7 @@ class SkolanPanel extends HTMLElement {
         <span class="small">${nar} · 🎯 svag mot ${TYP_TEXT[b.svag] || b.svag} · 📚 ${b.pluggdagar} pluggdag${b.pluggdagar === 1 ? "" : "ar"}${b.klart ? " · ✅ allt klart" : ""}</span>
         <div class="pb-liv" title="Skada från plugget"><div style="width:${100 - b.skada}%"></div></div>
         <span class="small">${b.vunnen ? "🏆 Besegrad!" : b.skada ? `💥 ${b.skada} % skadad av ditt plugg` : "Oskadd: plugga inför provet så blir den svagare!"}</span>
-        ${knapp && !b.vunnen && b.dagar_kvar >= 1 ? `<br><button class="mini" data-hjalp-prov="${b.id}">📚 Plugga med ${esc(this._s.meriter?.djur?.namn || "husdjuret")}</button>` : ""}</span>
+        ${knapp && !b.vunnen && b.dagar_kvar >= 1 ? `<br><button class="mini" data-plan="${b.id}">📅 Pluggplan</button> <button class="mini" data-hjalp-prov="${b.id}">📚 Plugga med ${esc(this._s.meriter?.djur?.namn || "husdjuret")}</button>` : ""}</span>
       ${knapp && !b.vunnen ? (b.oppen ? `<button class="mini primary" data-provboss="${b.id}" ${this._busy || this._s.arena?.pagar ? "disabled" : ""}>⚔️ Slutstrid</button>`
         : `<span class="small muted center">Öppnar dagen före provet</span>`) : ""}</li>`;
   }
@@ -4370,6 +4401,212 @@ class SkolanPanel extends HTMLElement {
     }
   }
 
+  // ---------- pluggplan, övningsprov, svaga punkter, dagens läxlista, veckorapport ----------
+  async _plan(op, args = {}, filer = null) {
+    this._busy = true;
+    this._render();
+    try {
+      const json = { barn: this._s.barn, op, ...args };
+      let res;
+      if (filer?.length) {
+        const fd = new FormData();
+        fd.append("json", JSON.stringify(json));
+        filer.forEach((f) => fd.append("file", f, f.name || "bild.jpg"));
+        res = await this._hass.fetchWithAuth("/api/skolan/plan", { method: "POST", body: fd });
+      } else {
+        res = await this._hass.fetchWithAuth("/api/skolan/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) });
+      }
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || res.statusText);
+      this._msg = null;
+      return body;
+    } catch (e) {
+      this._msg = { type: "error", text: e.message || String(e) };
+      return null;
+    } finally {
+      this._busy = false;
+      this._render();
+    }
+  }
+
+  _dagensListaKort() {
+    const l = this._s.dagens_lista;
+    if (!l?.rader?.length) return "";
+    return `<div class="card dagens-lista"><div class="djur-rubrik">📋 ${this._s.kan_valja ? `${esc(this._s.namn)}s läxlista idag` : "Din läxlista idag"} <span class="small muted">· ca ${l.min} min</span></div>
+      ${l.rader.map((r, i) => `<button class="row" data-dl="${i}"><span>${r.ikon} ${esc(r.text)}${r.missad ? ` <span class="small muted">(missad)</span>` : ""}</span><span class="small muted">${r.min} min ›</span></button>`).join("")}
+      ${this._s.kan_valja ? "" : `<div class="small muted" style="margin-top:6px">Gör det översta först. Tips: starta ett ⏱️ fokuspass medan du pluggar!</div><div class="actions" style="margin-top:8px"><button class="ghost" id="dl-fokus">⏱️ Starta fokus</button></div>`}</div>`;
+  }
+
+  _planView() {
+    const v = this._view, s = this._s, u = (s.data.uppdrag || []).find((x) => x.id === v.uppdrag);
+    if (!u) return `<p class="muted">Provet finns inte.</p>`;
+    const f = forhorInfo(u.datum), plan = u.plan;
+    const huvud = `<div class="forhor-kort">📝 <b>${esc(u.namn)}</b> · ${esc(u.amne_namn || "")} · provet är <b>${esc(f?.text || "")}</b> · ${f?.kvar || ""}</div>`;
+    if (!plan?.delar?.length || v.g) return huvud + this._planGuide(u);
+    const d = s.meriter?.djur, idag = idagISO();
+    const dagar = [...new Set(plan.delar.map((x) => x.dag))].sort();
+    const klara = plan.delar.filter((x) => x.klar).length, missade = plan.delar.filter((x) => !x.klar && x.dag < idag).length;
+    const START = { forhor: ["📝", "Förhör"], forklara: ["🙋", "Förklara"], glosor: ["📝", "Förhör"], uppgifter: ["✏️", "Hjälp"], ovningsprov: ["🧪", "Gör provet"], repetera: ["🔁", "Repetera"], sammanfatta: ["✍️", "Visa husdjuret"] };
+    const rad = (x) => {
+      const st = START[x.typ];
+      return `<div class="pd-rad ${x.klar ? "klar" : ""}"><button class="pd-check" data-pd-klar="${x.id}" title="Klar">${x.klar ? "✅" : "⬜"}</button>
+        <div class="pd-text"><b>${PLAN_IKON[x.typ] || "📅"} ${esc(x.titel)}</b> <span class="small muted">· ${x.min} min</span>${x.vad ? `<div class="small">${esc(x.vad)}</div>` : ""}</div>
+        ${st && !x.klar ? `<button class="mini" data-pd-start="${x.typ}">${st[0]} ${st[1]}</button>` : ""}</div>`;
+    };
+    const ops = (plan.ovningsprov || []).filter((o) => o.resultat);
+    return `${huvud}
+      ${plan.inst?.tips && d ? `<div class="lar-rad djur"><div class="lar-ikon">${d.art}</div><div class="lar-bubbla">${esc(plan.inst.tips)}</div></div>` : ""}
+      ${s.kan_valja && plan.inst?.tankar ? `<div class="card hjalp-kort pd-tankar"><b>🧠 AI:ns tankar om ${esc(s.namn)}s studietaktik</b><div class="small" style="margin-top:6px">${esc(plan.inst.tankar)}</div><div class="small muted" style="margin-top:6px">Visas bara för föräldrar.</div></div>` : ""}
+      <div class="small">${klara} av ${plan.delar.length} delar klara</div><div class="progress stor" style="margin:6px 0 10px"><div style="width:${(klara / plan.delar.length) * 100}%"></div></div>
+      ${missade ? `<div class="card hjalp-kort">⚠️ ${missade} ${missade === 1 ? "del" : "delar"} hann inte bli gjorda. Ingen fara! <button class="mini primary" id="pd-om">🔄 Gör om planen</button><div class="small muted">Då anpassas planen efter hur det har gått.</div></div>` : ""}
+      ${dagar.map((dag) => `<div class="pd-dag ${dag === idag ? "idag" : dag < idag ? "forr" : ""}"><div class="pd-rubrik">${dag === idag ? "Idag · " : ""}${veckodag(dag)} ${Number(dag.slice(8))}/${Number(dag.slice(5, 7))}</div>
+        ${plan.delar.filter((x) => x.dag === dag).map(rad).join("")}</div>`).join("")}
+      ${plan.omraden?.length ? `<h3>🎯 Områden</h3><div class="list">${plan.omraden.map((o) => `<div class="row static"><span>${esc(o.namn)}</span><span>${["😟 kan inte än", "🤔 osäker", "😀 kan"][o.kan]}</span></div>`).join("")}</div>` : ""}
+      ${ops.length ? `<h3>🧪 Övningsprov</h3><div class="list">${ops.map((o) => `<button class="row" data-ovp-visa="${o.id}"><span>${esc((o.klar || o.skapad).slice(0, 10))}</span><span>${o.ratt} av ${o.fragor.length} rätt ›</span></button>`).join("")}</div>` : ""}
+      <div class="actions"><button class="primary" data-ovp="${u.id}">🧪 Övningsprov</button>${d ? `<button class="ghost" data-hjalp-prov="${u.id}">📚 Plugga med ${esc(d.namn)}</button>` : ""}<button class="ghost" id="pd-om2">🔄 Gör om planen</button>${s.kan_valja ? `<button class="ghost danger" id="pd-bort">Ta bort planen</button>` : ""}</div>`;
+  }
+
+  _planGuide(u) {
+    const v = this._view, s = this._s, p = s.studieprofil || { min_dag: 20, dagar: [0, 1, 2, 3, 6], satt: [], svart: "" }, inst = u.plan?.inst || {};
+    v.g = v.g || { provtyp: inst.provtyp || (u.glosor?.length ? "glosor" : "skriftligt"), omfattning: inst.omfattning || u.kapitel || "", omraden: (u.plan?.omraden || []).map((o) => ({ ...o })),
+      min_dag: p.min_dag, dagar: [...p.dagar], satt: [...p.satt], svart: p.svart || "", mal: inst.mal || "bra", uteslut: [], foton: [] };
+    const g = v.g, idag = idagISO();
+    const chip = (attr, val, text, pa) => `<button class="mini ${pa ? "primary" : ""}" data-${attr}="${val}">${text}</button>`;
+    const TYP = { skriftligt: "✍️ Skriftligt", glosor: "🗣️ Glosförhör", muntligt: "🎤 Muntligt", praktiskt: "🔧 Praktiskt", inlamning: "📄 Inlämning" };
+    const SATT = { forhor: "📝 Bli förhörd", lasa: "📖 Läsa", skriva: "✍️ Skriva anteckningar", forklara: "🙋 Förklara för någon", rita: "🎨 Rita/tankekartor", lyssna: "🎧 Lyssna och prata", uppgifter: "✏️ Göra uppgifter", ovningsprov: "🧪 Övningsprov" };
+    const MAL = { godkant: "👍 Klara provet", bra: "⭐ Bra resultat", toppen: "🏆 Toppresultat" };
+    const dagarLista = [];
+    for (let d = idag; d < u.datum && dagarLista.length < 21; d = plusDagar(d, 1)) if (g.dagar.includes((new Date(`${d}T12:00`).getDay() + 6) % 7)) dagarLista.push(d);
+    const pga = dagarLista.filter((d) => !g.uteslut.includes(d)).length;
+    return `<div class="pg">
+      <p class="small muted">${u.plan ? "Ändra det du vill, så gör AI:n om planen och lär sig av hur det har gått." : "Svara på några frågor så gör AI:n en plan som passar just dig."}</p>
+      <h4>1. Vad är det för prov?</h4><div class="fraga-forslag">${Object.entries(TYP).map(([k, t]) => chip("pg-typ", k, t, g.provtyp === k)).join("")}</div>
+      <h4>2. Vad ska ingå?</h4>
+      <textarea id="pg-omf" rows="3" placeholder="T.ex. kapitel 2, sidorna 30–52, bråk och procent. Skriv vad läraren har sagt.">${esc(g.omfattning)}</textarea>
+      <div class="actions" style="margin-top:6px"><label class="ghost upload mini">📷 Fota provinfon${g.foton.length ? ` (${g.foton.length})` : ""}<input type="file" id="pg-foto" accept="image/*,application/pdf" multiple hidden></label>
+        <button class="mini primary" id="pg-hitta" ${this._busy ? "disabled" : ""}>🤖 Hitta områdena</button></div>
+      ${g.foton.length ? `<div class="small">${g.foton.map((f) => `🖼️ ${esc(f.name || "bild")}`).join(" · ")} <button class="mini" id="pg-foto-bort">✕</button></div>` : ""}
+      <h4>3. Hur säker känner du dig?</h4>
+      ${g.omraden.length ? g.omraden.map((o, i) => `<div class="pg-omr"><span>${esc(o.namn)}${o.info ? `<br><span class="small muted">${esc(o.info)}</span>` : ""}</span>
+        <span class="pg-kan">${["😟", "🤔", "😀"].map((e, k) => `<button class="mini ${o.kan === k ? "primary" : ""}" data-pg-kan="${i}:${k}" title="${["Kan inte än", "Osäker", "Kan"][k]}">${e}</button>`).join("")}<button class="mini" data-pg-bort="${i}">✕</button></span></div>`).join("")
+        : `<p class="small muted">Tryck på 🤖 Hitta områdena, eller skriv in dem själv.</p>`}
+      <div class="pg-ny"><input id="pg-ny" placeholder="Lägg till ett område"><button class="mini" id="pg-ny-ok">➕</button></div>
+      <div class="small muted">😟 kan inte än · 🤔 osäker · 😀 kan. Planen lägger mest tid på 😟 och 🤔.</div>
+      <h4>4. Hur mycket och när?</h4>
+      <div class="fraga-forslag">${[10, 15, 20, 30, 45, 60].map((m) => chip("pg-min", m, `${m} min/dag`, g.min_dag === m)).join("")}</div>
+      <div class="fraga-forslag">${["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"].map((n, i) => chip("pg-dag", i, n, g.dagar.includes(i))).join("")}</div>
+      ${dagarLista.length ? `<div class="small muted">Någon dag du inte kan (träning, kalas)? Tryck bort den.</div><div class="fraga-forslag">${dagarLista.map((d) => chip("pg-ut", d, `${veckodag(d).slice(0, 3)} ${Number(d.slice(8))}/${Number(d.slice(5, 7))}`, !g.uteslut.includes(d))).join("")}</div>` : ""}
+      <div class="small">${pga} pluggdag${pga === 1 ? "" : "ar"} före provet.</div>
+      <h4>5. Vad är ditt mål?</h4><div class="fraga-forslag">${Object.entries(MAL).map(([k, t]) => chip("pg-mal", k, t, g.mal === k)).join("")}</div>
+      <h4>6. Hur pluggar du bäst?</h4><div class="fraga-forslag">${Object.entries(SATT).map(([k, t]) => chip("pg-satt", k, t, g.satt.includes(k))).join("")}</div>
+      <textarea id="pg-svart" rows="2" placeholder="Är det något som brukar vara svårt? (frivilligt)">${esc(g.svart)}</textarea>
+      <div class="actions"><button class="primary" id="pg-skapa" ${this._busy || !pga ? "disabled" : ""}>✨ ${u.plan ? "Gör om min plan" : "Gör min plan"}</button>${u.plan?.delar?.length ? `<button class="ghost" id="pg-avbryt">Avbryt</button>` : ""}</div>
+      ${this._busy ? `<p class="small muted">AI:n tänker… (tar några sekunder)</p>` : ""}</div>`;
+  }
+
+  _ovningsprovView() {
+    const v = this._view, s = this._s, u = (s.data.uppdrag || []).find((x) => x.id === v.uppdrag);
+    if (!u) return `<p class="muted">Provet finns inte.</p>`;
+    const sparade = u.plan?.ovningsprov || [];
+    const o = v.p || sparade.find((x) => x.id === v.prov) || (!v.ny && sparade.filter((x) => !x.resultat).slice(-1)[0]);
+    if (!o) {
+      return `<div class="card hjalp-kort center"><div class="big">🧪</div><p>Ett övningsprov på <b>${esc(u.namn)}</b>, som ett riktigt prov fast utan stress. AI:n gör frågorna av ditt material och lägger fler frågor på det du är osäker på.</p>
+        <p class="small muted">Klart prov: +10 ⭐ (en gång per dag) och en pluggdag mot provbossen. Fel svar sparas som 🔁 svaga punkter.</p>
+        <div class="actions" style="justify-content:center"><button class="primary" id="ovp-skapa" ${this._busy ? "disabled" : ""}>🧪 Skapa övningsprov</button></div>${this._busy ? `<p class="small muted">AI:n skriver frågorna…</p>` : ""}</div>`;
+    }
+    const res = v.res || (o.resultat ? { resultat: o.resultat, ratt: o.ratt, av: o.fragor.length, facit: o.fragor.map((q) => q.facit) } : null);
+    v.svar = v.svar || [];
+    if (res) {
+      return `<div class="card hjalp-kort center"><div class="big">${res.ratt / res.av >= 0.8 ? "🌟" : res.ratt / res.av >= 0.5 ? "👍" : "💪"}</div><div class="score">${res.ratt} av ${res.av} rätt</div>${res.p ? `<div class="lar-beloning">+${res.p} ⭐</div>` : ""}${res.prov_lage ? `<div class="small muted">Förälder provade: inga ⭐ och inget sparas.</div>` : ""}</div>
+        ${o.fragor.map((q, i) => { const r = res.resultat[i] || {}; return `<div class="kontroll ${r.ratt ? "ratt" : "fel"}"><div><b>${r.ratt ? "✅" : "❌"} ${i + 1}. ${esc(q.fraga)}</b></div>
+          <div class="small">Ditt svar: ${esc(r.svar || "–")}</div>${!r.ratt ? `<div class="small">Rätt svar: <b>${esc(res.facit?.[i] || q.facit || "")}</b></div>` : ""}${r.kommentar ? `<div class="small muted">${esc(r.kommentar)}</div>` : ""}</div>`; }).join("")}
+        ${res.resultat.some((r) => !r.ratt) && !res.prov_lage ? `<p class="small">🔁 Frågorna du missade kommer tillbaka som svaga punkter, så att de fastnar.</p>` : ""}
+        <div class="actions"><button class="primary" data-plan="${u.id}">📅 Till pluggplanen</button><button class="ghost" id="ovp-ny">🧪 Ett nytt övningsprov</button></div>`;
+    }
+    return `<p class="small muted">Svara så gott du kan. Stavningen spelar ingen roll. Hoppa över om du inte vet.</p>
+      ${o.fragor.map((q, i) => `<div class="kontroll"><div><b>${i + 1}. ${esc(q.fraga)}</b></div>${q.alternativ?.length
+        ? q.alternativ.map((a) => `<button class="row ${v.svar[i] === a ? "vald-rad" : ""}" data-ovp-alt="${i}" data-alt="${esc(a)}">${esc(a)}</button>`).join("")
+        : `<textarea rows="2" data-ovp-svar="${i}" placeholder="Ditt svar">${esc(v.svar[i] || "")}</textarea>`}</div>`).join("")}
+      <div class="actions"><button class="primary" id="ovp-in" data-prov="${o.id}" ${this._busy ? "disabled" : ""}>📤 Lämna in</button></div>${this._busy ? `<p class="small muted">AI:n rättar…</p>` : ""}`;
+  }
+
+  _svagaView() {
+    const v = this._view, s = this._s, lista = s.svaga_idag || [], st = s.svaga || {};
+    if (!lista.length) return `<div class="card hjalp-kort center"><div class="big">🎉</div><p>Inga svaga punkter att repetera idag!</p>
+      <p class="small muted">${st.totalt ? `${st.totalt} kommer tillbaka de närmaste dagarna. ` : ""}${st.befasta ? `${st.befasta} har du redan befäst. 💪` : "Frågor du svarar fel på i förhör och övningsprov hamnar här och kommer tillbaka efter 1, 3 och 7 dagar tills de sitter."}</p></div>`;
+    const x = lista[0], a = (s.data.amnen || []).find((y) => y.id === x.amne);
+    return `<div class="small muted">${lista.length} kvar idag · kommer tillbaka efter 1, 3 och 7 dagar tills den sitter (${x.steg} av 3)</div>
+      <div class="card hjalp-kort"><div class="small muted">${esc(a?.namn || "")}</div><div class="duell-ord" style="font-size:20px">${esc(x.fraga)}</div>
+        ${v.visa ? `<div class="sv-facit">Rätt svar: <b>${esc(x.facit)}</b></div>` : `<textarea id="sv-text" rows="2" placeholder="Tänk ut svaret (eller skriv det här)"></textarea>`}</div>
+      <div class="actions">${v.visa ? `<button class="primary" data-sv="1">😀 Jag kunde</button><button class="ghost" data-sv="0">😟 Inte än</button>` : `<button class="primary" id="sv-visa">👀 Visa svaret</button>`}</div>`;
+  }
+
+  // Föräldrarnas studiecoach: önskemål som AI:n väger in (inte order) och ett samtal om barnets studietaktik.
+  _coachView() {
+    const v = this._view, s = this._s;
+    const o = (v.o = v.o || { ...(s.onskemal || { strikthet: "lagom", text: "" }) });
+    if (!this._coach || this._coach.barn !== s.barn) this._coach = { barn: s.barn, historik: [] };
+    const c = this._coach;
+    const STR = { mild: ["🌱 Mild", "Flexibelt, korta pass och mycket pepp"], lagom: ["⚖️ Lagom", "Tydlig plan med lite luft"], strang: ["🎯 Sträng", "Tydliga krav och regelbunden repetition"] };
+    const bubbla = (x, i) => x.vem === "jag" ? `<div class="lar-rad barn"><div class="lar-bubbla">${esc(x.text)}</div></div>`
+      : `<div class="lar-rad djur"><div class="lar-ikon">🧠</div><div class="lar-bubbla coach-svar">${esc(x.text)}${x.onskemal ? `<div class="coach-forslag"><b>Förslag på önskemål:</b> ${esc(STR[x.onskemal.strikthet]?.[0] || "")}${x.onskemal.text ? ` · ${esc(x.onskemal.text)}` : ""}<br><button class="mini primary" data-coach-anvand="${i}">💾 Använd förslaget</button></div>` : ""}</div></div>`;
+    const forslag = [`Hur pluggar ${s.namn} bäst?`, "Vad kan vi göra annorlunda inför nästa prov?", "Är planerna för hårda eller för lätta?", `Hur kan vi peppa ${s.namn} utan att tjata?`];
+    return `<div class="card hjalp-kort"><b>🎛️ Era önskemål för ${esc(s.namn)}s pluggplaner</b>
+        <div class="small muted" style="margin:4px 0 8px">AI:n väger in det här när den gör planer och rapporter, men ${esc(s.namn)}s egna svar och bästa går först. Det är förslag, inte order.</div>
+        <div class="fraga-forslag">${Object.entries(STR).map(([k, [t, info]]) => `<button class="mini ${o.strikthet === k ? "primary" : ""}" data-coach-str="${k}" title="${esc(info)}">${t}</button>`).join("")}</div>
+        <div class="small">${esc(STR[o.strikthet]?.[1] || "")}</div>
+        <textarea id="coach-onsk" rows="3" placeholder="T.ex. mer läsning och mindre skärm, max 30 min på vardagar, gärna att vi förhör hemma på söndagar…">${esc(o.text || "")}</textarea>
+        <div class="actions" style="margin-top:8px"><button class="primary" id="coach-spara" ${this._busy ? "disabled" : ""}>💾 Spara önskemålen</button></div>
+        ${s.onskemal?.uppdaterad ? `<div class="small muted">Senast ändrat ${esc(s.onskemal.uppdaterad.replace("T", " "))}${s.onskemal.av ? ` av ${esc(s.onskemal.av)}` : ""}</div>` : ""}</div>
+      <h3>💬 Prata med studiecoachen</h3>
+      <div class="lar-chatt">${bubbla({ vem: "ai", text: `Hej! Jag har koll på ${s.namn}s pluggplaner, prov, övningsprov och veckan som gått. Fråga mig om studietaktiken, eller säg hur du vill att planerna ska vara.` }, -1)}
+        ${c.historik.map(bubbla).join("")}${c.tanker ? `<div class="lar-rad djur"><div class="lar-ikon">🧠</div><div class="lar-bubbla tanker">🤔 …</div></div>` : ""}</div>
+      ${c.historik.length ? "" : `<div class="fraga-forslag">${forslag.map((q) => `<button class="mini" data-coach-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`}
+      <div class="lar-input"><textarea id="coach-text" rows="2" maxlength="800" placeholder="Skriv till coachen…" ${c.tanker ? "disabled" : ""}></textarea>
+        <button class="primary" id="coach-skicka" ${c.tanker ? "disabled" : ""}>💬 Skicka</button></div>
+      <p class="small muted">Samtalet syns bara för föräldrar och sparas inte.</p>`;
+  }
+
+  async _coachSkicka(fast) {
+    const c = this._coach, el = this.shadowRoot.querySelector("#coach-text"), text = (fast || el?.value || "").trim();
+    if (!c || !text || c.tanker) return;
+    c.historik.push({ vem: "jag", text });
+    c.tanker = true;
+    this._render();
+    try {
+      const res = await this._hass.fetchWithAuth("/api/skolan/plan", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barn: this._s.barn, op: "coach", text, historik: c.historik.slice(0, -1).map(({ vem, text }) => ({ vem, text })) }) });
+      const x = await res.json();
+      if (!res.ok) throw new Error(x.message || res.statusText);
+      c.historik.push({ vem: "ai", text: x.svar, onskemal: x.onskemal });
+      c.historik = c.historik.slice(-30);
+    } catch (e) {
+      c.historik.pop();
+      this._msg = { type: "error", text: e.message || String(e) };
+    } finally {
+      c.tanker = false;
+      this._render();
+      this.shadowRoot.querySelector(".lar-chatt")?.lastElementChild?.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  _rapportView() {
+    const v = this._view, s = this._s;
+    if (!v.r && !v.hamtar && !this._busy) {
+      v.hamtar = true;
+      this._plan("rapport", {}).then((x) => { v.hamtar = false; if (x) { v.r = x; this._render(); } });
+    }
+    if (!v.r) return `<p class="muted">${v.hamtar ? "AI:n skriver veckorapporten… (tar några sekunder)" : "Kunde inte hämta rapporten."}</p>`;
+    const r = v.r.rapport || {};
+    const lista = (rub, l) => (l?.length ? `<h3>${rub}</h3><ul class="lista">${l.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
+    return `<div class="card hjalp-kort"><b>📊 Vecka ${esc(String(v.r.vecka).slice(5))} · ${esc(s.namn)}</b><p>${esc(r.sammanfattning || "")}</p></div>
+      ${lista("👍 Det här har gått bra", r.bra)}${lista("🤔 Det här behöver mer övning", r.svart)}${lista("📅 Nästa vecka", r.kommande)}
+      ${r.studietaktik ? `<div class="card hjalp-kort pd-tankar"><b>🧠 AI:ns tankar om studietaktiken</b><div class="small" style="margin-top:6px">${esc(r.studietaktik)}</div></div>` : ""}
+      ${lista("🤝 Så kan ni hjälpa", r.tips)}${lista("🍽️ Frågor vid middagen", r.middagsfragor)}
+      <div class="small muted">Skriven ${esc(String(v.r.skapad || "").replace("T", " ").slice(0, 16))} av AI:n utifrån det ${esc(s.namn)} gjort i appen.</div>
+      <div class="actions"><button class="ghost" id="rap-ny" ${this._busy ? "disabled" : ""}>🔄 Skriv om rapporten</button></div>`;
+  }
+
   // Plugga med husdjuret: en hjälplärare som utgår från barnets eget material och aldrig säger svaret.
   _hjalpView() {
     const d = this._s.meriter?.djur;
@@ -4383,6 +4620,7 @@ class SkolanPanel extends HTMLElement {
       const om = (iso) => { const n = Math.round((new Date(`${iso}T12:00`) - new Date(`${idag}T12:00`)) / 86400000); return n === 0 ? "idag" : n === 1 ? "i morgon" : `om ${n} dagar`; };
       return `<div class="lar-chatt"><div class="lar-rad djur"><div class="lar-ikon">${d.art}</div><div class="lar-bubbla">Hej! Jag är din hjälplärare. Vad ska vi plugga på? Jag kan förklara, förhöra dig eller hjälpa dig med en uppgift. Men jag säger aldrig svaret, du ska klura ut det själv! 😉</div></div></div>
         ${kommande.length ? `<div class="card hjalp-kort"><b>📅 Snart</b>${kommande.map((u) => `<button class="row" data-hjalp-u="${u.amne}|${u.id}"><span>${u.typ === "prov" ? "📝" : "📖"} <b>${esc(u.namn)}</b><br><span class="small muted">${esc(u.amne_namn || "")} · ${u.typ === "prov" ? "provet" : "klart"} ${om(u.datum)}</span></span><span>▶</span></button>`).join("")}</div>` : ""}
+        ${this._s.svaga?.idag ? `<button class="row" id="open-svaga" style="margin-bottom:10px"><span>🔁 <b>Svaga punkter</b><br><span class="small muted">${this._s.svaga.idag} att repetera idag</span></span><span>›</span></button>` : ""}
         <div class="card hjalp-kort"><b>📚 Välj ämne</b><div class="fraga-forslag" style="margin-top:8px">${amnen.map((a) => `<button class="mini" data-hjalp-u="${a.id}|">${esc(a.namn)}</button>`).join("")}</div></div>`;
     }
     const a = amnen.find((x) => x.id === h.amne), u = (this._s.data.uppdrag || []).find((x) => x.id === h.uppdrag);
@@ -4390,26 +4628,29 @@ class SkolanPanel extends HTMLElement {
     const ikon = `<div class="lar-ikon">${d.art}</div>`;
     const bubbla = (x) => x.vem === "barn" ? `<div class="lar-rad barn"><div class="lar-bubbla">${x.bild ? "📷 " : ""}${esc(x.text)}</div></div>`
       : `<div class="lar-rad djur">${ikon}<div class="lar-bubbla">${x.ratt === true ? "✅ " : x.ratt === false ? "❌ " : ""}${esc(x.text)}</div></div>`;
-    const LAGEN = { forklara: ["🙋", "Förklara"], forhor: ["📝", "Förhör mig"], uppgift: ["📷", "Hjälp med uppgift"] };
-    const start = { forklara: "Vad vill du förstå bättre? Skriv vad du undrar över, så förklarar jag! 💡", forhor: "Tryck på Starta så ställer jag en fråga i taget. Varje gång du får 5 rätt blir det ⭐!", uppgift: "Fota uppgiften (eller skriv av den) så hjälper jag dig steg för steg. 📷" }[h.lage];
+    const LAGEN = { forklara: ["🙋", "Förklara"], forhor: ["📝", "Förhör mig"], uppgift: ["📷", "Hjälp med uppgift"], ...(u && (u.typ === "las" || u.typ === "hogl") ? { las: ["🧠", "Prata om boken"] } : {}), skriv: ["✍️", "Tips på min text"] };
+    const start = { forklara: "Vad vill du förstå bättre? Skriv vad du undrar över, så förklarar jag! 💡", forhor: "Tryck på Starta så ställer jag en fråga i taget. Varje gång du får 5 rätt blir det ⭐!", uppgift: "Fota uppgiften (eller skriv av den) så hjälper jag dig steg för steg. 📷",
+      las: "Har du läst? Tryck på Starta så pratar vi om boken! Jag ställer en fråga i taget. 📖", skriv: "Fota din text (eller klistra in den) så säger jag vad som är bra och ger några tips. Jag skriver inte om den, det gör du! ✍️" }[h.lage];
+    const forhorLage = h.lage === "forhor" || h.lage === "las", fotoLage = h.lage === "uppgift" || h.lage === "skriv";
     const bild = h.bild ? `<div class="small">🖼️ ${esc(h.bild.name || "Bild")} <button class="mini" id="hjalp-bild-bort">✕</button></div>` : "";
     const tom = !h.historik.length;
     return `<div class="card hjalp-topp"><span>${u ? (u.typ === "prov" ? "📝 " : "📖 ") + `<b>${esc(u.namn)}</b> · ` : ""}<b>${esc(a?.namn || "")}</b></span><button class="mini ghost" id="hjalp-byt">Byt ämne</button></div>
       <div class="hjalp-lagen">${Object.entries(LAGEN).map(([id, [i, t]]) => `<button class="mini ${h.lage === id ? "primary" : ""}" data-hjalp-lage="${id}" ${h.tanker ? "disabled" : ""}>${i} ${t}</button>`).join("")}</div>
-      ${h.lage === "forhor" ? `<div class="small hjalp-poang">✅ ${p.ratt} rätt idag${p.pass < p.max ? ` · ${p.per_pass - (p.ratt % p.per_pass)} kvar till +${p.p} ⭐${u?.typ === "prov" ? " och en pluggdag mot provbossen" : ""}` : " · dagens ⭐ är tagna, men det är bra plugg ändå!"}</div>` : ""}
+      ${forhorLage ? `<div class="small hjalp-poang">✅ ${p.ratt} rätt idag${p.pass < p.max ? ` · ${p.per_pass - (p.ratt % p.per_pass)} kvar till +${p.p} ⭐${u?.typ === "prov" ? " och en pluggdag mot provbossen" : ""}` : " · dagens ⭐ är tagna, men det är bra plugg ändå!"}</div>` : ""}
       <div class="lar-chatt">${bubbla({ vem: "djur", text: start })}${h.historik.map(bubbla).join("")}
         ${h.tanker ? `<div class="lar-rad djur">${ikon}<div class="lar-bubbla tanker">🤔 …</div></div>` : ""}</div>
-      ${h.lage === "forhor" && tom ? `<div class="actions"><button class="primary" id="hjalp-starta" ${h.tanker ? "disabled" : ""}>📝 Starta förhöret</button></div>`
-        : `${h.lage === "uppgift" ? `${bild}<label class="ghost upload mini">📷 ${h.bild ? "Byt bild" : "Fota uppgiften"}<input type="file" id="hjalp-foto" accept="image/*" hidden></label>` : ""}
-      <div class="lar-input"><textarea id="hjalp-text" rows="2" maxlength="600" placeholder="${h.lage === "forhor" && !tom ? "Ditt svar…" : h.lage === "uppgift" ? "Skriv uppgiften eller hur du tänker…" : "Skriv vad du undrar…"}" ${h.tanker ? "disabled" : ""}></textarea>
-        <div class="actions"><button class="primary" id="hjalp-skicka" ${h.tanker ? "disabled" : ""}>${h.lage === "forhor" && !tom ? "✔️ Svara" : "💬 Skicka"}</button>${h.lage === "forhor" && !tom ? `<button class="ghost" id="hjalp-ny" ${h.tanker ? "disabled" : ""}>⏭️ Ny fråga</button>` : ""}</div></div>`}
+      ${forhorLage && tom ? `<div class="actions"><button class="primary" id="hjalp-starta" ${h.tanker ? "disabled" : ""}>${h.lage === "las" ? "🧠 Starta" : "📝 Starta förhöret"}</button></div>`
+        : `${fotoLage ? `${bild}<label class="ghost upload mini">📷 ${h.bild ? "Byt bild" : h.lage === "skriv" ? "Fota din text" : "Fota uppgiften"}<input type="file" id="hjalp-foto" accept="image/*" hidden></label>` : ""}
+      ${h.lage === "uppgift" && !tom ? `<button class="mini" id="hjalp-likadan" ${h.tanker ? "disabled" : ""}>🔁 En till likadan</button>` : ""}
+      <div class="lar-input"><textarea id="hjalp-text" rows="2" maxlength="${h.lage === "skriv" ? 3000 : 600}" placeholder="${forhorLage && !tom ? "Ditt svar…" : h.lage === "uppgift" ? "Skriv uppgiften eller hur du tänker…" : h.lage === "skriv" ? "Klistra in texten, eller skriv vad uppgiften var…" : "Skriv vad du undrar…"}" ${h.tanker ? "disabled" : ""}></textarea>
+        <div class="actions"><button class="primary" id="hjalp-skicka" ${h.tanker ? "disabled" : ""}>${forhorLage && !tom ? "✔️ Svara" : "💬 Skicka"}</button>${forhorLage && !tom ? `<button class="ghost" id="hjalp-ny" ${h.tanker ? "disabled" : ""}>⏭️ Ny fråga</button>` : ""}</div></div>`}
       <div class="small muted">Husdjuret använder dina böcker, glosor och läxor. Ju mer material du har lagt in i ämnet, desto bättre kan det hjälpa.</div>`;
   }
 
   async _hjalpSkicka(fast) {
     const h = this._hjalp, el = this.shadowRoot.querySelector("#hjalp-text"), text = (fast || el?.value || "").trim();
     if (!h || h.tanker || (!text && !h.bild)) return;
-    const bild = h.lage === "uppgift" ? h.bild : null;
+    const bild = h.lage === "uppgift" || h.lage === "skriv" ? h.bild : null;
     h.historik.push({ vem: "barn", text: text || "Här är uppgiften.", bild: !!bild });
     h.tanker = true;
     this._render();
@@ -4671,6 +4912,7 @@ class SkolanPanel extends HTMLElement {
       ${this._laxfragaKort()}
       ${this._materialKort()}
       ${this._hejaropKort()}
+      ${this._dagensListaKort()}
       ${this._dagensKort()}
       ${this._syskonKort()}
       ${this._repeteraKort()}
@@ -6231,6 +6473,121 @@ class SkolanPanel extends HTMLElement {
     on("#hjalp-starta", () => this._hjalpSkicka("Förhör mig!"));
     on("#hjalp-ny", () => this._hjalpSkicka("Jag vet inte, ge mig en ny fråga."));
     on("#hjalp-bild-bort", () => { this._hjalp.bild = null; this._render(); });
+    on("#hjalp-likadan", () => this._hjalpSkicka("Ge mig en till likadan uppgift med andra siffror eller ord, så jag får öva. Säg inte svaret."));
+    r.querySelectorAll("[data-hjalp-las]").forEach((b) => b.addEventListener("click", () => { const [a, u] = b.dataset.hjalpLas.split("|"); this._hjalp = { barn: this._s.barn, historik: [], lage: "las", amne: a, uppdrag: u }; this._go({ name: "hjalp" }); }));
+    on("#open-svaga", () => this._go({ name: "svaga" }));
+    // pluggplan
+    r.querySelectorAll("[data-plan]").forEach((b) => b.addEventListener("click", () => this._go({ name: "plan", uppdrag: b.dataset.plan })));
+    r.querySelectorAll("[data-ovp]").forEach((b) => b.addEventListener("click", () => this._go({ name: "ovningsprov", uppdrag: b.dataset.ovp })));
+    r.querySelectorAll("[data-ovp-visa]").forEach((b) => b.addEventListener("click", () => this._go({ name: "ovningsprov", uppdrag: v.uppdrag, prov: b.dataset.ovpVisa })));
+    r.querySelectorAll("[data-dl]").forEach((b) => b.addEventListener("click", () => {
+      const m = this._s.dagens_lista.rader[Number(b.dataset.dl)]?.mal || {};
+      if (m.forhor) this._go({ name: "forhor", forhor: m.forhor });
+      else if (m.uppdrag) this._go({ name: "uppdrag", id: m.uppdrag });
+      else if (m.plan) this._go({ name: "plan", uppdrag: m.plan });
+      else if (m.svaga) this._go({ name: "svaga" });
+    }));
+    on("#dl-fokus", () => this._go({ name: "fokus" }));
+    on("#open-rapport", () => this._go({ name: "rapport" }));
+    on("#open-coach", () => this._go({ name: "coach" }));
+    if (v.name === "coach") {
+      const sync = () => { if (v.o) v.o.text = $("#coach-onsk")?.value ?? v.o.text; };
+      r.querySelectorAll("[data-coach-str]").forEach((b) => b.addEventListener("click", () => { sync(); v.o.strikthet = b.dataset.coachStr; this._render(); }));
+      on("#coach-spara", async () => { sync(); if (await this._plan("onskemal", { strikthet: v.o.strikthet, text: v.o.text })) { await this._load(this._s.barn); this._msg = { type: "ok", text: "Önskemålen är sparade. De vägs in i nästa plan. 🎛️" }; v.o = null; this._render(); } });
+      r.querySelectorAll("[data-coach-anvand]").forEach((b) => b.addEventListener("click", async () => {
+        const f = this._coach.historik[Number(b.dataset.coachAnvand)]?.onskemal;
+        if (f && await this._plan("onskemal", f)) { await this._load(this._s.barn); this._msg = { type: "ok", text: "Förslaget är sparat som era önskemål. 🎛️" }; v.o = null; this._render(); }
+      }));
+      on("#coach-skicka", () => { sync(); this._coachSkicka(); });
+      r.querySelectorAll("[data-coach-q]").forEach((b) => b.addEventListener("click", () => { sync(); this._coachSkicka(b.dataset.coachQ); }));
+      $("#coach-text")?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sync(); this._coachSkicka(); } });
+    }
+    on("#rap-ny", async () => { const x = await this._plan("rapport", { ny: true }); if (x) { v.r = x; this._render(); } });
+    if (v.name === "plan") {
+      const u = (this._s.data.uppdrag || []).find((x) => x.id === v.uppdrag), g = v.g;
+      const om = () => { v.g = null; this._planGuide(u); this._render(); };
+      on("#pd-om", om);
+      on("#pd-om2", om);
+      on("#pd-bort", async () => { if (confirm("Ta bort pluggplanen?") && await this._plan("plan_bort", { uppdrag: v.uppdrag })) await this._load(this._s.barn); this._render(); });
+      r.querySelectorAll("[data-pd-klar]").forEach((b) => b.addEventListener("click", async () => {
+        const d = u.plan.delar.find((x) => x.id === b.dataset.pdKlar);
+        const x = await this._plan("del_klar", { uppdrag: v.uppdrag, del: d.id, klar: !d.klar });
+        if (x) {
+          if (!d.klar) this._fx({ text: x.alla ? "📅 HELA PLANEN KLAR!" : "✅ KLART!", sub: x.p ? `+${x.p} ⭐ · pluggdag mot provbossen` : "Pluggdag mot provbossen", emojis: ["📚", "⭐", "✅"], antal: x.alla ? 40 : 18, konfetti: !!x.alla, farg: "#43a047" });
+          await this._load(this._s.barn);
+          this._render();
+        }
+      }));
+      r.querySelectorAll("[data-pd-start]").forEach((b) => b.addEventListener("click", () => {
+        const t = b.dataset.pdStart;
+        if (t === "ovningsprov") return this._go({ name: "ovningsprov", uppdrag: v.uppdrag });
+        if (t === "repetera") return this._go({ name: "svaga" });
+        const lage = { forhor: "forhor", glosor: "forhor", forklara: "forklara", uppgifter: "uppgift", sammanfatta: "skriv" }[t] || "forklara";
+        this._hjalp = { barn: this._s.barn, historik: [], lage, amne: u.amne, uppdrag: u.id };
+        this._go({ name: "hjalp" });
+      }));
+      if (g) {
+        const sync = () => { g.omfattning = $("#pg-omf")?.value ?? g.omfattning; g.svart = $("#pg-svart")?.value ?? g.svart; };
+        const klick = (attr, fn) => r.querySelectorAll(`[data-${attr}]`).forEach((b) => b.addEventListener("click", () => { sync(); fn(b.getAttribute(`data-${attr}`)); this._render(); }));
+        klick("pg-typ", (x) => (g.provtyp = x));
+        klick("pg-min", (x) => (g.min_dag = Number(x)));
+        klick("pg-mal", (x) => (g.mal = x));
+        klick("pg-dag", (x) => { const i = Number(x); g.dagar = g.dagar.includes(i) ? g.dagar.filter((y) => y !== i) : [...g.dagar, i].sort(); });
+        klick("pg-ut", (x) => { g.uteslut = g.uteslut.includes(x) ? g.uteslut.filter((y) => y !== x) : [...g.uteslut, x]; });
+        klick("pg-satt", (x) => { g.satt = g.satt.includes(x) ? g.satt.filter((y) => y !== x) : [...g.satt, x]; });
+        klick("pg-kan", (x) => { const [i, k] = x.split(":").map(Number); g.omraden[i].kan = k; });
+        klick("pg-bort", (x) => g.omraden.splice(Number(x), 1));
+        const ny = () => { sync(); const t = ($("#pg-ny")?.value || "").trim(); if (t) { g.omraden.push({ namn: t, kan: 1 }); this._render(); } };
+        on("#pg-ny-ok", ny);
+        $("#pg-ny")?.addEventListener("keydown", (e) => { if (e.key === "Enter") ny(); });
+        $("#pg-foto")?.addEventListener("change", (e) => { sync(); g.foton = [...g.foton, ...(e.target.files || [])].slice(0, 6); this._render(); });
+        on("#pg-foto-bort", () => { sync(); g.foton = []; this._render(); });
+        on("#pg-avbryt", () => { v.g = null; this._render(); });
+        on("#pg-hitta", async () => {
+          sync();
+          const x = await this._plan("omraden", { uppdrag: v.uppdrag, provtyp: g.provtyp, omfattning: g.omfattning }, g.foton);
+          if (x) {
+            const har = new Set(g.omraden.map((o) => o.namn.toLowerCase()));
+            g.omraden = [...g.omraden, ...x.omraden.filter((o) => !har.has(o.namn.toLowerCase()))];
+            if (x.omfattning && !g.omfattning.includes(x.omfattning)) g.omfattning = (g.omfattning ? g.omfattning + "\n" : "") + x.omfattning;
+            g.foton = [];
+            this._render();
+          }
+        });
+        on("#pg-skapa", async () => {
+          sync();
+          const x = await this._plan("plan_skapa", { uppdrag: v.uppdrag, provtyp: g.provtyp, omfattning: g.omfattning, omraden: g.omraden, min_dag: g.min_dag, dagar: g.dagar, satt: g.satt, svart: g.svart, mal: g.mal, uteslut: g.uteslut });
+          if (x) { v.g = null; await this._load(this._s.barn); this._fx({ text: "📅 PLANEN ÄR KLAR!", emojis: ["📅", "✨", "📚"], antal: 24, farg: "#5c6bc0" }); this._render(); }
+        });
+      }
+    }
+    if (v.name === "ovningsprov") {
+      on("#ovp-skapa", async () => { const x = await this._plan("ovningsprov_skapa", { uppdrag: v.uppdrag }); if (x) { v.p = x.prov; v.svar = []; v.res = null; v.ny = false; this._render(); } });
+      on("#ovp-ny", () => { v.p = null; v.prov = null; v.res = null; v.svar = []; v.ny = true; this._render(); });
+      r.querySelectorAll("[data-ovp-svar]").forEach((t) => t.addEventListener("input", () => { v.svar[Number(t.dataset.ovpSvar)] = t.value; }));
+      r.querySelectorAll("[data-ovp-alt]").forEach((b) => b.addEventListener("click", () => { v.svar[Number(b.dataset.ovpAlt)] = b.dataset.alt; this._render(); }));
+      on("#ovp-in", async (e) => {
+        const id = e.currentTarget.dataset.prov, u = (this._s.data.uppdrag || []).find((x) => x.id === v.uppdrag);
+        const o = v.p || (u.plan?.ovningsprov || []).find((x) => x.id === id);
+        const tomma = o.fragor.filter((q, i) => !(v.svar[i] || "").trim()).length;
+        if (tomma && !confirm(`${tomma} frågor är obesvarade. Lämna in ändå?`)) return;
+        const x = await this._plan("ovningsprov_ratta", { uppdrag: v.uppdrag, prov: id, svar: o.fragor.map((q, i) => v.svar[i] || "") });
+        if (x) {
+          v.p = o; v.res = x;
+          if (x.p) this._fx({ text: "🧪 ÖVNINGSPROV KLART!", sub: `${x.ratt} av ${x.av} rätt · +${x.p} ⭐`, emojis: ["🧪", "⭐", "🧠"], antal: 30, konfetti: x.ratt / x.av >= 0.8, farg: "#26a69a" });
+          await this._load(this._s.barn);
+          this._render();
+        }
+      });
+    }
+    if (v.name === "svaga") {
+      on("#sv-visa", () => { v.visa = true; this._render(); });
+      r.querySelectorAll("[data-sv]").forEach((b) => b.addEventListener("click", async () => {
+        const x = this._s.svaga_idag[0];
+        const res = await this._plan("svag_svar", { id: x.id, kunde: b.dataset.sv === "1" });
+        if (res) { if (res.befast) this._fx({ text: "💪 BEFÄST!", sub: "Den sitter nu!", emojis: ["💪", "🧠", "✨"], antal: 20, farg: "#43a047" }); v.visa = false; await this._load(this._s.barn); this._render(); }
+      }));
+    }
     $("#hjalp-foto")?.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) { this._hjalp.bild = f; this._render(); } });
     r.querySelector("#hjalp-text")?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this._hjalpSkicka(); } });
     on("#fraga-skicka", () => this._fragaSkicka());
@@ -7285,6 +7642,30 @@ const CSS = `
   .hjalp-lagen { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
   .hjalp-lagen .mini { border-radius:14px; }
   .hjalp-poang { margin:0 0 8px; }
+  .dagens-lista .row { width:100%; box-sizing:border-box; margin-top:6px; }
+  .dagens-lista { min-height:0; cursor:default; }
+  .pg h4 { margin:16px 0 6px; }
+  .pg textarea, .pg-ny input { width:100%; box-sizing:border-box; font:inherit; padding:8px; border-radius:10px; border:1px solid var(--divider-color); background:var(--card-background-color); color:var(--primary-text-color); }
+  .pg-omr { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--divider-color); }
+  .pg-kan { display:flex; gap:4px; flex-shrink:0; }
+  .pg-ny { display:flex; gap:6px; margin:8px 0 4px; }
+  .pd-dag { margin:10px 0; }
+  .pd-dag.forr { opacity:.75; }
+  .pd-rubrik { font-weight:700; margin-bottom:4px; text-transform:capitalize; }
+  .pd-dag.idag .pd-rubrik { color:var(--primary-color); }
+  .pd-rad { display:flex; align-items:flex-start; gap:8px; padding:8px 10px; border-radius:12px; background:var(--card-background-color); box-shadow:var(--ha-card-box-shadow, 0 1px 2px rgba(0,0,0,.12)); margin-bottom:6px; }
+  .pd-rad.klar .pd-text { opacity:.55; text-decoration:line-through; }
+  .pd-check { background:none; border:none; font-size:22px; cursor:pointer; padding:0; line-height:1; }
+  .pd-text { flex:1; min-width:0; }
+  .pd-tankar { border-left:5px solid #7e57c2; }
+  .coach-svar { white-space:pre-wrap; }
+  .coach-forslag { margin-top:8px; padding-top:8px; border-top:1px dashed currentColor; font-size:13px; white-space:normal; }
+  #coach-onsk { width:100%; box-sizing:border-box; font:inherit; padding:8px; border-radius:10px; border:1px solid var(--divider-color); margin-top:8px; background:var(--card-background-color); color:var(--primary-text-color); }
+  .kontroll.ratt { border-left:4px solid #43a047; padding-left:8px; }
+  .kontroll.fel { border-left:4px solid #e53935; padding-left:8px; }
+  .kontroll textarea { width:100%; box-sizing:border-box; font:inherit; padding:8px; border-radius:10px; border:1px solid var(--divider-color); margin-top:6px; }
+  .sv-facit { margin-top:10px; padding:10px; border-radius:10px; background:#e8f5e9; color:#1b5e20; }
+  #sv-text { width:100%; box-sizing:border-box; font:inherit; padding:8px; border-radius:10px; border:1px solid var(--divider-color); margin-top:10px; }
   .fraga-forslag .mini { border-radius:14px; }
   .lar-beloning { font-size:28px; font-weight:800; color:#2e7d32; animation:gs-pop .6s; }
   .fokus-djur { position:relative; display:inline-block; }
