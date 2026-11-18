@@ -40,6 +40,11 @@ class Tunnel:
 
     @property
     def program(self) -> Path:
+        from .paket import MAPP
+
+        medpackad = MAPP / "cloudflared.exe"  # Store-versionen har programmet inpackat
+        if os.name == "nt" and medpackad.exists():
+            return medpackad
         return self.mapp / ("cloudflared.exe" if os.name == "nt" else "cloudflared")
 
     async def _hamta_program(self) -> None:

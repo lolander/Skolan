@@ -73,7 +73,10 @@ def main() -> None:
         _oppna(a.port)
         return
     server.logga(server.datamapp())
-    nar_klar = None if a.tyst else (lambda: _oppna(a.port))
+    from skolan_app.paket import STORE, sekunder_sedan_start
+
+    tyst = a.tyst or (STORE and sekunder_sedan_start() < 300)  # Store-appens autostart skickar inga flaggor
+    nar_klar = None if tyst else (lambda: _oppna(a.port))
     styr: dict = {}
     if a.utan_ikon:
         asyncio.run(server.huvud(a.port, nar_klar, styr))

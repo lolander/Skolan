@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Microsoft Store-paketet. NAMN, PUBLISHER och PUBLISHER_NAMN kommer från Partner Center (Produktidentitet). -->
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap desktop rescap">
+  <Identity Name="{NAMN}" Publisher="{PUBLISHER}" Version="{VERSION}" ProcessorArchitecture="x64"/>
+  <Properties>
+    <DisplayName>Läxspelet</DisplayName>
+    <PublisherDisplayName>{PUBLISHER_NAMN}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0"/>
+  </Dependencies>
+  <Resources>
+    <Resource Language="sv-SE"/>
+  </Resources>
+  <Applications>
+    <Application Id="Laxspelet" Executable="Skolan.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Läxspelet" Description="Läxor, glosor och plugg som ett spel för hela familjen"
+                          BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png"/>
+      </uap:VisualElements>
+      <Extensions>
+        <!-- Starta när datorn startar, så att mobilerna alltid når Läxspelet. Appen startar då tyst. -->
+        <desktop:Extension Category="windows.startupTask" Executable="Skolan.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="LaxspeletStart" Enabled="true" DisplayName="Läxspelet"/>
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <Capability Name="internetClient"/>
+    <Capability Name="internetClientServer"/>
+    <Capability Name="privateNetworkClientServer"/>
+    <rescap:Capability Name="runFullTrust"/>
+  </Capabilities>
+</Package>

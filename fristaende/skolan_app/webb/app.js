@@ -215,7 +215,7 @@ async function installning(info) {
         <p class="liten">Gör Läxspelet nåbar utanför hemmet med en gratis, krypterad Cloudflare-tunnel. Behövs för notiser på iPhone och för vänner.</p>
         <p>Status: <b>${esc(s.fjarr_status)}</b>${s.fjarr_adress ? `<br><code>${esc(s.fjarr_adress)}</code>` : ""}</p>
         <button id="fjarr" class="${s.fjarr ? "" : "primar"}">${s.fjarr ? "Stäng av" : "Slå på"}</button></div>
-      <div class="kort"><h2 style="margin-top:0">🆕 Uppdateringar</h2>
+      ${up.lage === "store" ? `<div class="kort"><h2 style="margin-top:0">🆕 Uppdateringar</h2><p>Du har version <b>${esc(up.version)}</b>. Läxspelet uppdateras automatiskt av Microsoft Store. ✅</p></div>` : `<div class="kort"><h2 style="margin-top:0">🆕 Uppdateringar</h2>
         <p>Du har version <b>${esc(up.version)}</b>. ${up.ny ? `<b>Version ${esc(up.senaste)} finns!</b>` : up.senaste ? "Det är den senaste ✅" : ""}</p>
         ${up.steg === "laddar" ? `<p>⏳ Laddar ner uppdateringen…</p>` : up.steg === "installerar" ? `<p>⏳ Installerar. Svara <b>Ja</b> om Windows frågar. Läxspelet startar om av sig själv.</p>` : ""}
         ${up.ny && !up.steg ? (up.kan_installera ? `<button id="upp-nu" class="primar">⬇️ Uppdatera nu</button> ` : "") + `<a href="${esc(up.sida)}" target="_blank" rel="noopener">Ladda ner från GitHub</a>` : ""}
@@ -223,7 +223,8 @@ async function installning(info) {
         <div class="rad"><label><input type="radio" name="upp-lage" value="automatisk" ${up.lage === "automatisk" ? "checked" : ""}> <b>Automatisk</b>: installera när ingen har använt Läxspelet på 15 minuter</label></div>
         <p class="liten">Appen kollar efter nya versioner var 6:e timme. Windows frågar alltid om lov på datorn innan en uppdatering installeras. Läxor och inställningar finns kvar.</p>
         <button id="upp-kolla">🔍 Sök efter uppdatering</button>${up.kollad ? ` <span class="liten">Senast kollat ${new Date(up.kollad * 1000).toLocaleString("sv-SE", { dateStyle: "short", timeStyle: "short" })}</span>` : ""}
-        ${up.fel ? `<p class="fel">${esc(up.fel)}</p>` : ""}</div>
+        ${up.fel ? `<p class="liten">ℹ️ ${esc(up.fel)}</p>` : ""}
+        ${up.ny && !up.kan_installera ? "" : ""}<p class="liten">Laddar du ner en ny version själv kan Windows varna för att appen är ny: tryck <b>Mer information</b> → <b>Kör ändå</b>.</p></div>`}
       <div class="kort"><h2 style="margin-top:0">🔔 Notiser på den här enheten</h2><button id="notiser">Slå på notiser</button> <button id="testa">Skicka test</button></div>
       <div class="ok">${esc(meddelande)}</div><div class="fel">${esc(fel)}</div>
       <p><a href="/app/koppla">📱 Koppla en mobil</a> · <a href="/skolan">← Till Läxspelet</a></p></div>`;
@@ -270,14 +271,14 @@ async function installning(info) {
     const upp = async (body, ok) => {
       try { await api("/app/uppdatering", body); ladda(ok); } catch (e) { ladda("", e.message); }
     };
-    $("#upp-kolla").addEventListener("click", () => upp({ op: "kolla" }, "Klart."));
+    $("#upp-kolla")?.addEventListener("click", () => upp({ op: "kolla" }, "Klart."));
     $("#upp-nu")?.addEventListener("click", () => {
       if (confirm(`Uppdatera till version ${up.senaste}? Läxspelet stängs en kort stund. Svara Ja om Windows frågar.`)) {
         upp({ op: "installera" }, "Uppdateringen har startat.");
         setTimeout(() => ladda(), 3000);
       }
     });
-    rot.querySelectorAll("input[name=upp-lage]").forEach((r) => r.addEventListener("change", () =>
+    $("#upp-kolla") && rot.querySelectorAll("input[name=upp-lage]").forEach((r) => r.addEventListener("change", () =>
       upp({ op: "lage", lage: r.value }, r.value === "automatisk" ? "Automatiska uppdateringar är på." : "Du uppdaterar själv.")));
     $("#notiser").addEventListener("click", async () => { try { await slaPaNotiser(); ladda("Notiser påslagna! 🔔"); } catch (e) { ladda("", e.message); } });
     $("#testa").addEventListener("click", async () => { try { await api("/app/push/test", {}); ladda("Testnotis skickad."); } catch (e) { ladda("", e.message); } });

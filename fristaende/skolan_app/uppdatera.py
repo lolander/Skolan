@@ -63,6 +63,11 @@ class Uppdaterare:
         return bool(self.senaste) and _ver(self.senaste["version"]) > _ver(self.version)
 
     def status(self) -> dict:
+        from .paket import STORE
+
+        if STORE:
+            return {"version": self.version, "lage": "store", "ny": False, "senaste": None, "sida": SIDA, "kollad": 0, "fel": "", "steg": None,
+                    "kan_installera": False}
         return {
             "version": self.version, "lage": self.lage, "ny": self.ny,
             "senaste": self.senaste["version"] if self.senaste else None,
@@ -90,8 +95,8 @@ class Uppdaterare:
             self.senaste = basta
             self.fel = ""
         except Exception as err:  # noqa: BLE001
-            self.fel = f"Kunde inte kolla efter uppdateringar: {err}"
-            _LOGGER.info(self.fel)
+            self.fel = "Kunde inte kolla efter uppdateringar just nu. Appen försöker igen senare, och allt annat fungerar som vanligt."
+            _LOGGER.info("Kunde inte kolla efter uppdateringar: %s", err)
         self.kollad = time.time()
 
     # ---------- installera ----------
@@ -138,6 +143,10 @@ class Uppdaterare:
 
     # ---------- bakgrund ----------
     def starta(self) -> None:
+        from .paket import STORE
+
+        if STORE:  # Microsoft Store uppdaterar appen
+            return
         self._uppgift = asyncio.get_running_loop().create_task(self._slinga())
 
     async def stoppa(self) -> None:

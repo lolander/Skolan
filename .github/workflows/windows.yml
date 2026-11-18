@@ -44,12 +44,36 @@ jobs:
           name: Skolan-Setup
           path: fristaende/windows/Output/*.exe
 
+      - name: Bygg Microsoft Store-paketet (MSIX)
+        shell: pwsh
+        env:
+          STORE_NAMN: ${{ vars.STORE_NAMN }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_PUBLISHER_NAMN: ${{ vars.STORE_PUBLISHER_NAMN }}
+        run: |
+          $version = (Get-Content custom_components/skolan/manifest.json | ConvertFrom-Json).version
+          python fristaende/windows/msix_bygg.py fristaende/dist/Skolan $version fristaende/windows/Store
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Laxspelet-Store
+          path: fristaende/windows/Store/*.msix
+
       - name: Publicera (vid ny version-tagg)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: fristaende/windows/Output/*.exe
-          prerelease: true
+          prerelease: false
           body: |
-            Förhandsversion av Skolan för Windows. Ladda ner Skolan-Setup och installera på familjens dator.
-            Windows kan varna för att programmet är okänt (det är inte signerat): tryck "Mer information" → "Kör ändå".
+            ## 📚 Läxspelet för Windows
+            1. Ladda ner **Skolan-Setup** här nedanför (under *Assets*).
+            2. Öppna filen och följ installationen. Läxor och inställningar finns kvar om du uppdaterar.
+
+            ### Varnar Windows?
+            Läxspelet är nytt och har ännu inte ett köpt signaturcertifikat, så Windows kan visa *”Windows har skyddat datorn”*. Det är normalt för nya, små appar.
+            Tryck **Mer information** och sedan **Kör ändå**:
+
+            ![Så installerar du: Mer information → Kör ändå](https://raw.githubusercontent.com/lolander/Skolan/main/docs/installera-windows.svg)
+
+            Koden är öppen och finns här på GitHub, och installationsfilen byggs automatiskt av GitHub från koden.

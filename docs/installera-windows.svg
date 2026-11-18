@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="380" viewBox="0 0 900 380" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="900" height="380" fill="#f4f6fb"/>
+  <!-- steg 1 -->
+  <text x="30" y="40" font-size="22" font-weight="700" fill="#1d2330">1. Tryck på ”Mer information”</text>
+  <rect x="30" y="60" width="390" height="290" rx="6" fill="#7fc6a4"/>
+  <text x="50" y="100" font-size="21" fill="#fff">Windows har skyddat datorn</text>
+  <text x="50" y="135" font-size="13" fill="#fff">Microsoft Defender SmartScreen förhindrade att en</text>
+  <text x="50" y="153" font-size="13" fill="#fff">okänd app startades …</text>
+  <text x="50" y="182" font-size="14" fill="#fff" text-decoration="underline">Mer information</text>
+  <ellipse cx="103" cy="177" rx="70" ry="20" fill="none" stroke="#e53935" stroke-width="4"/>
+  <rect x="320" y="305" width="85" height="30" fill="#e8e8e8"/><text x="335" y="325" font-size="13" fill="#222">Kör inte</text>
+  <!-- pil -->
+  <path d="M440 205 h40" stroke="#1d2330" stroke-width="5"/><path d="M478 192 l18 13 l-18 13 z" fill="#1d2330"/>
+  <!-- steg 2 -->
+  <text x="510" y="40" font-size="22" font-weight="700" fill="#1d2330">2. Tryck på ”Kör ändå”</text>
+  <rect x="510" y="60" width="360" height="290" rx="6" fill="#7fc6a4"/>
+  <text x="530" y="100" font-size="21" fill="#fff">Windows har skyddat datorn</text>
+  <text x="530" y="140" font-size="13" fill="#fff">App: Skolan-Setup.exe</text>
+  <text x="530" y="160" font-size="13" fill="#fff">Utgivare: Okänd utgivare</text>
+  <rect x="650" y="305" width="95" height="30" fill="#e8e8e8"/><text x="667" y="325" font-size="13" fill="#222">Kör ändå</text>
+  <rect x="760" y="305" width="85" height="30" fill="#e8e8e8"/><text x="775" y="325" font-size="13" fill="#222">Kör inte</text>
+  <ellipse cx="697" cy="320" rx="62" ry="24" fill="none" stroke="#e53935" stroke-width="4"/>
+</svg>
