@@ -126,7 +126,8 @@ function forstaStart() {
       </div>
       <div class="kort"><h2 style="margin-top:0">🤖 AI-nyckel (rekommenderas)</h2>
         <p class="liten">Läxspelet använder Googles AI Gemini för att läsa glosor från foton, göra förhör och e-böcker. Nyckeln är gratis:
-        gå till <b>aistudio.google.com/apikey</b>, logga in med ett Google-konto och tryck "Create API key". Du kan lägga in den senare också.
+        <a class="knapp-lank" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">🔗 Skapa gratis nyckel i Google AI Studio ↗</a><br>
+        Logga in med ett vanligt Google-konto och tryck ”Create API key”. Inget betalkort behövs, och ett AI-abonnemang behövs inte. Du kan lägga in nyckeln senare också.
         Vill ni hellre använda en annan AI (Claude, ChatGPT, Mistral, en lokal AI på datorn m.fl.) väljer ni det under Inställningar.</p>
         <input id="gemini" placeholder="Klistra in nyckeln (valfritt)"></div>
       <div class="fel">${esc(fel)}</div>
@@ -174,10 +175,25 @@ async function installning(info) {
     const cur = L.find((x) => x.id === aiv.lev) || L[0];
     const sparad = s.ai_val?.leverantor === cur.id;
     const GRUPP = { moln: "☁️ I molnet", lokal: "🏠 Lokalt på datorn (inget lämnar hemmet)", egen: "🔧 Egen" };
+    const KOST = { gratis: ["🟢", "Gratis att börja"], betala: ["🟡", "Betala per användning"], lokal: ["🏠", "Gratis, på datorn"], egen: ["🔧", "Beror på tjänsten"] };
+    const k = KOST[cur.kostnad] || KOST.egen;
     return `<div class="kort"><h2 style="margin-top:0">🤖 AI</h2>
       <p>${s.ai_val ? `✅ Används nu: <b>${esc(s.ai_val.beskrivning)}</b>` : "❌ Ingen AI vald: glosor från foton, förhör, e-böcker och husdjurets hjälp fungerar inte."}</p>
-      <div class="rad"><select id="ai-lev">${Object.entries(GRUPP).map(([g, t]) => `<optgroup label="${t}">${L.filter((x) => x.grupp === g).map((x) => `<option value="${x.id}" ${x.id === cur.id ? "selected" : ""}>${esc(x.namn)}${x.rek ? " (rekommenderas)" : ""}</option>`).join("")}</optgroup>`).join("")}</select></div>
-      <p class="liten">${esc(cur.info)}${cur.bild ? "" : " ⚠️ Kan inte läsa bilder."}${cur.pdf ? "" : " PDF-filer behöver fotas av."}</p>
+      <details class="liten ai-forklaring"><summary><b>Vad är en API-nyckel, och räcker vårt AI-abonnemang?</b></summary>
+        <p>Läxspelet pratar med AI:n åt er. För det behövs en <b>API-nyckel</b>: en lång kod som visar att det är ni. Den skapar ni själva hos AI-företaget på någon minut och klistrar in här.</p>
+        <p><b>Ett vanligt abonnemang räcker inte</b>, varken ChatGPT Plus, Claude Pro eller ett Gemini-abonnemang. API:t är en egen tjänst med egen betalning.</p>
+        <p><b>Enklast och gratis:</b> välj Google Gemini, tryck på knappen, logga in med ett vanligt Google-konto och tryck ”Create API key”. Inget betalkort behövs.</p>
+        <p>De som kostar betalar man per användning, i förväg och utan månadsavgift. För en familj brukar det bli några kronor i månaden, beroende på modell. Välj en liten, snabb modell så blir det billigast.</p>
+        <p>Nyckeln sparas bara på den här datorn och skickas bara till AI-företaget ni väljer.</p></details>
+      <div class="rad"><select id="ai-lev">${Object.entries(GRUPP).map(([g, t]) => `<optgroup label="${t}">${L.filter((x) => x.grupp === g).map((x) => `<option value="${x.id}" ${x.id === cur.id ? "selected" : ""}>${(KOST[x.kostnad] || KOST.egen)[0]} ${esc(x.namn)}${x.rek ? " (rekommenderas)" : ""}</option>`).join("")}</optgroup>`).join("")}</select></div>
+      <div class="ai-hjalp">
+        <p class="liten">${esc(cur.info)}${cur.bild ? "" : " ⚠️ Kan inte läsa bilder."}${cur.pdf ? "" : " PDF-filer behöver fotas av."}</p>
+        <p class="liten"><b>${k[0]} ${k[1]}.</b> ${esc(cur.kostnad_text || "")}</p>
+        ${cur.abonnemang ? `<p class="liten">💳 ${esc(cur.abonnemang)}</p>` : ""}
+        ${cur.data ? `<p class="liten">🔒 ${esc(cur.data)}</p>` : ""}
+        ${cur.lank ? `<p><a class="knapp-lank" href="${esc(cur.lank)}" target="_blank" rel="noopener">🔗 ${esc(cur.lank_text || "Öppna")} ↗</a></p>
+          <p class="liten">${cur.lokal ? "1. Ladda ner och installera. 2. Hämta en modell som kan läsa bilder. 3. Tryck på Hämta modeller nedan och välj den. 4. Testa och spara." : "1. Tryck på knappen och logga in (eller skapa ett konto). 2. Skapa en nyckel och kopiera den. 3. Klistra in den här nedanför. 4. Tryck på Testa och spara."}</p>` : ""}
+      </div>
       ${cur.nyckel || cur.grupp === "egen" ? `<div class="rad"><input id="ai-nyckel" type="password" autocomplete="off" value="${esc(aiv.nyckel || "")}" placeholder="${sparad && s.ai_val.har_nyckel ? "Nyckeln är sparad (lämna tomt för att behålla)" : cur.nyckel ? "Klistra in API-nyckeln" : "API-nyckel (om tjänsten kräver det)"}"></div>` : ""}
       ${cur.lokal || cur.grupp === "egen" ? `<div class="rad"><input id="ai-url" value="${esc(aiv.url || cur.url)}" placeholder="Adress, t.ex. http://localhost:11434/v1"></div>` : ""}
       <div class="rad"><input id="ai-modell" value="${esc(aiv.modell || cur.modell)}" placeholder="Modell"><button id="ai-hamta">🔍 Hämta modeller</button></div>

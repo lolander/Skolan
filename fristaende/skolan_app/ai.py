@@ -24,39 +24,78 @@ MAX_BILAGA = 20 * 1024 * 1024
 LEVERANTORER: dict[str, dict] = {
     "gemini": {"namn": "Google Gemini", "grupp": "moln", "typ": "gemini", "url": "https://generativelanguage.googleapis.com/v1beta",
                "modell": "gemini-flash-latest", "nyckel": True, "bild": True, "pdf": True, "rek": True,
-               "info": "Rekommenderas. Gratis nyckel: gå till aistudio.google.com/apikey, logga in med ett Google-konto och tryck Create API key."},
+               "info": "Rekommenderas. Logga in med ett vanligt Google-konto och tryck ”Create API key”."},
     "anthropic": {"namn": "Anthropic Claude", "grupp": "moln", "typ": "anthropic", "url": "https://api.anthropic.com/v1",
                   "modell": "claude-haiku-5-5", "nyckel": True, "bild": True, "pdf": True,
-                  "info": "Nyckel på console.anthropic.com (kostar lite per användning). Mycket bra på svenska."},
+                  "info": "Mycket bra på svenska och på att förklara."},
     "openai": {"namn": "OpenAI (ChatGPT)", "grupp": "moln", "typ": "openai", "url": "https://api.openai.com/v1",
                "modell": "", "nyckel": True, "bild": True, "pdf": True,
-               "info": "Nyckel på platform.openai.com/api-keys (kostar lite per användning). Välj en modell som kan läsa bilder."},
+               "info": "Företaget bakom ChatGPT. Välj en modell som kan läsa bilder."},
     "mistral": {"namn": "Mistral AI", "grupp": "moln", "typ": "openai", "url": "https://api.mistral.ai/v1",
                 "modell": "", "nyckel": True, "bild": True, "pdf": False,
-                "info": "Europeisk AI. Nyckel på console.mistral.ai. För foton: välj en modell som kan läsa bilder (t.ex. pixtral eller medium)."},
+                "info": "Europeisk AI. För foton: välj en modell som kan läsa bilder (t.ex. pixtral eller medium)."},
     "openrouter": {"namn": "OpenRouter (hundratals modeller)", "grupp": "moln", "typ": "openai", "url": "https://openrouter.ai/api/v1",
                    "modell": "", "nyckel": True, "bild": True, "pdf": False,
-                   "info": "En nyckel till modeller från många företag. Nyckel på openrouter.ai/keys. Vissa modeller är gratis."},
+                   "info": "En nyckel till modeller från många företag."},
     "groq": {"namn": "Groq", "grupp": "moln", "typ": "openai", "url": "https://api.groq.com/openai/v1",
              "modell": "", "nyckel": True, "bild": True, "pdf": False,
-             "info": "Mycket snabb. Gratis nyckel på console.groq.com/keys. Bara vissa modeller kan läsa bilder."},
+             "info": "Mycket snabb. Bara vissa modeller kan läsa bilder."},
     "xai": {"namn": "xAI Grok", "grupp": "moln", "typ": "openai", "url": "https://api.x.ai/v1",
-            "modell": "", "nyckel": True, "bild": True, "pdf": False, "info": "Nyckel på console.x.ai."},
+            "modell": "", "nyckel": True, "bild": True, "pdf": False, "info": "Grok från xAI."},
     "deepseek": {"namn": "DeepSeek", "grupp": "moln", "typ": "openai", "url": "https://api.deepseek.com/v1",
                  "modell": "", "nyckel": True, "bild": False, "pdf": False,
                  "info": "Billig, men kan inte läsa bilder: foton av glosor, veckobrev och schema fungerar inte."},
     "together": {"namn": "Together AI", "grupp": "moln", "typ": "openai", "url": "https://api.together.xyz/v1",
-                 "modell": "", "nyckel": True, "bild": True, "pdf": False, "info": "Öppna modeller i molnet. Nyckel på api.together.xyz."},
+                 "modell": "", "nyckel": True, "bild": True, "pdf": False, "info": "Öppna modeller i molnet."},
     "ollama": {"namn": "Ollama (lokalt på datorn)", "grupp": "lokal", "typ": "openai", "url": "http://localhost:11434/v1",
                "modell": "", "nyckel": False, "bild": True, "pdf": False, "lokal": True,
-               "info": "Ingenting lämnar hemmet. Installera Ollama från ollama.com och kör t.ex. 'ollama pull gemma3:12b' (kan läsa bilder). "
+               "info": "Ingenting lämnar hemmet. Installera Ollama och kör t.ex. 'ollama pull gemma3:12b' (kan läsa bilder). "
                        "Kräver en dator med bra grafikkort (helst 12–16 GB grafikminne), annars blir det långsamt. Sämre på svenska och foton än de stora."},
     "lmstudio": {"namn": "LM Studio (lokalt på datorn)", "grupp": "lokal", "typ": "openai", "url": "http://localhost:1234/v1",
                  "modell": "", "nyckel": False, "bild": True, "pdf": False, "lokal": True,
-                 "info": "Ingenting lämnar hemmet. Installera LM Studio från lmstudio.ai, ladda ner en modell som kan läsa bilder (t.ex. Gemma 3) och starta servern under Developer."},
+                 "info": "Ingenting lämnar hemmet. Installera LM Studio, ladda ner en modell som kan läsa bilder (t.ex. Gemma 3) och starta servern under Developer."},
     "egen": {"namn": "Annan (OpenAI-kompatibel adress)", "grupp": "egen", "typ": "openai", "url": "",
              "modell": "", "nyckel": False, "bild": True, "pdf": False,
              "info": "För andra tjänster eller servrar med OpenAI-kompatibelt API (t.ex. vLLM, LocalAI, Jan, Azure via proxy). Fyll i adressen som slutar på /v1."},
+}
+
+
+# Hjälp till familjerna: var man skaffar nyckeln, vad det kostar och om ett vanligt abonnemang räcker (det gör det aldrig för API:t).
+HJALP = {
+    "gemini": {"lank": "https://aistudio.google.com/apikey", "lank_text": "Skapa nyckel i Google AI Studio",
+               "kostnad": "gratis", "kostnad_text": "Gratis att börja, inget betalkort behövs. Gratisnivån har en gräns per dag som brukar räcka för en familj.",
+               "abonnemang": "Ett Gemini- eller Google One-abonnemang behövs inte och ingår inte. Nyckeln är något annat och fungerar med ett vanligt Google-konto.",
+               "data": "På gratisnivån kan Google använda texterna för att förbättra sina tjänster. Vill ni undvika det kan ni lägga till betalning i AI Studio (då kostar det lite per användning) eller välja lokal AI."},
+    "anthropic": {"lank": "https://console.anthropic.com/settings/keys", "lank_text": "Skapa nyckel hos Anthropic",
+                  "kostnad": "betala", "kostnad_text": "Ni sätter in en summa i förväg (t.ex. 5 dollar) som dras av lite i taget. Ingen månadsavgift.",
+                  "abonnemang": "Claude Pro eller Max ingår inte. API:t betalas separat, även om ni redan har ett abonnemang."},
+    "openai": {"lank": "https://platform.openai.com/api-keys", "lank_text": "Skapa nyckel hos OpenAI",
+               "kostnad": "betala", "kostnad_text": "Ni sätter in en summa i förväg som dras av lite i taget. Ingen månadsavgift.",
+               "abonnemang": "ChatGPT Plus eller Pro ingår inte. API:t har en egen betalning, även om ni redan har ChatGPT."},
+    "mistral": {"lank": "https://console.mistral.ai/api-keys", "lank_text": "Skapa nyckel hos Mistral",
+                "kostnad": "gratis", "kostnad_text": "Gratis testplan (Experiment) när man har verifierat sitt mobilnummer. Det finns också en betalplan.",
+                "abonnemang": "Le Chat Pro ingår inte.",
+                "data": "På gratisplanen kan Mistral använda texterna för att träna sina modeller."},
+    "openrouter": {"lank": "https://openrouter.ai/keys", "lank_text": "Skapa nyckel hos OpenRouter",
+                   "kostnad": "betala", "kostnad_text": "Ni sätter in en summa i förväg. Vissa modeller är gratis (märkta ”free”) men har låga gränser.",
+                   "abonnemang": "Inga abonnemang från andra AI-företag ingår."},
+    "groq": {"lank": "https://console.groq.com/keys", "lank_text": "Skapa nyckel hos Groq",
+             "kostnad": "gratis", "kostnad_text": "Gratis med en gräns per dag, inget betalkort behövs.",
+             "abonnemang": "Inget abonnemang behövs."},
+    "xai": {"lank": "https://console.x.ai", "lank_text": "Skapa nyckel hos xAI",
+            "kostnad": "betala", "kostnad_text": "Ni sätter in en summa i förväg som dras av lite i taget.",
+            "abonnemang": "X Premium eller SuperGrok ingår inte."},
+    "deepseek": {"lank": "https://platform.deepseek.com/api_keys", "lank_text": "Skapa nyckel hos DeepSeek",
+                 "kostnad": "betala", "kostnad_text": "Mycket billigt. Ni sätter in en summa i förväg.", "abonnemang": "Inget abonnemang behövs."},
+    "together": {"lank": "https://api.together.ai/settings/api-keys", "lank_text": "Skapa nyckel hos Together",
+                 "kostnad": "betala", "kostnad_text": "Ni sätter in en summa i förväg som dras av lite i taget.", "abonnemang": "Inget abonnemang behövs."},
+    "ollama": {"lank": "https://ollama.com/download", "lank_text": "Ladda ner Ollama",
+               "kostnad": "lokal", "kostnad_text": "Helt gratis och ingen nyckel. Men datorn behöver ett bra grafikkort, annars blir det långsamt.",
+               "abonnemang": "Inget konto eller abonnemang behövs."},
+    "lmstudio": {"lank": "https://lmstudio.ai", "lank_text": "Ladda ner LM Studio",
+                 "kostnad": "lokal", "kostnad_text": "Helt gratis och ingen nyckel. Men datorn behöver ett bra grafikkort, annars blir det långsamt.",
+                 "abonnemang": "Inget konto eller abonnemang behövs."},
+    "egen": {"kostnad": "egen", "kostnad_text": "Beror på tjänsten ni kopplar in.", "abonnemang": ""},
 }
 
 
@@ -228,5 +267,5 @@ def fran_inst(inst: dict, session_fn) -> AI | None:
 
 
 def publik_lista() -> list[dict]:
-    return [{"id": k, **{x: v[x] for x in ("namn", "grupp", "url", "modell", "nyckel", "bild", "pdf", "info")}, "rek": bool(v.get("rek")), "lokal": bool(v.get("lokal"))}
-            for k, v in LEVERANTORER.items()]
+    return [{"id": k, **{x: v[x] for x in ("namn", "grupp", "url", "modell", "nyckel", "bild", "pdf", "info")}, "rek": bool(v.get("rek")), "lokal": bool(v.get("lokal")),
+             **HJALP.get(k, {})} for k, v in LEVERANTORER.items()]
