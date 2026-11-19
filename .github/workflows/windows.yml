@@ -56,7 +56,9 @@ jobs:
           Write-Host "✓ installerad i $exe"
           Start-Sleep -Seconds 5
           Get-Process Skolan -ErrorAction SilentlyContinue | Stop-Process -Force
+          $env:PROVKOR_UTAN_TUNNEL = "1"
           python fristaende/windows/provkor.py $exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
           if ($hash -ne (Get-Content "$setup.sha256").Split(' ')[0]) { Write-Error "Fingeravtrycket stämmer inte"; exit 1 }
           Write-Host "✓ fingeravtrycket stämmer"

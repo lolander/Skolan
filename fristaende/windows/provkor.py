@@ -57,8 +57,11 @@ try:
     adress = {}
     vanta(lambda: adress.update(a=anrop("/app/installningar", token=tf)["fjarr_adress"]) or adress["a"], 120, "fjärrtunneln")
     print("✓ fjärradress", adress["a"])
-    vanta(lambda: anrop("/app/start", bas=adress["a"])["fran_datorn"] is False, 60, "nå appen via tunneln")
-    print("✓ appen nås via tunneln och räknas inte som datorn själv")
+    if os.environ.get("PROVKOR_UTAN_TUNNEL"):  # andra körningen (efter installationen): tunneln är redan provad
+        print("– tunneln provas inte igen")
+    else:
+        vanta(lambda: anrop("/app/start", bas=adress["a"])["fran_datorn"] is False, 60, "nå appen via tunneln")
+        print("✓ appen nås via tunneln och räknas inte som datorn själv")
     print("ALLT OK")
 finally:
     proc.terminate()
