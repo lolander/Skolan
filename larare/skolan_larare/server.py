@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 from aiohttp import ClientSession, ClientTimeout, web
 
 from . import VERSION, schemavy
+from .uppdatera import Uppdaterare
 
 _LOGGER = logging.getLogger("skolan_larare")
 STD_PORT = 8770
@@ -327,8 +328,15 @@ def _bara_datorn(request: web.Request) -> None:
         raise web.HTTPForbidden(text="Bara lärarens dator kan ändra här.")
 
 
-def bygg_app(klass: Klass) -> web.Application:
-    app = web.Application(client_max_size=MAX_FIL + 1024 * 1024)
+def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
+    @web.middleware
+    async def aktivitet(request, handler):
+        # automatisk uppdatering väntar tills ingen har använt appen en stund (sidans egna kollar räknas inte)
+        if uppd and not (request.method == "GET" and request.path in ("/api/lage", "/api/uppdatering")):
+            uppd.aktiv()
+        return await handler(request)
+
+    app = web.Application(client_max_size=MAX_FIL + 1024 * 1024, middlewares=[aktivitet])
     session_holder: dict = {}
     senast_ip: dict[str, float] = {}
 
@@ -355,7 +363,27 @@ def bygg_app(klass: Klass) -> web.Application:
 
     async def lage(request):
         _bara_datorn(request)
-        return web.json_response(klass.publik())
+        return web.json_response({**klass.publik(), "uppdatering": uppd.status() if uppd else None})
+
+    async def uppdatering(request):
+        _bara_datorn(request)
+        if not uppd:
+            raise web.HTTPNotFound
+        if request.method == "POST":
+            b = await request.json()
+            try:
+                if b.get("op") == "lage":
+                    uppd.satt_lage(str(b.get("lage") or ""))
+                elif b.get("op") == "kolla":
+                    await uppd.kolla()
+                elif b.get("op") == "installera":
+                    if not uppd.ny:
+                        await uppd.kolla()
+                    asyncio.get_running_loop().create_task(uppd.installera())
+                    await asyncio.sleep(0.2)
+            except ValueError as err:
+                return web.json_response({"fel": str(err)}, status=400)
+        return web.json_response(uppd.status())
 
     async def schema_sida(request):
         _bara_datorn(request)
@@ -566,6 +594,8 @@ def bygg_app(klass: Klass) -> web.Application:
     app.router.add_get("/elev", elev)
     app.router.add_get("/ikon.png", ikon)
     app.router.add_get("/api/lage", lage)
+    app.router.add_get("/api/uppdatering", uppdatering)
+    app.router.add_post("/api/uppdatering", uppdatering)
     app.router.add_get("/api/qr.svg", qr)
     app.router.add_get("/schema/{eid}", schema_sida)
     app.router.add_post("/api/andra", andra)
@@ -578,9 +608,11 @@ def bygg_app(klass: Klass) -> web.Application:
 async def huvud(port: int = STD_PORT, nar_klar=None) -> None:
     mapp = datamapp()
     klass = Klass(mapp, port)
-    runner = web.AppRunner(bygg_app(klass))
+    uppd = Uppdaterare(mapp, VERSION, klass.d, klass.spara)
+    runner = web.AppRunner(bygg_app(klass, uppd))
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", port).start()
+    uppd.starta()
     _LOGGER.info("Läxspelet Lärare %s på port %s", VERSION, port)
     if nar_klar:
         nar_klar()

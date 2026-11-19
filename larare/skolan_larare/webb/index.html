@@ -69,10 +69,24 @@ let L = null, flik = location.hash.slice(1) || "oversikt", msg = null;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const $ = (s) => document.querySelector(s);
 async function ladda() { L = await (await fetch("/api/lage")).json(); rita(); }
+async function uppdatera(body, ok) {
+  const r = await fetch("/api/uppdatering", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) msg = { t: "fel", x: j.fel || "Det gick inte." }; else { L.uppdatering = j; msg = ok ? { t: "ok", x: ok } : null; }
+  rita();
+}
+// Ny version: en rad överst på alla sidor
+function uppdRad() {
+  const u = L.uppdatering;
+  if (!u?.ny) return "";
+  if (u.steg) return `<div class="msg ok">⏳ ${u.steg === "laddar" ? "Laddar ner" : "Installerar"} version ${esc(u.senaste)}… Appen startar om själv. Svara Ja om Windows frågar.</div>`;
+  return `<div class="msg ok">🆕 Version ${esc(u.senaste)} av Läxspelet Lärare finns. ${u.lage === "automatisk" ? "Den installeras automatiskt när appen inte används, eller nu: " : ""}
+    ${u.kan_installera ? `<button class="m" id="u-nu">⬇️ Uppdatera nu</button>` : `<a href="${esc(u.sida)}" target="_blank">Ladda ner</a>`}</div>`;
+}
 async function andra(body, ok) {
   const r = await fetch("/api/andra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
-  if (!r.ok) { msg = { t: "fel", x: j.fel || "Det gick inte." }; } else { L = j; msg = ok ? { t: "ok", x: ok } : null; }
+  if (!r.ok) { msg = { t: "fel", x: j.fel || "Det gick inte." }; } else { L = { ...j, uppdatering: j.uppdatering ?? L.uppdatering }; msg = ok ? { t: "ok", x: ok } : null; }
   rita();
   return r.ok;
 }
@@ -88,7 +102,7 @@ function rita() {
   $("#meny-knapp").onclick = () => { menyOppen = !menyOppen; rita(); };
   const bak = document.querySelector(".meny-bak"); if (bak) bak.onclick = () => { menyOppen = false; rita(); };
   document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { flik = b.dataset.f; location.hash = flik; msg = null; menyOppen = false; rita(); window.scrollTo(0, 0); });
-  $("#main").innerHTML = (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, elev, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, foraldrar, historik, inst }[flik] || oversikt)();
+  $("#main").innerHTML = uppdRad() + (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, elev, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, foraldrar, historik, inst }[flik] || oversikt)();
   koppla();
 }
 const av = (k) => L.inst[k] ? "" : `<div class="msg fel">Den här funktionen är avstängd. Slå på den under ⚙️ Inställningar.</div>`;
@@ -387,7 +401,15 @@ function historik() {
     <table id="h-tabell">${L.historik.map((h) => `<tr><td class="small" style="white-space:nowrap">${esc(h.tid)}</td><td>${ik[h.typ] || "•"}</td><td>${esc(h.text)}</td></tr>`).join("")}</table></div>`;
 }
 function inst() {
-  return `<div class="kort"><h2>Klassen</h2><div class="grid2"><div><label>Klassens namn</label><input id="i-klass" value="${esc(L.klass)}" placeholder="t.ex. 4B"></div>
+  const u = L.uppdatering;
+  const uppd = u ? `<div class="kort"><h2>🔄 Uppdateringar</h2>
+    <p>Du har version <b>${esc(u.version)}</b>${u.ny ? ` · ny version: <b>${esc(u.senaste)}</b> 🆕` : u.senaste ? " · ✅ det är den senaste" : ""}</p>
+    <div class="chk"><input type="radio" name="u-lage" value="automatisk" ${u.lage === "automatisk" ? "checked" : ""}> <span><b>Automatiskt</b>: appen uppdaterar sig själv när den inte har använts på 15 minuter</span></div>
+    <div class="chk"><input type="radio" name="u-lage" value="manuell" ${u.lage === "manuell" ? "checked" : ""}> <span><b>Fråga mig</b>: du ser när en ny version finns och trycker själv</span></div>
+    <p class="small muted">Appen kollar var 6:e timme. Windows frågar ”Vill du tillåta…” innan installationen (den behöver administratörsrätt). Elevernas data finns kvar.${u.kollad ? ` Senast kollat ${new Date(u.kollad * 1000).toLocaleString("sv-SE")}.` : ""}</p>
+    ${u.fel ? `<div class="msg fel">${esc(u.fel)}</div>` : ""}
+    <div class="actions"><button class="m" id="u-kolla">🔍 Kolla nu</button>${u.ny && u.kan_installera ? `<button class="p" id="u-nu2" style="margin-top:0">⬇️ Uppdatera nu</button>` : ""}</div></div>` : "";
+  return `${uppd}<div class="kort"><h2>Klassen</h2><div class="grid2"><div><label>Klassens namn</label><input id="i-klass" value="${esc(L.klass)}" placeholder="t.ex. 4B"></div>
     <div><label>Ditt namn (det föräldrarna ser)</label><input id="i-larare" value="${esc(L.larare)}"></div></div><button class="p" id="i-spara">💾 Spara</button></div>
   <div class="kort"><h2>Vad ska vara på?</h2><p class="small muted">Varje funktion fungerar bara när både du och elevens förälder har slagit på den.</p>
     ${Object.entries(L.funktioner).map(([k, t]) => `<div class="chk"><input type="checkbox" data-inst="${k}" ${L.inst[k] ? "checked" : ""}> <span>${esc(t)}</span></div>`).join("")}</div>`;
@@ -398,6 +420,9 @@ function koppla() {
   document.querySelectorAll("[data-bort]").forEach((b) => b.onclick = () => confirm("Ta bort eleven från listan?") && andra({ op: "elev_bort", id: b.dataset.bort }));
   on("#synka-alla", () => andra({ op: "synka_alla" }, "Alla är synkade."));
   document.querySelectorAll("[data-inst]").forEach((b) => b.onchange = () => andra({ op: "installningar", [b.dataset.inst]: b.checked }));
+  document.querySelectorAll("[name=u-lage]").forEach((b) => b.onchange = () => uppdatera({ op: "lage", lage: b.value }, "Sparat."));
+  on("#u-kolla", () => uppdatera({ op: "kolla" }));
+  ["#u-nu", "#u-nu2"].forEach((id) => on(id, () => uppdatera({ op: "installera" }, "Uppdateringen startar. Svara Ja om Windows frågar.")));
   on("#i-spara", () => andra({ op: "installningar", klass: $("#i-klass").value, larare: $("#i-larare").value }, "Sparat."));
   document.querySelectorAll("[data-vb-bort]").forEach((b) => b.onclick = () => confirm("Ta bort veckobrevet?") && andra({ op: "veckobrev_bort", id: b.dataset.vbBort }));
   on("#vb-skicka", () => {

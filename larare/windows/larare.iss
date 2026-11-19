@@ -47,6 +47,8 @@ Name: "{autodesktop}\Läxspelet Lärare"; Filename: "{app}\SkolanLarare.exe"; Ta
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Skolan Larare"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Skolan Larare"" dir=in action=allow program=""{app}\SkolanLarare.exe"" enable=yes profile=private,domain"; Flags: runhidden
 Filename: "{app}\SkolanLarare.exe"; Description: "Starta Läxspelet Lärare nu"; Flags: nowait postinstall skipifsilent runasoriginaluser
+; Automatisk uppdatering (tyst installation): starta appen igen utan att öppna webbläsaren.
+Filename: "{app}\SkolanLarare.exe"; Parameters: "--tyst"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Skolan Larare"""; Flags: runhidden; RunOnceId: "brandvagg"
