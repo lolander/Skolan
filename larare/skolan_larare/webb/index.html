@@ -6,9 +6,12 @@
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text)}
 header{background:var(--acc);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px}
 header h1{font-size:20px;margin:0;flex:1}
-nav{display:flex;gap:4px;flex-wrap:wrap;padding:8px 16px;background:var(--kort);border-bottom:1px solid var(--rand)}
-nav button{background:none;border:0;padding:8px 12px;border-radius:8px;font-size:15px;color:var(--text);cursor:pointer}
-nav button.vald{background:var(--acc);color:#fff}
+nav{padding:10px 20px;background:var(--kort);border-bottom:1px solid var(--rand);font-weight:700;font-size:16px}
+.meny-knapp{margin-left:auto;background:rgba(255,255,255,.2);color:inherit;border:none;border-radius:16px;padding:6px 12px;font-size:14px;cursor:pointer;white-space:nowrap}
+.meny-bak{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.25)}
+.meny{position:fixed;top:58px;right:10px;z-index:21;display:flex;flex-direction:column;background:var(--kort);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.25);overflow:auto;max-height:calc(100vh - 80px);min-width:240px}
+.meny-grupp{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:10px 18px 2px;border-top:1px solid var(--rand)}
+.meny button{background:none;border:none;text-align:left;padding:12px 18px;font-size:15px;color:var(--text);cursor:pointer}.meny button:hover{background:var(--bg)}.meny button.vald{font-weight:700;color:var(--acc)}
 main{max-width:1000px;margin:auto;padding:16px}
 .kort{background:var(--kort);border:1px solid var(--rand);border-radius:14px;padding:16px;margin-bottom:14px}
 h2{font-size:18px;margin:0 0 10px}.muted{color:var(--muted)}.small{font-size:13px}
@@ -29,13 +32,38 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:7px;bord
 .mini-bar{display:inline-block;width:70px;height:8px;background:var(--rand);border-radius:4px;overflow:hidden;vertical-align:middle;margin-right:6px}.mini-bar i{display:block;height:100%;background:var(--acc)}
 .fil-rad{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}.fil-rad input{width:auto}
 tr.klick{cursor:pointer}tr.klick:hover td{background:var(--bg)}td input{padding:5px}.res-in{width:80px}
+h3{font-size:16px;margin:0 0 6px}
+.rutor{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
+.ruta{background:var(--bg);border-radius:12px;padding:12px}.ruta-r{font-size:13px;color:var(--muted)}.ruta-v{font-size:28px;font-weight:800;margin:2px 0}.ruta-u{font-size:12px;color:var(--muted)}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--muted);margin-bottom:6px}.legend span{display:flex;align-items:center;gap:6px}
+.lg-bar{display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--acc)}.lg-line{display:inline-block;width:16px;height:2px;background:var(--text)}
+.vd-yta{position:relative;height:150px;display:flex;gap:6px;align-items:flex-end;margin-left:20px;border-bottom:1px solid var(--rand)}
+.vd-grid{position:absolute;left:0;right:0;border-top:1px dashed var(--rand)}.vd-grid span{position:absolute;left:-20px;top:-8px;font-size:11px;color:var(--muted)}
+.vd-kol{position:relative;flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;cursor:default}
+.vd-bar{width:70%;max-width:40px;background:var(--acc);border-radius:4px 4px 0 0;min-height:2px}
+.vd-snitt{position:absolute;left:8%;right:8%;height:2px;background:var(--text);box-shadow:0 0 0 2px var(--kort)}
+.vd-x{display:flex;gap:6px;margin-left:20px}.vd-x span{flex:1;text-align:center;font-size:11px;color:var(--muted);padding-top:4px}
+.lb{display:flex;flex-direction:column;gap:6px}.lb-rad{display:grid;grid-template-columns:minmax(80px,38%) 1fr auto;gap:8px;align-items:center;font-size:14px}
+.lb-rad.klick{cursor:pointer}.lb-rad.klick:hover .lb-namn{text-decoration:underline}.lb-namn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-spar{height:12px;background:var(--bg);border-radius:6px;overflow:hidden}.lb-spar i{display:block;height:100%;background:var(--acc);border-radius:0 4px 4px 0}
+.lb-v{font-size:13px;color:var(--muted);min-width:52px;text-align:right}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}a.m{text-decoration:none;display:inline-block}
+#tip{position:fixed;z-index:30;pointer-events:none;background:var(--text);color:var(--kort);font-size:13px;padding:6px 9px;border-radius:8px;max-width:280px;display:none}
 @media (max-width:640px){.grid2{grid-template-columns:1fr}}
 </style></head><body>
-<header><img src="/ikon.png" width="32" height="32" alt=""><h1 id="rubrik">Läxspelet Lärare</h1><span id="ver" class="small"></span></header>
+<header><img src="/ikon.png" width="32" height="32" alt=""><h1 id="rubrik">Läxspelet Lärare</h1><span id="ver" class="small"></span><button class="meny-knapp" id="meny-knapp" title="Meny">☰ Meny</button></header>
 <nav id="nav"></nav><main id="main"></main>
 <script>
+// Samma menysystem som i Läxspelet: ☰ Meny öppnar en lista i grupper
+const MENY = [[null, ["oversikt"]], ["Eleverna", ["statistik", "studieteknik", "rapporter", "foraldrar"]], ["Skicka till klassen", ["veckobrev", "prov", "material"]],
+  ["Klassen", ["grupper", "klasslag"]], ["Övrigt", ["historik", "inst"]]];
+let menyOppen = false;
+// Hovra (eller tryck) på en stapel för att se siffrorna
+document.addEventListener("pointerover", (ev) => { const m = ev.target.closest?.("[data-tip]"); const tip = document.getElementById("tip") || document.body.appendChild(Object.assign(document.createElement("div"), { id: "tip" }));
+  if (!m) { tip.style.display = "none"; return; } tip.textContent = m.dataset.tip; tip.style.display = "block"; });
+document.addEventListener("pointermove", (ev) => { const tip = document.getElementById("tip"); if (tip?.style.display === "block") { tip.style.left = Math.min(ev.clientX + 12, innerWidth - 290) + "px"; tip.style.top = (ev.clientY + 14) + "px"; } });
 const flikar = [["oversikt", "🏫 Översikt"], ["statistik", "📈 Statistik"], ["studieteknik", "🧠 Studieteknik"], ["veckobrev", "📬 Veckobrev"], ["prov", "📝 Prov"], ["material", "📎 Material"], ["grupper", "👥 Grupper"], ["klasslag", "🐲 Klasslag"], ["rapporter", "📊 Rapporter"], ["foraldrar", "✉️ Från föräldrar"], ["historik", "📜 Historik"], ["inst", "⚙️ Inställningar"]];
-let valdElev = null, valtProv = null, filer = {};
+let valdElev = null, valtProv = null, filer = {}, forraFlik = "oversikt";
 const VD = ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"];
 let L = null, flik = location.hash.slice(1) || "oversikt", msg = null;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -51,9 +79,16 @@ async function andra(body, ok) {
 function rita() {
   $("#ver").textContent = "v" + L.version;
   $("#rubrik").textContent = L.klass ? `Läxspelet Lärare · ${L.klass}` : "Läxspelet Lärare";
-  $("#nav").innerHTML = flikar.map(([id, t]) => `<button class="${id === flik ? "vald" : ""}" data-f="${id}">${t}</button>`).join("");
-  document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { flik = b.dataset.f; location.hash = flik; msg = null; rita(); });
-  $("#main").innerHTML = (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, foraldrar, historik, inst }[flik] || oversikt)();
+  const namn = Object.fromEntries(flikar);
+  if (flik === "elev" && !valdElev) flik = "oversikt";
+  $("#nav").textContent = flik === "elev" ? `👤 ${(L.elever.find((x) => x.id === valdElev) || {}).namn || "Elev"}` : namn[flik] || namn.oversikt;
+  document.querySelector(".meny-bak")?.remove(); document.querySelector(".meny")?.remove();
+  if (menyOppen) document.body.insertAdjacentHTML("beforeend", `<div class="meny-bak"></div><div class="meny">${MENY.map(([rubrik, ids]) =>
+    (rubrik ? `<div class="meny-grupp">${rubrik}</div>` : "") + ids.map((id) => `<button class="${id === flik ? "vald" : ""}" data-f="${id}">${namn[id]}</button>`).join("")).join("")}</div>`);
+  $("#meny-knapp").onclick = () => { menyOppen = !menyOppen; rita(); };
+  const bak = document.querySelector(".meny-bak"); if (bak) bak.onclick = () => { menyOppen = false; rita(); };
+  document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { flik = b.dataset.f; location.hash = flik; msg = null; menyOppen = false; rita(); window.scrollTo(0, 0); });
+  $("#main").innerHTML = (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, elev, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, foraldrar, historik, inst }[flik] || oversikt)();
   koppla();
 }
 const av = (k) => L.inst[k] ? "" : `<div class="msg fel">Den här funktionen är avstängd. Slå på den under ⚙️ Inställningar.</div>`;
@@ -65,7 +100,7 @@ function oversikt() {
     Nästa gång räcker <b>🔄 Synka med läraren</b>.</p><p class="small muted">Föräldern bestämmer också: en funktion fungerar bara när både du och föräldern har slagit på den.</p></div></div>
   <div class="kort"><h2>Elever (${L.elever.length})</h2>
     ${L.elever.length ? `<table><tr><th>Namn</th><th>Senast synkad</th><th>Föräldern har slagit på</th><th></th></tr>
-    ${L.elever.map((e) => `<tr><td><b>${esc(e.namn)}</b>${e.fel ? `<div class="small" style="color:var(--fel)">⚠️ ${esc(e.fel)}</div>` : ""}</td><td>${esc(e.senast || "–")}</td><td>${f(e) || "<span class='muted'>inget</span>"}</td>
+    ${L.elever.map((e) => `<tr><td><a href="#" data-elev="${e.id}"><b>${esc(e.namn)}</b></a>${e.fel ? `<div class="small" style="color:var(--fel)">⚠️ ${esc(e.fel)}</div>` : ""}</td><td>${esc(e.senast || "–")}</td><td>${f(e) || "<span class='muted'>inget</span>"}</td>
       <td>${e.har_schema ? `<a class="m" href="/schema/${encodeURIComponent(e.id)}" target="_blank" title="Digitalt schema, sök och skriv ut">🗓️</a> ` : ""}<button class="m" data-synka="${e.id}">🔄</button> <button class="m" data-bort="${e.id}">🗑️</button></td></tr>`).join("")}</table>
     <button class="p" id="synka-alla">🔄 Synka alla</button>` : `<p class="muted">Inga elever har anslutit än.</p>`}</div>`;
 }
@@ -118,38 +153,118 @@ async function laddaUpp(id, input) {
   else { filer[id] = j; msg = null; }
   rita();
 }
+// ---------- Statistik: hela klassen och elevkortet (samma diagram) ----------
+const S = {
+  snitt: (s) => { const f = s?.forhor || []; const n = f.reduce((a, x) => a + x.n, 0); return n ? Math.round(f.reduce((a, x) => a + x.ratt, 0) / n * 100) : null; },
+  sista: (s) => (s?.per_vecka || []).slice(-1)[0]?.dagar ?? 0,
+  fyra: (s) => (s?.per_vecka || []).slice(-4).reduce((a, x) => a + x.dagar, 0),
+  provPct: (p) => ("max" in p && p.max ? Math.round(p.poang / p.max * 100) : ({ A: 100, B: 90, C: 80, D: 70, E: 60, F: 0 })[String(p.betyg).toUpperCase()] ?? null),
+  LAG: 1.5, // under så många pluggdagar i veckan (senaste 4 veckorna) markeras eleven
+};
+// Klassens snitt per vecka (bara elever som delar statistik)
+function klassVeckor() {
+  const med = L.elever.filter((e) => e.statistik?.per_vecka?.length);
+  if (!med.length) return [];
+  const veckor = med[0].statistik.per_vecka.map((v) => v.vecka);
+  return veckor.map((v) => { const x = med.map((e) => e.statistik.per_vecka.find((y) => y.vecka === v)?.dagar).filter((d) => d !== undefined);
+    return { vecka: v, dagar: x.length ? x.reduce((a, b) => a + b, 0) / x.length : 0 }; });
+}
+const tal = (x, d = 1) => (x === null || x === undefined ? "–" : Number(x).toFixed(d).replace(".", ",").replace(/,0$/, ""));
+function ruta(rubrik, varde, under = "") {
+  return `<div class="ruta"><div class="ruta-r">${rubrik}</div><div class="ruta-v">${varde}</div>${under ? `<div class="ruta-u">${under}</div>` : ""}</div>`;
+}
+// Staplar per vecka (0–7 dagar). jmf = klassens snitt som ett streck i varje vecka.
+function veckoDiagram(pv, jmf, namn) {
+  if (!pv?.length) return `<p class="muted">Ingen statistik än.</p>`;
+  const h = (d) => `${Math.max(0, Math.min(7, d)) / 7 * 100}%`;
+  return `<div class="vd">${jmf ? `<div class="legend"><span><i class="lg-bar"></i>${esc(namn)}</span><span><i class="lg-line"></i>Klassens snitt</span></div>` : ""}
+    <div class="vd-yta">${[7, 5, 3, 1].map((y) => `<div class="vd-grid" style="bottom:${y / 7 * 100}%"><span>${y}</span></div>`).join("")}
+    ${pv.map((v, i) => { const k = jmf?.find((x) => x.vecka === v.vecka);
+      const tip = `v.${v.vecka.slice(-2)}: ${v.dagar} ${v.dagar === 1 ? "dag" : "dagar"}${k ? ` · klassen ${tal(k.dagar)}` : ""}`;
+      return `<div class="vd-kol" data-tip="${esc(tip)}"><div class="vd-bar" style="height:${h(v.dagar)}"></div>${k ? `<div class="vd-snitt" style="bottom:${h(k.dagar)}"></div>` : ""}</div>`; }).join("")}</div>
+    <div class="vd-x">${pv.map((v) => `<span>v.${esc(v.vecka.slice(-2))}</span>`).join("")}</div></div>`;
+}
+// Liggande staplar: [{namn, v, max, text, elev, varn}]
+function liggande(rader, tom = "Inget än.") {
+  if (!rader.length) return `<p class="muted">${tom}</p>`;
+  return `<div class="lb">${rader.map((r) => `<div class="lb-rad ${r.elev ? "klick" : ""}" ${r.elev ? `data-elev="${r.elev}"` : ""} data-tip="${esc(r.tip || `${r.namn}: ${r.text}`)}">
+    <span class="lb-namn">${r.varn ? "⚠️ " : ""}${esc(r.namn)}</span><span class="lb-spar"><i style="width:${r.max ? Math.max(1, Math.min(100, r.v / r.max * 100)) : 0}%"></i></span><span class="lb-v">${esc(r.text)}</span></div>`).join("")}</div>`;
+}
 function statistik() {
   if (!L.inst.statistik) return av("statistik");
-  const med = L.elever.filter((e) => e.statistik);
-  const utan = L.elever.filter((e) => !e.statistik);
-  const snitt = (s) => { const f = s.forhor || []; const n = f.reduce((a, x) => a + x.n, 0); return n ? Math.round(f.reduce((a, x) => a + x.ratt, 0) / n * 100) : null; };
-  const sista = (s) => (s.per_vecka || []).slice(-1)[0]?.dagar ?? 0;
-  const fyra = (s) => (s.per_vecka || []).slice(-4).reduce((a, x) => a + x.dagar, 0);
-  if (valdElev) {
-    const e = L.elever.find((x) => x.id === valdElev);
-    if (e?.statistik) {
-      const s = e.statistik, pv = s.per_vecka || [];
-      return `<div class="kort"><button class="m" id="st-tillbaka">← Hela klassen</button>
-        <h2 style="margin-top:12px">📈 ${esc(e.namn)}</h2><p class="small muted">${esc(s.fran)} – ${esc(s.till)} · synkad ${esc(e.senast)}</p>
-        <b>Dagar med plugg per vecka</b>
-        <div class="staplar">${pv.map((v) => `<div style="height:${Math.max(2, v.dagar / 7 * 100)}%" title="${v.dagar} dagar"></div>`).join("")}</div>
-        <div class="staplar-txt">${pv.map((v) => `<span>v.${esc(v.vecka.slice(-2))}<br>${v.dagar}</span>`).join("")}</div></div>
-      <div class="kort"><h2>Förhör</h2>${(s.forhor || []).length ? `<table><tr><th>Datum</th><th>Förhör</th><th>Rätt</th></tr>${s.forhor.slice().reverse().map((f) => `<tr><td>${esc(f.datum)}</td><td>${esc(f.namn)}</td><td><span class="mini-bar"><i style="width:${f.n ? f.ratt / f.n * 100 : 0}%"></i></span>${f.ratt} av ${f.n}</td></tr>`).join("")}</table>` : `<p class="muted">Inga förhör de senaste veckorna.</p>`}</div>
-      <div class="kort"><h2>Prov</h2>${(s.prov || []).length ? `<table>${s.prov.slice().reverse().map((p) => `<tr><td>${esc(p.datum)}</td><td>${esc(p.namn)}<div class="small muted">${esc(p.amne)}</div></td><td>${"max" in p ? `${p.poang} av ${p.max}` : `betyg ${esc(p.betyg)}`}</td></tr>`).join("")}</table>` : `<p class="muted">Inga provresultat de senaste veckorna.</p>`}</div>
-      <div class="kort"><h2>Ämnen hen har övat</h2>${(s.amnen || []).length ? s.amnen.map((a) => `<div>${esc(a.namn)}: <b>${a.dagar}</b> dagar</div>`).join("") : `<p class="muted">Inget än.</p>`}</div>`;
-    }
-    valdElev = null;
-  }
-  const alla = med.map((e) => e.statistik);
-  const klassSnitt = alla.length ? (alla.reduce((a, s) => a + fyra(s), 0) / alla.length / 4).toFixed(1) : "–";
+  const med = L.elever.filter((e) => e.statistik), utan = L.elever.filter((e) => !e.statistik);
+  if (!med.length) return `<div class="kort"><h2>📈 Hur klassen pluggar</h2><p class="muted">Ingen elev delar statistik än. Siffrorna kommer när föräldrarna har slagit på statistik och eleverna synkar.</p></div>`;
+  const kv = klassVeckor();
+  const perElev = med.map((e) => ({ e, d: S.fyra(e.statistik) / 4, p: S.snitt(e.statistik) }));
+  const snittDagar = perElev.reduce((a, x) => a + x.d, 0) / perElev.length;
+  const pAlla = perElev.filter((x) => x.p !== null);
+  const snittP = pAlla.length ? Math.round(pAlla.reduce((a, x) => a + x.p, 0) / pAlla.length) : null;
+  const laga = perElev.filter((x) => x.d < S.LAG);
+  const amnen = {};
+  med.forEach((e) => (e.statistik.amnen || []).forEach((a) => { amnen[a.namn] = (amnen[a.namn] || 0) + a.dagar; }));
+  const amnRader = Object.entries(amnen).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const svaga = {}, svart = {};
+  L.elever.forEach((e) => { (e.studieteknik?.svaga_punkter || []).forEach((x) => { svaga[x.amne] = (svaga[x.amne] || 0) + x.antal; });
+    (e.studieteknik?.svart || []).forEach((t) => { (svart[t] = svart[t] || []).push(e.namn); }); });
+  const svagRader = Object.entries(svaga).sort((a, b) => b[1] - a[1]).slice(0, 8);
   return `<div class="kort"><h2>📈 Hur klassen pluggar</h2>
-    <p class="small muted">Bara elever vars förälder har slagit på statistik syns här. Tryck på en elev för att se mer. Siffrorna kommer när eleverna synkar.</p>
-    <p>Snitt: <b>${klassSnitt}</b> dagar med plugg per vecka (senaste 4 veckorna) · ${med.length} av ${L.elever.length} elever delar statistik</p>
-    ${med.length ? `<table><tr><th>Elev</th><th>Den här veckan</th><th>Senaste 4 veckorna</th><th>Förhör, rätt</th><th>Senaste prov</th></tr>
-    ${med.map((e) => { const s = e.statistik, p = snitt(s), pr = (s.prov || []).slice(-1)[0];
-      return `<tr class="klick" data-elev="${e.id}"><td><b>${esc(e.namn)}</b></td><td>${sista(s)} dagar</td><td><span class="mini-bar"><i style="width:${fyra(s) / 28 * 100}%"></i></span>${fyra(s)} dagar</td>
-        <td>${p === null ? "<span class='muted'>–</span>" : `${p} %`}</td><td>${pr ? `${esc(pr.namn)}: ${"max" in pr ? `${pr.poang}/${pr.max}` : esc(pr.betyg)}` : "<span class='muted'>–</span>"}</td></tr>`; }).join("")}</table>` : `<p class="muted">Ingen elev delar statistik än.</p>`}
-    ${utan.length ? `<p class="small muted">Delar inte statistik: ${utan.map((e) => esc(e.namn)).join(", ")}</p>` : ""}</div>`;
+      <p class="small muted">Från elevernas Läxspelet hemma, de senaste 8 veckorna. Bara elever vars förälder har slagit på statistik är med (${med.length} av ${L.elever.length}). Tryck på en elev för elevkortet.</p>
+      <div class="rutor">${ruta("Pluggdagar per vecka", tal(snittDagar), "snitt senaste 4 veckorna")}${ruta("Rätt på förhör", snittP === null ? "–" : `${snittP} %`, "snitt per elev")}
+        ${ruta("Pluggar sällan", `${laga.length}`, `elever under ${tal(S.LAG)} dagar/vecka`)}${ruta("Delar statistik", `${med.length} av ${L.elever.length}`, "elever")}</div></div>
+    <div class="kort"><h3>Klassens pluggdagar per vecka</h3><p class="small muted">Snittet för eleverna som delar statistik (0–7 dagar).</p>${veckoDiagram(kv.map((x) => ({ ...x, dagar: Math.round(x.dagar * 10) / 10 })))}</div>
+    <div class="grid2">
+      <div class="kort"><h3>Pluggdagar per elev</h3><p class="small muted">Snitt per vecka, senaste 4 veckorna. ⚠️ = under ${tal(S.LAG)}.</p>
+        ${liggande(perElev.sort((a, b) => b.d - a.d).map((x) => ({ namn: x.e.namn, v: x.d, max: 7, text: `${tal(x.d)} d/v`, elev: x.e.id, varn: x.d < S.LAG })))}</div>
+      <div class="kort"><h3>Rätt på förhör per elev</h3><p class="small muted">Alla förhör de senaste 8 veckorna.</p>
+        ${liggande(pAlla.sort((a, b) => b.p - a.p).map((x) => ({ namn: x.e.namn, v: x.p, max: 100, text: `${x.p} %`, elev: x.e.id })), "Inga förhör än.")}</div>
+      <div class="kort"><h3>Ämnen klassen övar på</h3><p class="small muted">Antal pluggdagar per ämne, alla elever tillsammans.</p>
+        ${liggande(amnRader.map(([n, d]) => ({ namn: n, v: d, max: amnRader[0][1], text: `${d} dagar` })))}</div>
+      <div class="kort"><h3>Svaga punkter per ämne</h3><p class="small muted">Från elever som delar studieteknik.</p>
+        ${liggande(svagRader.map(([n, d]) => ({ namn: n, v: d, max: svagRader[0][1], text: `${d} st` })), "Inga svaga punkter delade.")}</div>
+    </div>
+    ${Object.keys(svart).length ? `<div class="kort"><h3>Det eleverna tycker är svårt</h3><ul>${Object.entries(svart).sort((a, b) => b[1].length - a[1].length).slice(0, 10)
+      .map(([t, n]) => `<li>${esc(t)} <span class="small muted">· ${n.map(esc).join(", ")}</span></li>`).join("")}</ul></div>` : ""}
+    ${utan.length ? `<p class="small muted">Delar inte statistik: ${utan.map((e) => `<a href="#" data-elev="${e.id}">${esc(e.namn)}</a>`).join(", ")}</p>` : ""}`;
+}
+// Elevkortet: den samlade bilden av en elev
+function elev() {
+  const e = L.elever.find((x) => x.id === valdElev);
+  if (!e) { flik = "oversikt"; return oversikt(); }
+  const s = e.statistik, t = e.studieteknik, kv = klassVeckor();
+  const klassD = kv.length ? kv.slice(-4).reduce((a, x) => a + x.dagar, 0) / Math.min(4, kv.length) : null;
+  const d = s ? S.fyra(s) / 4 : null, p = S.snitt(s);
+  const lararProv = L.material.filter((m) => m.typ === "prov" && m.resultat?.[e.id]).map((m) => { const r = m.resultat[e.id];
+    return { namn: m.titel, amne: m.amne, datum: m.datum, ...("poang" in r ? { poang: r.poang, max: m.max } : { betyg: r.betyg }), kommentar: r.kommentar }; });
+  const allaProv = [...lararProv, ...(s?.prov || []).filter((x) => !lararProv.some((y) => y.namn === x.namn))].sort((a, b) => String(b.datum).localeCompare(String(a.datum)));
+  const delar = Object.entries(e.foralder || {}).filter(([k, v]) => v && L.funktioner[k]).map(([k]) => L.funktioner[k].split(" ")[0]).join(" ");
+  const OMR = { tecken: "Tecken", stor: "Stor bokstav", mellanrum: "Mellanrum", stycken: "Stycken", struktur: "Början/slut", ordval: "Ordval", meningar: "Variation" };
+  const lista = (rubrik, p2) => (p2?.length ? `<p><b>${rubrik}</b></p><ul>${p2.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
+  return `<div class="kort"><button class="m" id="elev-tillbaka">← Tillbaka</button>
+      <h2 style="margin-top:12px">👤 ${esc(e.namn)}</h2>
+      <p class="small muted">Synkad ${esc(e.senast || "aldrig")}${e.fel ? ` · <span style="color:var(--fel)">⚠️ ${esc(e.fel)}</span>` : ""} · föräldern delar: ${delar || "inget än"}</p>
+      <div class="rutor">${ruta("Pluggdagar per vecka", s ? tal(d) : "–", klassD !== null && s ? `klassen ${tal(klassD)}` : "statistik delas inte")}
+        ${ruta("Rätt på förhör", p === null ? "–" : `${p} %`, `${(s?.forhor || []).length} förhör`)}
+        ${ruta("Senaste prov", allaProv[0] ? ("max" in allaProv[0] ? `${tal(allaProv[0].poang)}/${tal(allaProv[0].max)}` : esc(allaProv[0].betyg || "–")) : "–", allaProv[0] ? esc(allaProv[0].namn) : "")}
+        ${ruta("Svaga punkter", t ? `${t.svaga_punkter.reduce((a, x) => a + x.antal, 0)}` : "–", t ? "att öva på" : "studieteknik delas inte")}</div>
+      <div class="actions">${e.har_schema ? `<a class="m" href="/schema/${encodeURIComponent(e.id)}" target="_blank">🗓️ Schema</a>` : ""}<button class="m" data-synka="${e.id}">🔄 Synka</button></div></div>
+    ${s ? `<div class="kort"><h3>Pluggdagar per vecka</h3>${veckoDiagram(s.per_vecka, kv, e.namn)}</div>
+    <div class="grid2"><div class="kort"><h3>Förhör</h3>${liggande((s.forhor || []).slice(-8).reverse().map((f) => ({ namn: `${f.namn}`, v: f.n ? f.ratt / f.n * 100 : 0, max: 100, text: `${f.ratt}/${f.n}`, tip: `${f.datum} ${f.namn}: ${f.ratt} av ${f.n} rätt` })), "Inga förhör än.")}</div>
+      <div class="kort"><h3>Ämnen hen övar på</h3>${(() => { const a = (s.amnen || []).slice().sort((x, y) => y.dagar - x.dagar); return liggande(a.map((x) => ({ namn: x.namn, v: x.dagar, max: a[0]?.dagar || 1, text: `${x.dagar} dagar` }))); })()}</div></div>` : ""}
+    ${allaProv.length ? `<div class="kort"><h3>Prov</h3>${liggande(allaProv.slice(0, 8).map((x) => { const pc = S.provPct(x);
+      return { namn: x.namn, v: pc ?? 0, max: 100, text: "max" in x ? `${tal(x.poang)}/${tal(x.max)}` : `betyg ${x.betyg}`, tip: `${x.datum || ""} ${x.namn}${x.amne ? ` (${x.amne})` : ""}${x.kommentar ? `: ${x.kommentar}` : ""}` }; }))}</div>` : ""}
+    ${t ? `<div class="kort"><h3>🧠 Så pluggar ${esc(e.namn)}</h3>
+      <p><b>Elevens egna svar:</b> ${esc(t.profil || "–")}</p>
+      ${t.ai_tankar ? `<p><b>AI:ns tankar om studietekniken:</b> ${esc(t.ai_tankar)}</p>` : ""}
+      ${lista("Verkar svårt", t.svart)}
+      <div class="grid2">${t.svaga_punkter.length ? `<div><p><b>Svaga punkter per ämne</b></p>${liggande(t.svaga_punkter.map((x) => ({ namn: x.amne, v: x.antal, max: Math.max(...t.svaga_punkter.map((y) => y.antal)), text: `${x.antal} st` })))}</div>` : ""}
+        ${Object.keys(t.skrivande || {}).length ? `<div><p><b>Skrivande</b> <span class="small muted">(0–100)</span></p>${liggande(Object.entries(t.skrivande).map(([k, v]) => ({ namn: OMR[k] || k, v, max: 100, text: `${v}` })))}</div>` : ""}</div>
+      ${t.planer?.length ? `<p><b>Pluggplaner</b></p><ul class="small">${t.planer.map((x) => `<li><b>${esc(x.prov)}</b> (${esc(x.amne || "")}, ${esc(x.datum || "")}): ${esc(x.sammanfattning)}</li>`).join("")}</ul>` : ""}</div>` : ""}
+    ${e.lappar?.length ? `<div class="kort"><h3>✉️ Lappar från föräldern</h3>${e.lappar.slice().reverse().map((x) => `<div class="grupp"><span class="small muted">${esc(x.tid.replace("T", " "))}</span><p style="white-space:pre-wrap">${esc(x.text)}</p></div>`).join("")}</div>` : ""}
+    ${e.samtal ? `<div class="kort"><h3>🗣️ Underlag till utvecklingssamtalet</h3><p class="small muted">${esc(e.samtal.fran)} – ${esc(e.samtal.till)}, kom ${esc(e.samtal.tid.slice(0, 10))}</p>
+      ${e.samtal.ai ? `${lista("Styrkor", e.samtal.ai.styrkor)}${lista("Det som är svårt", e.samtal.ai.svart)}${lista("Föräldrarnas frågor", e.samtal.ai.fragor)}` : ""}
+      ${lista("Blivit bättre på", e.samtal.battre)}
+      <details><summary class="small">Ämne för ämne</summary>${Object.entries(e.samtal.amnen).map(([a, x]) => `<p><b>${esc(a)}</b></p><ul>${x.gjort.map((y) => `<li>${esc(y)}</li>`).join("")}${x.svart.map((y) => `<li style="color:var(--fel)">⚠ ${esc(y)}</li>`).join("")}</ul>`).join("")}</details></div>` : ""}
+    ${!s && !t && !e.lappar?.length && !e.samtal ? `<div class="kort"><p class="muted">${esc(e.namn)}s förälder delar inget mer än. Föräldern väljer själv vad som delas med dig.</p></div>` : ""}`;
 }
 function prov() {
   if (!L.inst.material) return av("material");
@@ -244,7 +359,7 @@ function klasslag() {
 }
 function foraldrar() {
   if (!L.inst.lapp && !L.inst.samtal) return av("lapp");
-  const lappar = L.elever.flatMap((e) => (e.lappar || []).map((x) => ({ ...x, elev: e.namn }))).sort((a, b) => b.tid.localeCompare(a.tid));
+  const lappar = L.elever.flatMap((e) => (e.lappar || []).map((x) => ({ ...x, elev: e.namn, eid: e.id }))).sort((a, b) => b.tid.localeCompare(a.tid));
   const lista = (rubrik, p) => (p && p.length ? `<p><b>${rubrik}</b></p><ul>${p.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
   const samtal = (e) => { const s = e.samtal; return `<details class="kort"><summary><b>${esc(e.namn)}</b> <span class="small muted">· underlag ${esc(s.fran)} – ${esc(s.till)} · ${s.per_vecka} pluggdagar/vecka · kom ${esc(s.tid.slice(0, 10))}</span></summary>
     ${s.ai ? `<div class="grupp">${lista("Styrkor", s.ai.styrkor)}${lista("Det som är svårt", s.ai.svart)}${lista("Föräldrarnas frågor", s.ai.fragor)}<p class="small muted">Sammanfattningen är skriven med AI utifrån underlaget nedan.</p></div>` : ""}
@@ -253,7 +368,7 @@ function foraldrar() {
     ${lista("Övrigt", s.ovrigt)}</details>`; };
   const med = L.elever.filter((e) => e.samtal);
   return `${L.inst.lapp ? `<div class="kort"><h2>✉️ Lappar från föräldrarna</h2><p class="small muted">Föräldrarna skickar en kort lapp om vad eleven har tyckt varit svårt hemma. De läser och godkänner varje lapp själva.</p>
-      ${lappar.length ? lappar.map((x) => `<div class="grupp"><b>${esc(x.elev)}</b> <span class="small muted">${esc(x.tid.replace("T", " "))}</span><p style="white-space:pre-wrap">${esc(x.text)}</p></div>`).join("") : `<p class="muted">Inga lappar än.</p>`}</div>` : ""}
+      ${lappar.length ? lappar.map((x) => `<div class="grupp"><a href="#" data-elev="${x.eid}"><b>${esc(x.elev)}</b></a> <span class="small muted">${esc(x.tid.replace("T", " "))}</span><p style="white-space:pre-wrap">${esc(x.text)}</p></div>`).join("") : `<p class="muted">Inga lappar än.</p>`}</div>` : ""}
     ${L.inst.samtal ? `<div class="kort"><h2>🗣️ Underlag till utvecklingssamtalet</h2><p class="small muted">Föräldern väljer när underlaget skickas. Det visar vad eleven har övat på hemma de senaste 8 veckorna. Inga poäng eller jämförelser.</p></div>
       ${med.length ? med.map(samtal).join("") : `<p class="muted">Inget underlag än.</p>`}` : ""}`;
 }
@@ -297,8 +412,8 @@ function koppla() {
   });
   ["vb", "pr", "mt"].forEach((id) => { const el = $(`#${id}-fil`); if (el) el.onchange = () => laddaUpp(id, el); });
   document.querySelectorAll("[data-fil-bort]").forEach((b) => b.onclick = () => { delete filer[b.dataset.filBort]; rita(); });
-  document.querySelectorAll("[data-elev]").forEach((b) => b.onclick = () => { valdElev = b.dataset.elev; rita(); });
-  on("#st-tillbaka", () => { valdElev = null; rita(); });
+  document.querySelectorAll("[data-elev]").forEach((b) => b.onclick = (ev) => { ev.preventDefault(); if (flik !== "elev") forraFlik = flik; valdElev = b.dataset.elev; flik = "elev"; location.hash = "elev"; rita(); window.scrollTo(0, 0); });
+  on("#elev-tillbaka", () => { flik = forraFlik || "oversikt"; location.hash = flik; valdElev = null; rita(); });
   document.querySelectorAll("[data-prov]").forEach((b) => b.onclick = (ev) => { if (ev.target.closest("button")) return; valtProv = b.dataset.prov; rita(); });
   on("#pr-tillbaka", () => { valtProv = null; rita(); });
   document.querySelectorAll("[data-mat-bort]").forEach((b) => b.onclick = () => confirm("Ta bort? Det som redan har kommit fram till eleverna ligger kvar där.") && andra({ op: "material_bort", id: b.dataset.matBort }));
