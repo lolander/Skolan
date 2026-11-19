@@ -128,6 +128,8 @@ OM_AI = (
     "• Förhör görs utan hjälp och tips.\n"
     "• Vi föräldrar ser allt barnet gör i appen.\n\n"
     "Har du önskemål om hur ni vill att {namn} övar, eller om något ni hellre ser att vi inte hjälper till med hemma, säg gärna till!\n\n"
+    "Vill du se hur {namn} pluggar, få lappar från oss och skicka veckobrev direkt till läxappen? Det finns en gratis lärarapp för Windows: "
+    "https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe\n\n"
     "Hälsningar"
 )
 
@@ -188,12 +190,14 @@ def lapp_satt(s: dict, text: str, status: str = "utkast") -> dict:
     return s["lapp"]
 
 
-def skicka(s: dict, typ: str, innehall: dict) -> dict:
-    """Lägg i kön till lärarappen (hämtas vid nästa synk). Ersätter ett tidigare samtalsunderlag."""
+def skicka(s: dict, typ: str, innehall: dict, till: list | None = None) -> dict:
+    """Lägg i kön till lärarappen (hämtas vid nästa synk). till = lärarnas id (tomt = alla som har funktionen på).
+    Ett nytt samtalsunderlag ersätter det förra till samma lärare."""
     import secrets
+    till = [str(x) for x in (till or []) if str(x) in (s.get("lararna") or {})] or None
     if typ == "samtal":
-        s["utgaende"] = [x for x in s.get("utgaende", []) if x["typ"] != "samtal"]
-    post = {"id": secrets.token_hex(6), "typ": typ, "tid": dt_util.now().isoformat(timespec="minutes"), **innehall}
+        s["utgaende"] = [x for x in s.get("utgaende", []) if x["typ"] != "samtal" or (till and x.get("till") and not set(x["till"]) & set(till))]
+    post = {"id": secrets.token_hex(6), "typ": typ, "tid": dt_util.now().isoformat(timespec="minutes"), "till": till, **innehall}
     s.setdefault("utgaende", []).append(post)
     return post
 

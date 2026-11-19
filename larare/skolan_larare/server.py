@@ -26,6 +26,8 @@ from urllib.parse import urlparse
 from aiohttp import ClientSession, ClientTimeout, web
 
 from . import VERSION, schemavy
+from . import windows
+from .skola import Skola
 from .uppdatera import Uppdaterare
 
 _LOGGER = logging.getLogger("skolan_larare")
@@ -128,10 +130,13 @@ class Klass:
         self.d.setdefault("historik", [])  # [{tid, typ, text}] allt som hänt, för lärarens rapport
         # [{id, typ: material|prov, titel, amne, text, datum, max, fil, till: [elev-id] (tom = alla), resultat: {elev-id: {...}}, skapad}]
         self.d.setdefault("material", [])
+        self.d.setdefault("amne", "")  # lärarens ämne(n), t.ex. "Spanska" eller "Matte, NO"
+        self.d.setdefault("roll", "mentor")  # "mentor" (får allt föräldern delar) eller "amne" (bara sitt ämne)
         self.filer = mapp / "filer"
         self.filer.mkdir(exist_ok=True)
         for k in FUNKTIONER:
             self.d["inst"].setdefault(k, False)
+        self.skola = Skola(self)
         self.spara()
 
     def logga(self, typ: str, text: str) -> None:
@@ -193,6 +198,7 @@ class Klass:
 
     def publik(self) -> dict:
         """Det läraren ser. Inga poäng per elev."""
+        kollegor = self.skola.fran_kollegor()
         elever = []
         for e in self.d["elever"]:
             elever.append({"id": e["id"], "namn": e.get("namn") or "?", "senast": e.get("senast", ""), "fel": e.get("fel", ""),
@@ -201,7 +207,10 @@ class Klass:
                            "veckobrev_nya": e.get("veckobrev_nya", 0), "har_schema": bool(e.get("schema")) and bool(self.d["inst"].get("schema")),
                            "studieteknik": e.get("studieteknik") if self.d["inst"].get("studieteknik") else None,
                            "lappar": (e.get("lappar") or [])[-10:] if self.d["inst"].get("lapp") else [],
-                           "samtal": e.get("samtal") if self.d["inst"].get("samtal") else None})
+                           "samtal": e.get("samtal") if self.d["inst"].get("samtal") else None,
+                           "lararna": [x for x in (e.get("lararna") or []) if x.get("id") != self.d["larar_id"]],
+                           "mentor": any(x.get("id") == self.d["larar_id"] and x.get("roll") == "mentor" for x in e.get("lararna") or []),
+                           "fran_kollegor": kollegor.get(e.get("elev_id") or "-", []) if any(x.get("id") == self.d["larar_id"] and x.get("roll") == "mentor" for x in e.get("lararna") or []) else []})
         mott = {e["id"]: set(e.get("mottagna") or []) for e in self.d["elever"]}
         material = []
         for m in self.d["material"][::-1]:
@@ -211,6 +220,7 @@ class Klass:
                 fatt = [self.elev_namn(eid) for eid, s in mott.items() if m["id"] in s]
             material.append({**m, "fatt": fatt})
         return {"version": VERSION, "klass": self.d["klass"], "larare": self.d["larare"], "inst": self.d["inst"], "funktioner": FUNKTIONER,
+                "amne": self.d.get("amne", ""), "roll": self.d.get("roll", "mentor"), "skola": self.skola.publik(), "provkalender": self.skola.provkalender(),
                 "elever": sorted(elever, key=lambda x: x["namn"].lower()), "veckobrev": self.d["veckobrev"][-10:][::-1],
                 "boss": self.boss() if self.d["inst"].get("klasslag") else None, "adress": f"{lan_ip()}:{self.port}", "url": self.url,
                 "grupper": [self.grupp_publik(g) for g in self.d["grupper"] if g.get("aktiv")],
@@ -261,7 +271,9 @@ class Klass:
             for m in self.d["material"]:
                 if m["typ"] == "riktlinje" and m["id"] not in har and (not m.get("till") or e["id"] in m["till"]):
                     riktlinjer.append({"id": m["id"], "amne": m.get("amne", ""), "text": m.get("text", "")})
-        body = {"v": 1, "larar_id": self.d["larar_id"], "klass": self.d["klass"], "larare": self.d["larare"], "url": self.url,
+        sk = self.d.get("skola")
+        body = {"v": 2, "larar_id": self.d["larar_id"], "klass": self.d["klass"], "larare": self.d["larare"], "url": self.url,
+                "amne": self.d.get("amne", ""), "roll": self.d.get("roll", "mentor"), "skola": {"id": sk["id"], "namn": sk["namn"]} if sk else None,
                 "inst": self.d["inst"], "veckobrev": brev, "material": material, "riktlinjer": riktlinjer[-20:],
                 "klass_status": self.boss() if self.d["inst"].get("klasslag") else None, "grupper": grupper}
         try:
@@ -281,7 +293,11 @@ class Klass:
             raise ValueError(e["fel"]) from err
         e.update({"namn": str(svar.get("namn") or "?")[:40], "foralder": {k: bool((svar.get("foralder") or {}).get(k)) for k in FUNKTIONER},
                   "senast": time.strftime("%Y-%m-%d %H:%M"), "fel": "", "skolan": str(svar.get("skolan") or "")[:12],
-                  "veckobrev_nya": int(svar.get("nya_veckobrev") or 0)})
+                  "veckobrev_nya": int(svar.get("nya_veckobrev") or 0),
+                  # elevens alla lärare (från familjens Läxspelet) och elev-id:t som är samma hos alla lärare
+                  "lararna": [{"id": str(x.get("id") or "")[:40], "namn": str(x.get("namn") or "")[:60], "amne": str(x.get("amne") or "")[:60],
+                               "roll": "amne" if x.get("roll") == "amne" else "mentor"} for x in (svar.get("lararna") or [])[:20] if isinstance(x, dict)],
+                  "elev_id": str(svar.get("elev_id") or "")[:30]})
         for gid in (svar.get("grupp_klara") or [])[:20]:
             g = next((x for x in self.d["grupper"] if x["id"] == gid and e["id"] in x["medlemmar"]), None)
             if g and e["id"] not in g.setdefault("klara", {}):
@@ -321,6 +337,9 @@ class Klass:
         self.logga("synk", f"{e['namn']} synkade.")
         self.spara()
         return e
+
+
+WIN: dict = {"windows": False, "brandvagg": True, "gammal": False}  # brandväggen och gammal installation (Windows)
 
 
 def _bara_datorn(request: web.Request) -> None:
@@ -363,7 +382,7 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
 
     async def lage(request):
         _bara_datorn(request)
-        return web.json_response({**klass.publik(), "uppdatering": uppd.status() if uppd else None})
+        return web.json_response({**klass.publik(), "uppdatering": uppd.status() if uppd else None, "windows": WIN})
 
     async def uppdatering(request):
         _bara_datorn(request)
@@ -376,6 +395,15 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                     uppd.satt_lage(str(b.get("lage") or ""))
                 elif b.get("op") == "kolla":
                     await uppd.kolla()
+                elif b.get("op") == "kvittera":
+                    uppd.kvittera()
+                elif b.get("op") == "brandvagg":
+                    await asyncio.get_running_loop().run_in_executor(None, windows.forbered)
+                    for _ in range(20):  # vänta på att någon svarar på Windows-frågan
+                        await asyncio.sleep(3)
+                        WIN.update(await asyncio.get_running_loop().run_in_executor(None, windows.status))
+                        if WIN["brandvagg"] and not WIN["gammal"]:
+                            break
                 elif b.get("op") == "installera":
                     if not uppd.ny:
                         await uppd.kolla()
@@ -450,6 +478,10 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
             if op == "installningar":
                 d["klass"] = str(body.get("klass") or d["klass"])[:40]
                 d["larare"] = str(body.get("larare") or d["larare"])[:60]
+                if "amne" in body:
+                    d["amne"] = re.sub(r"\s+", " ", str(body.get("amne") or "")).strip()[:60]
+                if body.get("roll") in ("mentor", "amne"):
+                    d["roll"] = body["roll"]
                 for k in FUNKTIONER:
                     if k in body:
                         d["inst"][k] = bool(body[k])
@@ -548,6 +580,16 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                 v = vecka_nu()
                 d["extra"] = {v: max(0, int(d["extra"].get(v, 0)) + int(body.get("poang") or 0))}
                 klass.logga("klasslag", f"Klassens plugg i klassrummet: +{int(body.get('poang') or 0)}.")
+            elif op == "skola_ny":
+                klass.skola.skapa(str(body.get("namn") or ""))
+            elif op == "skola_ga_med":
+                await klass.skola.ga_med(await session(), str(body.get("kod") or ""), str(body.get("adress") or "").strip() or None)
+            elif op == "skola_kod":
+                klass.skola.ny_kod()
+            elif op == "skola_lamna":
+                klass.skola.lamna()
+            elif op == "skola_synka":
+                await klass.skola.synka_alla(await session())
             elif op in ("synka", "synka_alla"):
                 s = await session()
                 for e in [x for x in d["elever"] if op == "synka_alla" or x["id"] == body.get("id")]:
@@ -561,6 +603,23 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
             return web.json_response({"fel": str(err) or "Finns inte."}, status=400)
         klass.spara()
         return web.json_response(klass.publik())
+
+    async def skola_ga_med(request):
+        """En kollega på skolans nätverk vill gå med (kräver skolans kod)."""
+        try:
+            return web.json_response(klass.skola.ta_emot_medlem(request.remote or "", await request.json()))
+        except PermissionError as err:
+            return web.json_response({"fel": str(err)}, status=403)
+        except (ValueError, TypeError) as err:
+            return web.json_response({"fel": str(err)}, status=400)
+
+    async def skola_synk(request):
+        """En kollega synkar (signerat med skolans nyckel)."""
+        try:
+            svar, sig = klass.skola.ta_emot_synk(await request.content.read(1 << 20), request.headers.get("X-Laxspelet-Signatur", ""), request.remote or "")
+        except (PermissionError, ValueError) as err:
+            return web.json_response({"fel": str(err)}, status=403)
+        return web.Response(body=svar, content_type="application/json", headers={"X-Laxspelet-Signatur": sig})
 
     async def elev_koppla(request):
         """En elev ansluter från sin mobil på lektionen."""
@@ -599,6 +658,8 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
     app.router.add_get("/api/qr.svg", qr)
     app.router.add_get("/schema/{eid}", schema_sida)
     app.router.add_post("/api/andra", andra)
+    app.router.add_post("/api/skola/ga_med", skola_ga_med)
+    app.router.add_post("/api/skola/synk", skola_synk)
     app.router.add_post("/api/fil", fil_upp)
     app.router.add_get("/api/fil/{namn}", fil_ner)
     app.router.add_post("/api/elev/koppla", elev_koppla)
@@ -608,11 +669,30 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
 async def huvud(port: int = STD_PORT, nar_klar=None) -> None:
     mapp = datamapp()
     klass = Klass(mapp, port)
-    uppd = Uppdaterare(mapp, VERSION, klass.d, klass.spara)
+    uppd = Uppdaterare(mapp, VERSION, klass.d, klass.spara, port)
     runner = web.AppRunner(bygg_app(klass, uppd))
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", port).start()
     uppd.starta()
+    loop = asyncio.get_running_loop()
+    skola_session: dict = {}
+
+    async def sess() -> ClientSession:
+        if "s" not in skola_session or skola_session["s"].closed:
+            skola_session["s"] = ClientSession()
+        return skola_session["s"]
+    await klass.skola.starta(sess)
+    WIN.update(await loop.run_in_executor(None, windows.status))
+    if not WIN["brandvagg"] or WIN["gammal"]:  # första starten: Windows frågar en gång
+        await loop.run_in_executor(None, windows.forbered)
+
+        async def kolla_igen():
+            for _ in range(40):
+                await asyncio.sleep(3)
+                WIN.update(await loop.run_in_executor(None, windows.status))
+                if WIN["brandvagg"] and not WIN["gammal"]:
+                    return
+        loop.create_task(kolla_igen())
     _LOGGER.info("Läxspelet Lärare %s på port %s", VERSION, port)
     if nar_klar:
         nar_klar()

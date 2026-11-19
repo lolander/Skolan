@@ -38,11 +38,30 @@ jobs:
           $version = (Get-Content custom_components/skolan/manifest.json | ConvertFrom-Json).version
           & $iscc "/DVERSION=$version" fristaende/windows/skolan.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Fingeravtryck: appen installerar bara filer som stämmer med det
+          Get-ChildItem fristaende/windows/Output/*.exe | ForEach-Object {
+            (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $_.Name | Out-File -Encoding ascii -NoNewline ($_.FullName + ".sha256")
+          }
+
+      - name: Provinstallera tyst per användare (som en automatisk uppdatering)
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem fristaende/windows/Output/*.exe)[0].FullName
+          Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Laxspelet\Skolan.exe'
+          if (-not (Test-Path $exe)) { Write-Error "Installerades inte per användare: $exe"; exit 1 }
+          Write-Host "✓ installerad i $exe"
+          Start-Sleep -Seconds 5
+          Get-Process Skolan -ErrorAction SilentlyContinue | Stop-Process -Force
+          python fristaende/windows/provkor.py $exe
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne (Get-Content "$setup.sha256").Split(' ')[0]) { Write-Error "Fingeravtrycket stämmer inte"; exit 1 }
+          Write-Host "✓ fingeravtrycket stämmer"
 
       - uses: actions/upload-artifact@v4
         with:
           name: Skolan-Setup
-          path: fristaende/windows/Output/*.exe
+          path: fristaende/windows/Output/*
 
       - name: Bygg Microsoft Store-paketet (MSIX)
         shell: pwsh
@@ -59,16 +78,36 @@ jobs:
           name: Laxspelet-Store
           path: fristaende/windows/Store/*.msix
 
+      # Fasta namn så att länken .../releases/latest/download/Laxspelet-Setup.exe alltid ger senaste versionen,
+      # och den senaste lärarappen följer med, så att båda finns på samma sida.
+      - name: Fasta filnamn och senaste lärarappen
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ut = "fristaende/windows/Output"
+          Copy-Item (Get-ChildItem "$ut/Skolan-Setup-*.exe")[0].FullName "$ut/Laxspelet-Setup.exe"
+          $tag = gh release list --repo ${{ github.repository }} --limit 50 --json tagName --jq '[.[] | select(.tagName | startswith("larare-v"))][0].tagName'
+          if ($tag) {
+            gh release download $tag --repo ${{ github.repository }} --pattern "Skolan-Larare-Setup-*" --dir $ut
+            $l = Get-ChildItem "$ut/Skolan-Larare-Setup-*.exe" | Select-Object -First 1
+            if ($l) { Copy-Item $l.FullName "$ut/Laxspelet-Larare-Setup.exe"; Write-Host "✓ lärarappen $tag följer med" }
+          }
+
       - name: Publicera (vid ny version-tagg)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: fristaende/windows/Output/*.exe
+          files: |
+            fristaende/windows/Output/*.exe
+            fristaende/windows/Output/*.sha256
           prerelease: false
           body: |
             ## 📚 Läxspelet för Windows
-            1. Ladda ner **Skolan-Setup** här nedanför (under *Assets*).
-            2. Öppna filen och följ installationen. Läxor och inställningar finns kvar om du uppdaterar.
+            **Familjer:** ladda ner **[Laxspelet-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Setup.exe)**, öppna filen och följ installationen. Läxor och inställningar finns kvar om du uppdaterar, och appen uppdaterar sig själv.
+
+            **Lärare:** ladda ner **[Laxspelet-Larare-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe)** (Läxspelet Lärare). Den installeras på din egen dator, utan administratör, och uppdaterar sig själv.
 
             ### Varnar Windows?
             Läxspelet är nytt och har ännu inte ett köpt signaturcertifikat, så Windows kan visa *”Windows har skyddat datorn”*. Det är normalt för nya, små appar.

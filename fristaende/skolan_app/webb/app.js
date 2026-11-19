@@ -217,11 +217,13 @@ async function installning(info) {
         <button id="fjarr" class="${s.fjarr ? "" : "primar"}">${s.fjarr ? "Stäng av" : "Slå på"}</button></div>
       ${up.lage === "store" ? `<div class="kort"><h2 style="margin-top:0">🆕 Uppdateringar</h2><p>Du har version <b>${esc(up.version)}</b>. Läxspelet uppdateras automatiskt av Microsoft Store. ✅</p></div>` : `<div class="kort"><h2 style="margin-top:0">🆕 Uppdateringar</h2>
         <p>Du har version <b>${esc(up.version)}</b>. ${up.ny ? `<b>Version ${esc(up.senaste)} finns!</b>` : up.senaste ? "Det är den senaste ✅" : ""}</p>
-        ${up.steg === "laddar" ? `<p>⏳ Laddar ner uppdateringen…</p>` : up.steg === "installerar" ? `<p>⏳ Installerar. Svara <b>Ja</b> om Windows frågar. Läxspelet startar om av sig själv.</p>` : ""}
+        ${up.uppdaterad ? `<p>✅ Uppdaterad till version ${esc(up.uppdaterad.till)} (${esc(up.uppdaterad.tid)}). <button id="upp-ok">OK</button></p>` : ""}
+        ${up.windows?.windows && !up.windows.brandvagg ? `<p>⚠️ Mobilerna kan inte nå Läxspelet hemma än: Windows brandvägg behöver öppnas (en gång). <button id="upp-brand">🔓 Öppna brandväggen</button></p>` : ""}
+        ${up.steg === "laddar" ? `<p>⏳ Laddar ner uppdateringen…</p>` : up.steg === "installerar" ? `<p>⏳ Installerar. Läxspelet startar om av sig själv om en liten stund.</p>` : ""}
         ${up.ny && !up.steg ? (up.kan_installera ? `<button id="upp-nu" class="primar">⬇️ Uppdatera nu</button> ` : "") + `<a href="${esc(up.sida)}" target="_blank" rel="noopener">Ladda ner från GitHub</a>` : ""}
-        <div class="rad" style="margin-top:10px"><label><input type="radio" name="upp-lage" value="manuell" ${up.lage === "manuell" ? "checked" : ""}> <b>Manuell</b>: jag väljer själv när</label></div>
-        <div class="rad"><label><input type="radio" name="upp-lage" value="automatisk" ${up.lage === "automatisk" ? "checked" : ""}> <b>Automatisk</b>: installera när ingen har använt Läxspelet på 15 minuter</label></div>
-        <p class="liten">Appen kollar efter nya versioner var 6:e timme. Windows frågar alltid om lov på datorn innan en uppdatering installeras. Läxor och inställningar finns kvar.</p>
+        <div class="rad" style="margin-top:10px"><label><input type="radio" name="upp-lage" value="automatisk" ${up.lage === "automatisk" ? "checked" : ""}> <b>Automatisk</b>: installera när ingen har använt Läxspelet på 15 minuter</label></div>
+        <div class="rad"><label><input type="radio" name="upp-lage" value="manuell" ${up.lage === "manuell" ? "checked" : ""}> <b>Manuell</b>: jag väljer själv när</label></div>
+        <p class="liten">Appen kollar efter nya versioner var 6:e timme och installerar bara filer som stämmer med sitt fingeravtryck. Uppdateringen sker tyst, utan frågor från Windows, och Läxspelet startar om själv. Startar inte en ny version går appen tillbaka till den förra. Läxor och inställningar finns kvar.</p>
         <button id="upp-kolla">🔍 Sök efter uppdatering</button>${up.kollad ? ` <span class="liten">Senast kollat ${new Date(up.kollad * 1000).toLocaleString("sv-SE", { dateStyle: "short", timeStyle: "short" })}</span>` : ""}
         ${up.fel ? `<p class="liten">ℹ️ ${esc(up.fel)}</p>` : ""}
         ${up.ny && !up.kan_installera ? "" : ""}<p class="liten">Laddar du ner en ny version själv kan Windows varna för att appen är ny: tryck <b>Mer information</b> → <b>Kör ändå</b>.</p></div>`}
@@ -272,6 +274,8 @@ async function installning(info) {
       try { await api("/app/uppdatering", body); ladda(ok); } catch (e) { ladda("", e.message); }
     };
     $("#upp-kolla")?.addEventListener("click", () => upp({ op: "kolla" }, "Klart."));
+    $("#upp-ok")?.addEventListener("click", () => upp({ op: "kvittera" }, ""));
+    $("#upp-brand")?.addEventListener("click", () => upp({ op: "brandvagg" }, "Klart. Svarade du Ja när Windows frågade?"));
     $("#upp-nu")?.addEventListener("click", () => {
       if (confirm(`Uppdatera till version ${up.senaste}? Läxspelet stängs en kort stund. Svara Ja om Windows frågar.`)) {
         upp({ op: "installera" }, "Uppdateringen har startat.");
@@ -333,7 +337,9 @@ async function visaSkolan(info) {
   const v = document.createElement("div");
   v.className = "verktyg";
   const nyVer = u.is_admin && info.uppdatering?.ny && info.uppdatering.lage === "manuell";
-  v.innerHTML = `${nyVer ? `<button title="Ny version" onclick="location.href='/app/installning'">🆕 ${esc(info.uppdatering.senaste)}</button>` : ""}
+  const brand = u.is_admin && info.uppdatering && info.uppdatering.brandvagg === false;
+  const klar = u.is_admin && info.uppdatering?.uppdaterad;
+  v.innerHTML = `${nyVer ? `<button title="Ny version" onclick="location.href='/app/installning'">🆕 ${esc(info.uppdatering.senaste)}</button>` : ""}${brand ? `<button title="Mobilerna når inte Läxspelet: öppna brandväggen" onclick="location.href='/app/installning'">🔓 Brandvägg</button>` : ""}${klar ? `<button title="Läxspelet är uppdaterad" onclick="location.href='/app/installning'">✅ ${esc(klar.till)}</button>` : ""}
     ${u.is_admin ? `<button title="Inställningar" onclick="location.href='/app/installning'">⚙️</button>` : ""}
     ${"PushManager" in window && Notification.permission !== "granted" ? `<button id="v-notis" title="Slå på notiser">🔔</button>` : ""}
     `;

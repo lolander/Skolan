@@ -4691,10 +4691,12 @@ class LarareView(HomeAssistantView):
 
     @staticmethod
     def _svar(s: dict, namn: str) -> dict:
-        lar = s.get("larare") or {}
+        lar = skola.huvudlarare(s)
         return {"lapp": larare.lapp_status(s), "om_ai": larare.OM_AI.format(namn=namn), "mejl": s["foralder"].get("mejl_till", ""),
                 "larare": lar.get("namn") or "", "kopplad": bool(lar.get("id")), "pa": skola.PA,
                 "kan": {f: skola.aktiv(s, f) for f in ("lapp", "samtal")},
+                "mottagare": {f: [{"id": x["id"], "namn": x.get("namn") or "Läraren", "amne": x.get("amne") or "", "roll": x.get("roll") or "mentor"}
+                                  for x in (s.get("lararna") or {}).values() if skola.aktiv(s, f, x["id"])] for f in ("lapp", "samtal")},
                 "skickat": [{"typ": x["typ"], "tid": x["tid"]} for x in s.get("utgaende", [])][-10:][::-1],
                 "samtal_ai": bool(s.get("samtal_ai"))}
 
@@ -4749,7 +4751,7 @@ class LarareView(HomeAssistantView):
                     lp = larare.lapp_satt(s, body.get("text") or (s.get("lapp") or {}).get("text"), "skickad")
                     if not lp["text"]:
                         raise ValueError("Lappen är tom.")
-                    larare.skicka(s, "lapp", {"namn": s["foralder"].get("namn") or namn, "text": lp["text"]})
+                    larare.skicka(s, "lapp", {"namn": s["foralder"].get("namn") or namn, "text": lp["text"]}, body.get("till"))
                 elif op == "samtal_ai":
                     s["samtal_ai"] = {k: [str(x)[:300] for x in (ai.get(k) or [])][:4] for k in ("styrkor", "svart", "fragor")}
                 elif op == "samtal_utan_ai":
@@ -4758,7 +4760,7 @@ class LarareView(HomeAssistantView):
                     if not skola.aktiv(s, "samtal"):
                         raise ValueError("Underlaget är inte påslaget hos både dig och läraren.")
                     f = larare.fakta(data, larare.SAMTAL_DAGAR)
-                    larare.skicka(s, "samtal", larare.samtal_till_larare(s["foralder"].get("namn") or namn, f, s.get("samtal_ai")))
+                    larare.skicka(s, "samtal", larare.samtal_till_larare(s["foralder"].get("namn") or namn, f, s.get("samtal_ai")), body.get("till"))
                 elif op == "mejl":
                     s["foralder"]["mejl_till"] = str(body.get("mejl") or "").strip()[:200]
                 else:
@@ -6699,7 +6701,7 @@ class SkolaView(HomeAssistantView):
                         data = await hass.async_add_executor_job(_load, mapp)
                         a = next((x for x in data.get("amnen", []) if x["id"] == body.get("amne")), None)
                         plugg.riktlinje_ny(data, a["id"] if a else "", a["namn"] if a else "Alla ämnen", b["text"], "larare",
-                                           (s.get("larare") or {}).get("namn") or "Läraren")
+                                           b.get("larare") or skola.huvudlarare(s).get("namn") or "Läraren")
                         b["status"] = "sparad"
                         await hass.async_add_executor_job(_save, mapp, data)
                         await hass.async_add_executor_job(skola.spara, mapp, s)
@@ -6709,7 +6711,7 @@ class SkolaView(HomeAssistantView):
                     if op == "installningar":
                         skola.satt_installningar(s, body)
                     elif op == "koppla_bort":
-                        skola.koppla_bort(s)
+                        skola.koppla_bort(s, str(body.get("larare") or "") or None)
                     elif op in ("inkorg_klar", "inkorg_avvisa"):
                         b = next((x for x in s["inkorg"] if x["id"] == body.get("id")), None)
                         if b:
@@ -6755,11 +6757,11 @@ async def _inkorg_spara(hass: HomeAssistant, barn: str, mapp: Path, op: str, bod
                     u = {"id": _new_id(), "typ": "prov", "namn": _name(b["titel"]), "amne": a["id"], "amne_namn": a["namn"], "bok": None,
                          "fran": None, "till": None, "kapitel": "", "sidor": [], "glosor": [], "lasta": 0, "allt_last": False, "klart": dt_util.now().isoformat(timespec="minutes"),
                          "datum": b.get("datum") or dt_util.now().date().isoformat(), "skapad": dt_util.now().isoformat(timespec="minutes"),
-                         "av_id": "larare", "av_namn": (s.get("larare") or {}).get("namn") or "Läraren"}
+                         "av_id": "larare", "av_namn": b.get("larare") or skola.huvudlarare(s).get("namn") or "Läraren"}
                     lista.append(u)
                     del lista[:-200]
                 u["larar_prov"] = b.get("prov_id") or ""
-                meriter.prov_resultat(data, u, {**b["resultat"], "av": (s.get("larare") or {}).get("namn") or "Läraren",
+                meriter.prov_resultat(data, u, {**b["resultat"], "av": b.get("larare") or skola.huvudlarare(s).get("namn") or "Läraren",
                                                 "tid": dt_util.now().isoformat(timespec="minutes")})
             b["status"] = "sparad"
             await hass.async_add_executor_job(_save, mapp, data)

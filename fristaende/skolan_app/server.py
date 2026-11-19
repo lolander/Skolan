@@ -25,6 +25,7 @@ from . import ai as ai_mod  # noqa: E402
 from .konto import COOKIE, Konto  # noqa: E402
 from .push import Push, tjanst  # noqa: E402
 from .tunnel import Tunnel  # noqa: E402
+from . import windows  # noqa: E402
 from .uppdatera import Uppdaterare  # noqa: E402
 from .varden import Varden  # noqa: E402
 
@@ -90,7 +91,8 @@ class App:
         inst = self.konto.inst
         self.hass.ai = ai_mod.fran_inst(inst, self.hass.http_session)
         self.tunnel = Tunnel(mapp, port, self.hass.http_session)
-        self.uppd = Uppdaterare(mapp, self.hass.http_session, _version(), inst, self.konto.spara)
+        self.uppd = Uppdaterare(mapp, self.hass.http_session, _version(), inst, self.konto.spara, port)
+        self.win: dict = {"windows": False, "brandvagg": True, "gammal": False}  # brandväggen och gammal installation
 
     # ---------- Skolans integration ----------
     def skolan_conf(self) -> dict:
@@ -181,7 +183,8 @@ class App:
             "anvandare": {"id": u.id, "name": u.name, "is_admin": u.is_admin} if u else None,
             "panel": {"modul": panel.get("module_url"), "komponent": panel.get("webcomponent_name")} if panel else None,
             "ai": bool(self.hass.ai),
-            "uppdatering": {"ny": self.uppd.ny, "senaste": self.uppd.senaste and self.uppd.senaste["version"], "lage": self.uppd.lage}
+            "uppdatering": {"ny": self.uppd.ny, "senaste": self.uppd.senaste and self.uppd.senaste["version"], "lage": self.uppd.lage,
+                            "uppdaterad": self.uppd.status().get("uppdaterad"), "brandvagg": self.win["brandvagg"]}
             if u and u.is_admin else None,
             "adresser": {"lokala": lokala_adresser(self.port), "fjarr": self.tunnel.adress, "fjarr_status": self.tunnel.status}
             if _fran_datorn(request) or (u and u.is_admin) else None,
@@ -341,7 +344,20 @@ class App:
 
     async def uppdatering(self, request: web.Request) -> web.Response:
         self.kraver_foralder(request)
-        return web.json_response(self.uppd.status())
+        return web.json_response({**self.uppd.status(), "windows": self.win})
+
+    async def _kolla_windows(self, fraga: bool) -> None:
+        """Brandväggen (en gång) och gammal installation under Program Files. Windows frågar en gång."""
+        loop = asyncio.get_running_loop()
+        self.win.update(await loop.run_in_executor(None, windows.status))
+        if not fraga or (self.win["brandvagg"] and not self.win["gammal"]):
+            return
+        await loop.run_in_executor(None, windows.forbered)
+        for _ in range(40):
+            await asyncio.sleep(3)
+            self.win.update(await loop.run_in_executor(None, windows.status))
+            if self.win["brandvagg"] and not self.win["gammal"]:
+                return
 
     async def andra_uppdatering(self, request: web.Request) -> web.Response:
         self.kraver_foralder(request)
@@ -352,6 +368,10 @@ class App:
                 self.uppd.satt_lage(str(body.get("lage") or ""))
             elif op == "kolla":
                 await self.uppd.kolla()
+            elif op == "kvittera":
+                self.uppd.kvittera()
+            elif op == "brandvagg":
+                await self._kolla_windows(True)
             elif op == "installera":
                 if not self.uppd.ny:
                     raise ValueError("Det finns ingen nyare version.")
@@ -363,7 +383,7 @@ class App:
                 raise ValueError("Okänd ändring.")
         except ValueError as err:
             return web.json_response({"message": str(err)}, status=400)
-        return web.json_response(self.uppd.status())
+        return web.json_response({**self.uppd.status(), "windows": self.win})
 
     def _ny_adress(self, adress: str) -> None:
         self.hass.config.external_url = adress
@@ -416,6 +436,7 @@ class App:
         await web.TCPSite(runner, "0.0.0.0", self.port).start()
         await self.hass.starta()
         self.uppd.starta()
+        asyncio.get_running_loop().create_task(self._kolla_windows(True))
         if self.konto.inst.get("fjarr"):
             await self.tunnel.starta(self._ny_adress)
         _LOGGER.info("Skolan körs på http://localhost:%s", self.port)

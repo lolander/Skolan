@@ -28,7 +28,9 @@ Varje barn behöver en egen användare i Home Assistant (inte administratör). *
 
 ## Utan Home Assistant: Windowsappen
 
-Har ni inte Home Assistant? Ladda ner **Skolan-Setup** under [Releases](https://github.com/lolander/Skolan/releases) och installera på familjens dator.
+Har ni inte Home Assistant? Ladda ner **[Laxspelet-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Setup.exe)** och installera på familjens dator.
+
+**Lärare:** ladda ner **[Laxspelet-Larare-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe)** (Läxspelet Lärare för Windows). Den installeras utan administratör och uppdaterar sig själv. Första gången frågar Windows en gång om brandväggen, så att elevernas mobiler kan ansluta.
 
 1. Första gången lägger du till familjen (namn och PIN-kod för varje person) och gärna en gratis AI-nyckel från [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 2. Högerklicka på Skolans ikon vid klockan → **Koppla en mobil** och skanna QR-koden med barnens telefoner. Lägg till Skolan på hemskärmen.

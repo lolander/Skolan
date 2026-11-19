@@ -8,9 +8,14 @@ Lärarappen pratar med barnets Skolan via klasslänken {extern adress}/api/skola
 (som vänlänken: hemlig nyckel, ingen inloggning). Den skickar veckobrev och klassens läge,
 och får tillbaka bara det som föräldern och läraren har slagit på.
 Läraren ser aldrig enskilda barns poäng i klasslaget, bara klassens summa.
+
+Flera lärare (från 1.95.0): eleven kan ha en mentor och ämneslärare. Alla synkar med samma klasslänk.
+Föräldern väljer per lärare vad den får (annars gäller förälderns standardval). En ämneslärare får bara
+sitt eget ämne i rapport, statistik och studieteknik. Föräldern kan koppla bort en lärare (den spärras).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import secrets
@@ -63,7 +68,12 @@ def las(mapp: Path) -> dict:
     f.setdefault("namn", "")  # namnet läraren ser
     f.setdefault("mejl_till", "")
     f.setdefault("mejl_dagar", [4])  # 0 = måndag; fredag som standard
-    s.setdefault("larare", {})  # {id, klass, namn, url, inst: {...}, synkad}
+    s.setdefault("larare", {})  # (gammalt, en lärare) flyttas till "lararna"
+    s.setdefault("lararna", {})  # {larar_id: {id, klass, namn, url, inst, synkad, amne, roll, skola, dela: {f: bool}}}
+    if s["larare"].get("id") and s["larare"]["id"] not in s["lararna"]:
+        s["lararna"][s["larare"]["id"]] = {**s["larare"], "roll": s["larare"].get("roll") or "mentor", "dela": {}}
+    s["larare"] = {}
+    s.setdefault("blockerade", [])  # lärare som föräldern har kopplat bort
     s.setdefault("inkorg", [])  # från läraren: veckobrev, studiematerial och provresultat ("typ")
     s.setdefault("mottagna", [])  # id:n från läraren som redan har kommit fram, så att filer inte skickas igen
     s.setdefault("klass", None)  # klassens läge från lärarappen
@@ -94,19 +104,37 @@ def lank(bas: str, s: dict) -> str:
     return f"{bas.rstrip('/')}{VAG}{s['nyckel']}" if bas.startswith("https://") and s["nyckel"] else ""
 
 
-def aktiv(s: dict, f: str) -> bool:
-    """På bara när föräldern OCH läraren har slagit på funktionen."""
-    if not s["foralder"].get(f):
-        return False
-    inst = (s.get("larare") or {}).get("inst") or {}
-    if f == "mejl":  # ingen lärarapp kopplad: förälderns val räcker
-        return inst.get("mejl", True)
-    return bool(inst.get(f))
+def huvudlarare(s: dict) -> dict:
+    """Mentorn (eller den lärare som synkade senast). Tom om ingen lärare är kopplad."""
+    lar = list((s.get("lararna") or {}).values())
+    if not lar:
+        return {}
+    mentorer = [x for x in lar if x.get("roll") == "mentor"]
+    return max(mentorer or lar, key=lambda x: x.get("synkad", ""))
+
+
+def delar(s: dict, lid: str, f: str) -> bool:
+    """Förälderns val för just den läraren (annars förälderns standardval)."""
+    lar = (s.get("lararna") or {}).get(lid) or {}
+    return bool((lar.get("dela") or {}).get(f, s["foralder"].get(f)))
+
+
+def aktiv(s: dict, f: str, lid: str | None = None) -> bool:
+    """På bara när föräldern OCH läraren har slagit på funktionen. Utan lid: hos någon av lärarna."""
+    lararna = s.get("lararna") or {}
+    if f == "mejl":  # ingen lärarapp behövs: förälderns val räcker (om ingen lärare har sagt nej)
+        return bool(s["foralder"].get("mejl")) and all((x.get("inst") or {}).get("mejl", True) for x in lararna.values())
+    if lid is not None:
+        return delar(s, lid, f) and bool(((lararna.get(lid) or {}).get("inst") or {}).get(f))
+    return any(aktiv(s, f, x) for x in lararna)
 
 
 def status(s: dict, bas: str, foralder: bool) -> dict:
-    lar = s.get("larare") or {}
+    lar = huvudlarare(s)
+    lista = sorted((s.get("lararna") or {}).values(), key=lambda x: (x.get("roll") != "mentor", x.get("amne") or "", x.get("namn") or ""))
     ut = {"pa": PA, "aktiv": {f: aktiv(s, f) for f in FUNKTIONER}, "larare": {k: lar.get(k) for k in ("klass", "namn", "url", "synkad", "inst")} if lar else None,
+          "lararna": [{**{k: x.get(k) for k in ("id", "klass", "namn", "url", "synkad", "amne", "roll", "skola")},
+                       **({"inst": x.get("inst") or {}, "dela": {f: delar(s, x["id"], f) for f in FUNKTIONER}} if foralder else {})} for x in lista],
           "klass": s.get("klass") if aktiv(s, "klasslag") else None, "lank": lank(bas, s), "kan_nas": bas.startswith("https://"),
           "grupper": s["grupper"] if aktiv(s, "grupper") else []}
     if foralder:
@@ -116,6 +144,16 @@ def status(s: dict, bas: str, foralder: bool) -> dict:
 
 
 def satt_installningar(s: dict, body: dict) -> None:
+    lid = body.get("larare")
+    if lid:  # förälderns val för en viss lärare
+        lar = (s.get("lararna") or {}).get(lid)
+        if not lar:
+            raise ValueError("Läraren finns inte.")
+        d = lar.setdefault("dela", {})
+        for k in FUNKTIONER:
+            if k in body:
+                d[k] = bool(body[k])
+        return
     f = s["foralder"]
     for k in FUNKTIONER:
         if k in body:
@@ -133,41 +171,81 @@ def satt_installningar(s: dict, body: dict) -> None:
         raise ValueError("Skriv lärarens e-postadress först.")
 
 
-def koppla_bort(s: dict) -> None:
+def koppla_bort(s: dict, lid: str | None = None) -> None:
+    if lid:  # en lärare: spärras, de andra fortsätter med samma klasslänk
+        s.get("lararna", {}).pop(lid, None)
+        if lid not in s["blockerade"]:
+            s["blockerade"].append(lid)
+        s["grupper"] = [g for g in s["grupper"] if g.get("larare") != lid]
+        s["utgaende"] = [x for x in s.get("utgaende", []) if lid not in (x.get("till") or [])]
+        if (s.get("klass") or {}).get("larare") == lid:
+            s["klass"] = None
+        return
+    s["lararna"] = {}
     s["larare"] = {}
     s["klass"] = None
+    s["grupper"] = []
     s["nyckel"] = secrets.token_urlsafe(24)  # den gamla klasslänken slutar fungera
 
 
+def elev_id(s: dict) -> str:
+    """Samma för alla elevens lärare (så att lärarna på en skola vet att det är samma elev)."""
+    return hashlib.sha256(("elev:" + s["nyckel"]).encode()).hexdigest()[:20]
+
+
+def _amne_lika(a: str, b: str) -> bool:
+    """Ämnesnamn som betyder samma sak (Matte/Matematik, Spanska/Moderna språk spanska …)."""
+    syn = {"matematik": "matte", "ma": "matte", "svenska som andraspråk": "svenska", "sv": "svenska", "en": "engelska",
+           "samhällskunskap": "so", "historia": "so", "geografi": "so", "religion": "so",
+           "biologi": "no", "fysik": "no", "kemi": "no", "naturorienterande ämnen": "no", "samhällsorienterande ämnen": "so"}
+    n = lambda x: syn.get(re.sub(r"[^a-zåäö ]", "", (x or "").lower()).strip(), re.sub(r"[^a-zåäö ]", "", (x or "").lower()).strip())  # noqa: E731
+    a, b = n(a), n(b)
+    sprak = {"spanska", "tyska", "franska", "italienska", "kinesiska", "arabiska", "ryska", "japanska"}
+    if {a, b} & {"moderna språk", "moderna sprak", "språkval"} and ({a, b} & sprak):
+        return True
+    return bool(a and b) and (a == b or a in b or b in a)
+
+
+def _for_amne(lar: dict, amne: str | None) -> bool:
+    """Ska den här läraren få något om ämnet? Mentorn får allt, en ämneslärare bara sitt ämne."""
+    if lar.get("roll") != "amne" or not lar.get("amne"):
+        return True
+    return any(_amne_lika(x, amne) for x in re.split(r"[,/]", lar["amne"]))
+
+
 # ---------- rapport ----------
-def rapport(data: dict, namn: str, dagar: int = 7) -> dict:
-    """Kort rapport om de senaste dagarna. Inga husdjur, inga poäng, ingen jämförelse."""
+def rapport(data: dict, namn: str, dagar: int = 7, lar: dict | None = None) -> dict:
+    """Kort rapport om de senaste dagarna. Inga husdjur, inga poäng, ingen jämförelse. lar = ämneslärare: bara sitt ämne."""
+    lar = lar or {}
     idag = dt_util.now().date()
     fran = (idag - timedelta(days=dagar - 1)).isoformat()
     m = meriter._m(data)
     ovat = sorted(d for d in m.get("ovningsdagar", []) if d >= fran)
     rader = [f"Har pluggat {len(ovat)} av de senaste {dagar} dagarna."]
     for f in data.get("forhor", []):
-        if (f.get("klart") or "")[:10] >= fran and f.get("status") == "klart":
+        if (f.get("klart") or "")[:10] >= fran and f.get("status") == "klart" and _for_amne(lar, f.get("amne_namn")):
             n = len(f.get("fragor", []))
             ratt = sum(1 for x in f.get("svar", []) if x.get("ratt"))
             bed = {"godkant": " (godkänt)", "ej_godkant": " (inte godkänt än)"}.get(f.get("bedomning") or "", "")
             rader.append(f"Förhör {f.get('namn', '')}: {ratt} av {n} rätt{bed}.")
     for a in data.get("amnen", []):
+        if not _for_amne(lar, a.get("namn")):
+            continue
         for g in a.get("glosor", []):
             d = [x for x in g.get("ovat_dagar", []) if x >= fran]
             if d:
                 rader.append(f"{a['namn']}, {g['namn']}: övat {len(d)} dagar.")
     for u in data.get("uppdrag", []):
-        if u.get("typ") == "prov" and u.get("resultat") and (u["resultat"].get("tid") or "")[:10] >= fran:
+        if u.get("typ") == "prov" and u.get("resultat") and (u["resultat"].get("tid") or "")[:10] >= fran and _for_amne(lar, u.get("amne_namn")):
             r = u["resultat"]
             visa = f"{r['poang']:g} av {r['max']:g} poäng" if "max" in r else f"betyg {r.get('betyg', '')}"
             rader.append(f"Prov {u.get('namn', '')}: {visa}.")
     return {"namn": namn, "fran": fran, "till": idag.isoformat(), "rader": rader[:20]}
 
 
-def statistik(data: dict, veckor: int = 8) -> dict:
-    """Det läraren ser när statistiken är på: hur barnet pluggar, inga stjärnor eller husdjur."""
+def statistik(data: dict, veckor: int = 8, lar: dict | None = None) -> dict:
+    """Det läraren ser när statistiken är på: hur barnet pluggar, inga stjärnor eller husdjur. lar = ämneslärare: bara sitt ämne."""
+    lar = lar or {}
     idag = dt_util.now().date()
     start = idag - timedelta(days=idag.weekday() + 7 * (veckor - 1))
     fran = start.isoformat()
@@ -179,17 +257,19 @@ def statistik(data: dict, veckor: int = 8) -> dict:
         per_vecka.append({"vecka": v, "dagar": sum(1 for d in range(7) if (m + timedelta(days=d)).isoformat() in dagar)})
     forhor = []
     for f in data.get("forhor", []):
-        if (f.get("klart") or "")[:10] >= fran and f.get("status") == "klart":
+        if (f.get("klart") or "")[:10] >= fran and f.get("status") == "klart" and _for_amne(lar, f.get("amne_namn")):
             forhor.append({"namn": _text(f.get("namn"), 60), "datum": (f.get("klart") or "")[:10], "n": len(f.get("fragor", [])),
                            "ratt": sum(1 for x in f.get("svar", []) if x.get("ratt"))})
     prov = []
     for u in data.get("uppdrag", []):
         r = u.get("resultat")
-        if u.get("typ") == "prov" and r and (r.get("tid") or "")[:10] >= fran:
+        if u.get("typ") == "prov" and r and (r.get("tid") or "")[:10] >= fran and _for_amne(lar, u.get("amne_namn")):
             prov.append({"namn": _text(u.get("namn"), 60), "amne": _text(u.get("amne_namn"), 40), "datum": (r.get("tid") or "")[:10],
                          **({"poang": r["poang"], "max": r["max"]} if "max" in r else {"betyg": r.get("betyg", "")})})
     amnen = []
     for a in data.get("amnen", []):
+        if not _for_amne(lar, a.get("namn")):
+            continue
         d = {x for g in a.get("glosor", []) for x in g.get("ovat_dagar", []) if x >= fran}
         if d:
             amnen.append({"namn": _text(a.get("namn"), 40), "dagar": len(d)})
@@ -320,13 +400,19 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
     lid = _text(body.get("larar_id"), 40)
     if not lid:
         raise ValueError("Saknar lärare.")
-    lar = s.get("larare") or {}
-    if lar.get("id") and lar["id"] != lid:
-        raise PermissionError("Den här eleven är redan kopplad till en annan lärare.")
+    if lid in s.get("blockerade", []):
+        raise PermissionError("Föräldern har kopplat bort dig från den här eleven.")
     inst = body.get("inst") if isinstance(body.get("inst"), dict) else {}
-    s["larare"] = {"id": lid, "klass": _text(body.get("klass"), 40), "namn": _text(body.get("larare"), 60),
-                   "url": _text(body.get("url"), 80) if re.fullmatch(r"https?://[\w.\-]+(:\d+)?", _text(body.get("url"), 80)) else "",
-                   "inst": {k: bool(inst.get(k)) for k in FUNKTIONER}, "synkad": dt_util.now().isoformat(timespec="minutes")}
+    ny = lid not in s["lararna"]
+    if ny and len(s["lararna"]) >= 20:
+        raise ValueError("Eleven har redan många lärare kopplade.")
+    sk = body.get("skola") if isinstance(body.get("skola"), dict) else {}
+    lar = s["lararna"].setdefault(lid, {"dela": {}})
+    lar.update({"id": lid, "klass": _text(body.get("klass"), 40), "namn": _text(body.get("larare"), 60),
+                "url": _text(body.get("url"), 80) if re.fullmatch(r"https?://[\w.\-]+(:\d+)?", _text(body.get("url"), 80)) else "",
+                "inst": {k: bool(inst.get(k)) for k in FUNKTIONER}, "synkad": dt_util.now().isoformat(timespec="minutes"),
+                "amne": _text(body.get("amne"), 60), "roll": "amne" if body.get("roll") == "amne" else "mentor",
+                "skola": {"id": _text(sk.get("id"), 40), "namn": _text(sk.get("namn"), 60)} if sk.get("id") else None})
     nya = 0
     filer: list[tuple[str, bytes]] = []
     budget = [MAX_FILER_PER_SYNK * 4 // 3]
@@ -342,18 +428,18 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
                 return False
             post["fil"] = f[0]
             filer.append((f[0]["namn"], f[1]))
-        s["inkorg"].append({**post, "tid": nu, "status": "ny"})
+        s["inkorg"].append({**post, "tid": nu, "status": "ny", "larar_id": lid, "larare": lar["namn"]})
         s["mottagna"].append(post["id"])
         kanda.add(post["id"])
         nya += 1
         return True
 
-    if aktiv(s, "veckobrev"):
+    if aktiv(s, "veckobrev", lid):
         for b in (body.get("veckobrev") or [])[:10]:
             r = _rensa_brev(b)
             if r and r["id"] not in kanda:
                 in_korg({**r, "typ": "veckobrev"}, b.get("fil"))
-    if aktiv(s, "material"):
+    if aktiv(s, "material", lid):
         for m in (body.get("material") or [])[:10]:
             if not isinstance(m, dict) or not re.fullmatch(r"[A-Za-z0-9_\-]{4,40}", str(m.get("id") or "")) or m["id"] in kanda:
                 continue
@@ -371,37 +457,53 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
                 in_korg({**post, "typ": "schema"}, m["fil"])
             elif m.get("fil") is not None:
                 in_korg({**post, "typ": "material"}, m["fil"])
-    if aktiv(s, "riktlinjer"):
+    if aktiv(s, "riktlinjer", lid):
         for m in (body.get("riktlinjer") or [])[:20]:
             if isinstance(m, dict) and re.fullmatch(r"[A-Za-z0-9_\-]{4,40}", str(m.get("id") or "")) and m["id"] not in kanda and _text(m.get("text"), 600):
                 in_korg({"id": m["id"], "typ": "riktlinje", "titel": "Riktlinje till AI:n", "amne": _text(m.get("amne"), 40), "text": _text(m.get("text"), 600)}, None)
-    if aktiv(s, "klasslag") and isinstance(body.get("klass_status"), dict):
+    mentor_finns = any(x.get("roll") == "mentor" and x["id"] != lid and aktiv(s, "klasslag", x["id"]) for x in s["lararna"].values())
+    if aktiv(s, "klasslag", lid) and isinstance(body.get("klass_status"), dict) and (lar["roll"] == "mentor" or not mentor_finns):
         k = body["klass_status"]
         try:
             s["klass"] = {"namn": _text(k.get("namn"), 40), "vecka": _text(k.get("vecka"), 10), "ikon": _text(k.get("ikon"), 4),
                           "boss": _text(k.get("boss"), 40), "hp": max(1, min(10**7, int(k.get("hp") or 1))),
-                          "skada": max(0, min(10**7, int(k.get("skada") or 0))), "antal": max(0, min(1000, int(k.get("antal") or 0)))}
+                          "skada": max(0, min(10**7, int(k.get("skada") or 0))), "antal": max(0, min(1000, int(k.get("antal") or 0))), "larare": lid}
         except (TypeError, ValueError):
             pass
-    if aktiv(s, "grupper"):
+    if aktiv(s, "grupper", lid):
         gamla = {g["id"]: g for g in s["grupper"]}
-        ny = []
+        ny = [g for g in s["grupper"] if g.get("larare") and g.get("larare") != lid]  # andra lärares grupper ligger kvar
         for g in (body.get("grupper") or [])[:10]:
             if isinstance(g, dict) and re.fullmatch(r"[A-Za-z0-9_\-]{4,20}", str(g.get("id") or "")):
                 ny.append({"id": g["id"], "namn": _text(g.get("namn"), 40), "uppgift": _text(g.get("uppgift"), 1000), "datum": _text(g.get("datum"), 10),
-                           "medlemmar": [_text(x, 40) for x in (g.get("medlemmar") or [])][:40], "klar": (gamla.get(g["id"]) or {}).get("klar", "")})
+                           "medlemmar": [_text(x, 40) for x in (g.get("medlemmar") or [])][:40], "klar": (gamla.get(g["id"]) or {}).get("klar", ""),
+                           "larare": lid, "larare_namn": lar["namn"]})
         s["grupper"] = ny  # avslutade grupper försvinner hos eleven (läraren har dem i sin historik)
     namn = s["foralder"].get("namn") or barn_namn
     vecka = "{}-W{:02d}".format(*dt_util.now().date().isocalendar()[:2])
-    return {"v": 1, "namn": namn, "foralder": {k: bool(s["foralder"].get(k)) for k in FUNKTIONER}, "nya_veckobrev": nya,
-            "rapport": rapport(data, namn) if aktiv(s, "rapport") else None,
-            "klass": {"vecka": vecka, "poang": meriter._vecko_poang(data).get(vecka, 0)} if aktiv(s, "klasslag") else None,
-            "grupp_klara": [g["id"] for g in s["grupper"] if g.get("klar")] if aktiv(s, "grupper") else [],
-            "statistik": statistik(data) if aktiv(s, "statistik") else None,
-            "studieteknik": studieteknik if aktiv(s, "studieteknik") else None,
-            "schema": [{k: x.get(k) for k in ("dag", "start", "slut", "namn", "sal", "larare", "info", "ej")} for x in data.get("lektioner", [])][:80] if aktiv(s, "schema") else None,
-            "fran_foraldern": [x for x in s.get("utgaende", []) if aktiv(s, x["typ"])][-20:],
+    return {"v": 2, "namn": namn, "foralder": {k: delar(s, lid, k) for k in FUNKTIONER}, "nya_veckobrev": nya,
+            "rapport": rapport(data, namn, lar=lar) if aktiv(s, "rapport", lid) else None,
+            "klass": {"vecka": vecka, "poang": meriter._vecko_poang(data).get(vecka, 0)} if aktiv(s, "klasslag", lid) else None,
+            "grupp_klara": [g["id"] for g in s["grupper"] if g.get("klar") and g.get("larare") in (lid, None)] if aktiv(s, "grupper", lid) else [],
+            "statistik": statistik(data, lar=lar) if aktiv(s, "statistik", lid) else None,
+            "studieteknik": _studieteknik_for(studieteknik, lar) if aktiv(s, "studieteknik", lid) else None,
+            "schema": [{k: x.get(k) for k in ("dag", "start", "slut", "namn", "sal", "larare", "info", "ej")} for x in data.get("lektioner", [])][:80] if aktiv(s, "schema", lid) else None,
+            "fran_foraldern": [x for x in s.get("utgaende", []) if aktiv(s, x["typ"], lid) and (not x.get("till") or lid in x["till"])][-20:],
+            # elevens lärare (namn, ämne, roll) så att lärarna vet vem som är mentor, och samma elev-id för hela skolan
+            "lararna": [{"id": x["id"], "namn": x["namn"], "amne": x.get("amne") or "", "roll": x.get("roll") or "mentor"} for x in s["lararna"].values()],
+            "elev_id": elev_id(s),
             "mottagna": s["mottagna"][-100:], "_filer": filer}
+
+
+def _studieteknik_for(t: dict | None, lar: dict) -> dict | None:
+    """En ämneslärare får de allmänna studievanorna och det som gäller sitt ämne."""
+    if not t or lar.get("roll") != "amne" or not lar.get("amne"):
+        return t
+    ut = dict(t)
+    for k in ("svaga_punkter", "planer", "riktlinjer"):
+        ut[k] = [x for x in (t.get(k) or []) if _for_amne(lar, x.get("amne"))]
+    ut["svart"] = [x for x in (t.get("svart") or []) if any(_amne_lika(w, lar["amne"]) for w in re.findall(r"[A-Za-zÅÄÖåäö]+", str(x)))]
+    return ut
 
 
 def klassboss_belona(data: dict, s: dict) -> bool:

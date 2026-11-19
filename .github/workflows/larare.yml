@@ -38,18 +38,58 @@ jobs:
           $version = (Select-String -Path larare/skolan_larare/__init__.py -Pattern 'VERSION = "(.+)"').Matches[0].Groups[1].Value
           & $iscc "/DVERSION=$version" larare/windows/larare.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Fingeravtryck: appen installerar bara filer som stämmer med det
+          Get-ChildItem larare/windows/Output/*.exe | ForEach-Object {
+            (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $_.Name | Out-File -Encoding ascii -NoNewline ($_.FullName + ".sha256")
+          }
+
+      - name: Provinstallera tyst per användare (som en automatisk uppdatering)
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem larare/windows/Output/*.exe)[0].FullName
+          Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Laxspelet Larare\SkolanLarare.exe'
+          if (-not (Test-Path $exe)) { Write-Error "Installerades inte per användare: $exe"; exit 1 }
+          Write-Host "✓ installerad i $exe"
+          Start-Sleep -Seconds 5
+          Get-Process SkolanLarare -ErrorAction SilentlyContinue | Stop-Process -Force
+          python larare/windows/provkor.py $exe
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          $fil = (Get-Content "$setup.sha256").Split(' ')[0]
+          if ($hash -ne $fil) { Write-Error "Fingeravtrycket stämmer inte"; exit 1 }
+          Write-Host "✓ fingeravtrycket stämmer"
 
       - uses: actions/upload-artifact@v4
         with:
           name: Skolan-Larare-Setup
-          path: larare/windows/Output/*.exe
+          path: larare/windows/Output/*
 
       - name: Publicera (vid ny lärarversion)
         if: startsWith(github.ref, 'refs/tags/larare-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: larare/windows/Output/*.exe
+          files: |
+            larare/windows/Output/*.exe
+            larare/windows/Output/*.sha256
           prerelease: true
           body: |
             Förhandsversion av Skolan Lärare för Windows: veckobrev, klasslag, grupper och historik.
             Windows kan varna för att programmet är okänt (det är inte signerat): tryck "Mer information" → "Kör ändå".
+            Från 0.8.0 installeras appen per användare och uppdaterar sig själv tyst. Första gången frågar Windows en gång om brandväggen.
+
+      # Lägg också den nya lärarappen på senaste familjeversionens sida (med fast namn), så att länken
+      # .../releases/latest/download/Laxspelet-Larare-Setup.exe alltid ger senaste lärarappen.
+      - name: Lägg lärarappen på senaste versionens sida
+        if: startsWith(github.ref, 'refs/tags/larare-v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ut = "larare/windows/Output"
+          $setup = (Get-ChildItem "$ut/Skolan-Larare-Setup-*.exe")[0]
+          Copy-Item $setup.FullName "$ut/Laxspelet-Larare-Setup.exe"
+          $senaste = gh release view --repo ${{ github.repository }} --json tagName --jq .tagName
+          $gamla = gh release view $senaste --repo ${{ github.repository }} --json assets --jq '.assets[].name' | Where-Object { $_ -like "Skolan-Larare-Setup-*" }
+          foreach ($g in $gamla) { gh release delete-asset $senaste $g --repo ${{ github.repository }} --yes }
+          gh release upload $senaste "$($setup.FullName)" "$($setup.FullName).sha256" "$ut/Laxspelet-Larare-Setup.exe" --repo ${{ github.repository }} --clobber
+          Write-Host "✓ lärarappen ligger nu också på $senaste"

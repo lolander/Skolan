@@ -49,6 +49,11 @@ try:
     except urllib.error.HTTPError as err:
         assert err.code == 400
     print("✓ klasslänkar till lokala adresser stoppas")
+    u = json.loads(anrop("/api/uppdatering"))
+    assert u["version"] == lage["version"] and u["lage"] in ("automatisk", "manuell"), u
+    l = json.loads(anrop("/api/lage"))
+    assert "windows" in l, l
+    print("✓ uppdateringar och Windows-status")
     print("ALLT OK")
 finally:
     proc.terminate()

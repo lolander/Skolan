@@ -2356,7 +2356,13 @@ class SkolanPanel extends HTMLElement {
     const d = v.d;
     if (!d) return `<p class="muted">Laddar…</p>`;
     const lp = d.lapp || {};
-    const viaApp = (f) => d.kan[f] ? `<button class="mini primary" data-lr="${f}_skicka">🏫 Skicka via lärarappen${d.larare ? ` till ${esc(d.larare)}` : ""}</button>` : "";
+    const viaApp = (f) => {
+      const m = d.mottagare?.[f] || [];
+      if (!d.kan[f] || !m.length) return "";
+      if (m.length === 1) return `<button class="mini primary" data-lr="${f}_skicka" data-lr-till="${m[0].id}">🏫 Skicka via lärarappen till ${esc(m[0].namn)}</button>`;
+      return `<select class="mini" id="lr-till-${f}">${m.map((x) => `<option value="${x.id}">${esc(x.namn)} (${x.roll === "amne" ? esc(x.amne || "ämneslärare") : "mentor"})</option>`).join("")}<option value="">Alla ${m.length} lärare</option></select>
+        <button class="mini primary" data-lr="${f}_skicka">🏫 Skicka via lärarappen</button>`;
+    };
     const lapp = `<div class="card hjalp-kort"><div class="djur-rubrik">✉️ Veckans lapp: det som var svårt</div>
       <div class="small muted">En kort lapp till läraren om det ${esc(s.namn)} har tyckt varit svårt, så att läraren kan ta upp det igen. Varje fredag kl. 15 skriver AI:n ett utkast om något var svårt, och du får en notis. Inget skickas utan att du gör det.</div>
       ${lp.aktuell && lp.status === "skickad" ? `<div class="lar-beloning">✅ Veckans lapp är skickad.</div>` : ""}
@@ -3562,20 +3568,31 @@ class SkolanPanel extends HTMLElement {
     if (!k) return `<p class="muted">Hämtar…</p>`;
     const f = k.foralder || {}, lar = k.larare, inst = lar?.inst || {};
     const vd = ["mån", "tis", "ons", "tor", "fre", "lör", "sön"];
-    const larText = (id) => id === "mejl" && !lar ? "inte kopplad (ditt val räcker)" : !lar ? "inte kopplad än" : inst[id] ? "✅ på" : "❌ av";
+    const lararna = k.lararna || [];
+    const larText = (id) => id === "mejl" ? (lararna.length ? (lararna.every((x) => x.inst?.mejl !== false) ? "✅ på" : "❌ av") : "inte kopplad (ditt val räcker)")
+      : !lararna.length ? "inte kopplad än" : lararna.map((x) => `${esc(x.namn || "Läraren")} ${x.inst?.[id] ? "✅" : "❌"}`).join(" · ");
+    const roll = (x) => (x.roll === "amne" ? `ämneslärare${x.amne ? ` i ${esc(x.amne)}` : ""}` : `mentor${x.amne ? ` (${esc(x.amne)})` : ""}`);
+    const larKort = lararna.length ? `<div class="card"><b>🏫 ${esc(s.namn)}s lärare</b>
+        <div class="small muted">Alla lärare synkar med samma klasslänk. Mentorn får allt du delar. En ämneslärare får bara sitt eget ämne i rapporter, statistik och studieteknik. Du kan ändra vad varje lärare får.</div>
+        ${lararna.map((x) => `<details class="sk-larare"><summary><b>${esc(x.namn || "Läraren")}</b> · ${roll(x)}${x.klass ? ` · ${esc(x.klass)}` : ""}${x.skola?.namn ? ` · ${esc(x.skola.namn)}` : ""}
+            <span class="small muted"> · synkad ${esc((x.synkad || "").replace("T", " "))}</span></summary>
+          ${k.funktioner.filter((fn) => fn.id !== "mejl").map((fn) => `<label class="kap-rad small"><input type="checkbox" data-sk-lf="${x.id}|${fn.id}" ${x.dela?.[fn.id] ? "checked" : ""} ${this._busy ? "disabled" : ""}> ${fn.ikon} ${esc(fn.namn)} ${x.inst?.[fn.id] ? "" : `<span class="muted">(läraren har den av)</span>`}</label>`).join("")}
+          <button class="mini" data-sk-bort="${x.id}">Koppla bort ${esc(x.namn || "läraren")}</button></details>`).join("")}</div>` : "";
     const sm = k.smtp || {};
     return `<p class="small muted">Du och läraren bestämmer tillsammans. En funktion är bara på när <b>båda</b> har slagit på den: du här och läraren i lärarappen.</p>
-      <div class="card"><b>Vad ska vara på?</b>
+      ${larKort}
+      <div class="card"><b>Vad ska vara på?</b>${lararna.length > 1 ? `<div class="small muted">Det här är standardvalet för alla lärare. Ändra för en viss lärare ovan.</div>` : ""}
         ${k.funktioner.map((x) => `<div class="sk-rad"><label class="kap-rad"><input type="checkbox" data-sk-f="${x.id}" ${f[x.id] ? "checked" : ""} ${this._busy ? "disabled" : ""}> ${x.ikon} <b>${esc(x.namn)}</b></label>
           <div class="small muted">${esc(x.info)}</div>
-          <div class="small">Läraren: ${larText(x.id)} · ${k.aktiv[x.id] ? "<b>🟢 Aktiv</b>" : "⚪ Inte aktiv"}</div></div>`).join("")}</div>
+          <div class="small">${lararna.length > 1 ? "Lärarna" : "Läraren"}: ${larText(x.id)} · ${k.aktiv[x.id] ? "<b>🟢 Aktiv</b>" : "⚪ Inte aktiv"}</div></div>`).join("")}</div>
       <div class="card"><b>Läraren</b>
         <label class="small">Namnet läraren ser <input id="sk-namn" maxlength="40" value="${esc(f.namn || "")}" placeholder="${esc(s.namn)}"></label>
         <label class="small">Lärarens e-post <input id="sk-mejl" type="email" value="${esc(f.mejl_till || "")}" placeholder="larare@skolan.se"></label>
         <div class="small">Skicka e-postrapporten dessa dagar kl. 18:</div>
         <div class="lag-marken">${vd.map((d, i) => `<label><input type="checkbox" data-sk-dag="${i}" ${(f.mejl_dagar || []).includes(i) ? "checked" : ""}> ${d}</label>`).join("")}</div>
         <button class="primary" id="sk-spara">💾 Spara</button>
-        ${lar ? `<div class="small" style="margin-top:8px">🏫 Kopplad till <b>${esc(lar.namn || "läraren")}</b>${lar.klass ? `, ${esc(lar.klass)}` : ""} · senast synkad ${esc((lar.synkad || "").replace("T", " "))}</div><button class="mini" id="sk-koppla-bort">Koppla bort läraren</button>` : ""}
+        ${lararna.length ? `<button class="mini" id="sk-koppla-bort">Koppla bort alla lärare (ny klasslänk)</button>` : ""}
+        <div class="small" style="margin-top:8px">👩‍🏫 <b>Lärarappen</b> (gratis, Windows): ge läraren länken <a href="https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe" target="_blank" rel="noopener">Laxspelet-Larare-Setup.exe</a> <button class="mini" id="sk-larlank">📋 Kopiera länken</button></div>
         <div class="small" style="margin-top:8px"><b>Klasslänk</b> (läraren behöver den för att synka; eleven skickar den när hen ansluter på lektionen)</div>
         ${k.lank ? `<div class="small muted" style="word-break:break-all">${esc(k.lank)}</div><button class="mini" id="sk-kopiera">📋 Kopiera</button>` : `<div class="small muted">${k.kan_nas ? "Slå på något ovan först." : "Home Assistant behöver gå att nå utifrån (t.ex. Nabu Casa)."}</div>`}</div>
       ${k.inkorg?.length ? `<h3>📬 Från läraren</h3><ul class="lista">${k.inkorg.map((x) => this._inkorgRad(x)).join("")}</ul>` : ""}
@@ -7859,7 +7876,10 @@ class SkolanPanel extends HTMLElement {
       mejl_dagar: [...r.querySelectorAll("[data-sk-dag]")].filter((x) => x.checked).map((x) => Number(x.dataset.skDag)) }, "Sparat ✅"));
     on("#sk-smtp", () => this._skolaAct({ op: "smtp", server: $("#smtp-server")?.value, port: $("#smtp-port")?.value, anvandare: $("#smtp-anv")?.value, fran: $("#smtp-fran")?.value, losen: $("#smtp-losen")?.value }, "E-posten är inställd ✅"));
     on("#sk-test", () => this._skolaAct({ op: "mejl_test", till: $("#sk-test-till")?.value || "" }, "Testmejlet är skickat 📧"));
-    on("#sk-koppla-bort", () => { if (confirm("Koppla bort läraren? Klasslänken byts ut och läraren behöver koppla in eleven igen.")) this._skolaAct({ op: "koppla_bort" }, "Läraren är bortkopplad."); });
+    on("#sk-koppla-bort", () => { if (confirm("Koppla bort alla lärare? Klasslänken byts ut och lärarna behöver koppla in eleven igen.")) this._skolaAct({ op: "koppla_bort" }, "Lärarna är bortkopplade."); });
+    r.querySelectorAll("[data-sk-bort]").forEach((b) => b.addEventListener("click", () => { if (confirm("Koppla bort den här läraren? Hen kan inte synka med eleven längre. De andra lärarna påverkas inte.")) this._skolaAct({ op: "koppla_bort", larare: b.dataset.skBort }, "Läraren är bortkopplad."); }));
+    r.querySelectorAll("[data-sk-lf]").forEach((b) => b.addEventListener("change", () => { const [lid, fn] = b.dataset.skLf.split("|"); this._skolaAct({ op: "installningar", larare: lid, [fn]: b.checked }); }));
+    on("#sk-larlank", () => navigator.clipboard?.writeText("https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe").then(() => { this._msg = { type: "ok", text: "Länken till lärarappen är kopierad 📋" }; this._render(); }));
     on("#sk-kopiera", () => navigator.clipboard?.writeText(this._s.skola?.lank || "").then(() => { this._msg = { type: "ok", text: "Klasslänken är kopierad 📋" }; this._render(); }));
     r.querySelectorAll("[data-rep]").forEach((b) => b.addEventListener("click", () => { const [am, gl] = b.dataset.rep.split("|"); this._go({ name: "glosor", amne: am, glosor: gl }); }));
     on("#open-fokus", () => this._go({ name: "fokus" }));
@@ -8235,7 +8255,11 @@ class SkolanPanel extends HTMLElement {
       };
       $("#lr-text")?.addEventListener("input", (e) => { v.text = e.target.value; });
       $("#lr-omai")?.addEventListener("input", (e) => { v.omai = e.target.value; });
-      r.querySelectorAll("[data-lr]").forEach((b) => b.addEventListener("click", () => lrAct(b.dataset.lr)));
+      r.querySelectorAll("[data-lr]").forEach((b) => b.addEventListener("click", () => {
+        const op = b.dataset.lr, f = op.split("_")[0];
+        const till = b.dataset.lrTill ?? $(`#lr-till-${f}`)?.value;
+        lrAct(op, op.endsWith("_skicka") ? { till: till ? [till] : [] } : {});
+      }));
       on("#lr-mejl-spara", () => lrAct("mejl", { mejl: $("#lr-mejl")?.value || "" }));
       const textFor = (k) => (k === "lapp" ? v.text : v.omai ?? v.d?.om_ai) || "";
       r.querySelectorAll("[data-lr-dela]").forEach((b) => b.addEventListener("click", async () => {
@@ -10074,6 +10098,7 @@ const CSS = `
   .las-om p { line-height:1.6; font-size:17px; }
   .las-alt { display:grid; gap:6px; margin-top:8px; } .las-alt button { text-align:left; padding:10px 12px; border-radius:10px; border:2px solid transparent; background:var(--secondary-background-color); color:var(--primary-text-color); cursor:pointer; font-size:15px; }
   .las-alt button.vald { border-color:var(--primary-color); } .las-alt button.ratt { background:#4fc98a; color:#fff; } .las-alt button.fel { background:#f44336; color:#fff; }
+  .sk-larare { border-top:1px solid var(--divider-color); padding:8px 0; } .sk-larare summary { cursor:pointer; }
   .hj-dag { display:flex; align-items:center; gap:10px; padding:8px 4px; border-bottom:1px solid var(--divider-color); } .hj-dag > span:nth-child(2) { flex:1; }
   .hj-dag.klar { opacity:.75; } .hj-ikon { font-size:28px; }
   .hj-fri { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; margin-top:8px; }

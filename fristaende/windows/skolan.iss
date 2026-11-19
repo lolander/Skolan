@@ -1,18 +1,22 @@
 ; Inno Setup: bygger Skolan-Setup-<version>.exe av dist\Skolan.  ISCC /DVERSION=1.28.0 skolan.iss
+; Från 1.95.0 installeras appen per användare (ingen administratör), så att den kan uppdatera sig själv tyst.
+; Brandväggsregeln skapas av appen själv första gången den startar (Windows frågar en gång).
 #ifndef VERSION
   #define VERSION "0.0.0"
 #endif
 
 [Setup]
-AppId={{6E3F2B1A-5C4D-4E8F-9A7B-1C2D3E4F5A6B}
+AppId={{0C7A9E52-3B1D-4F86-A2E4-5D9B7C1F3A60}
 AppName=Läxspelet
 AppVersion={#VERSION}
 AppPublisher=Skolan
 AppPublisherURL=https://github.com/lolander/Skolan
-DefaultDirName={autopf}\Skolan
+DefaultDirName={localappdata}\Programs\Laxspelet
 DefaultGroupName=Läxspelet
 DisableProgramGroupPage=yes
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
+DisableDirPage=yes
+UsePreviousAppDir=no
 OutputDir=Output
 OutputBaseFilename=Skolan-Setup-{#VERSION}
 SetupIconFile=skolan.ico
@@ -46,20 +50,15 @@ Name: "{autodesktop}\Läxspelet"; Filename: "{app}\Skolan.exe"; Tasks: skrivbord
 Name: "{userstartup}\Läxspelet"; Filename: "{app}\Skolan.exe"; Parameters: "--tyst"; Tasks: autostart
 
 [Run]
-; Låt mobiler i hemmanätverket nå Skolan (bara privata nätverk, inte publika wifi).
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Skolan"""; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Skolan"" dir=in action=allow program=""{app}\Skolan.exe"" enable=yes profile=private"; Flags: runhidden
-Filename: "{app}\Skolan.exe"; Description: "Starta Läxspelet nu"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\Skolan.exe"; Description: "Starta Läxspelet nu"; Flags: nowait postinstall skipifsilent
 ; Uppdatering inifrån appen (tyst installation): starta Skolan igen när den är klar.
-Filename: "{app}\Skolan.exe"; Parameters: "--tyst"; Flags: nowait runasoriginaluser; Check: WizardSilent
+Filename: "{app}\Skolan.exe"; Parameters: "--tyst"; Flags: nowait; Check: WizardSilent
 
 [UninstallRun]
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Skolan"""; Flags: runhidden; RunOnceId: "brandvagg"
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM Skolan.exe"; Flags: runhidden; RunOnceId: "stoppa"
 
 [Code]
-// Stäng Skolan (ikonen vid klockan) innan filerna byts. Körs först när Windows har sagt ja,
-// så om någon säger nej fortsätter Skolan som vanligt.
+// Stäng Skolan (ikonen vid klockan) innan filerna byts.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   R: Integer;
