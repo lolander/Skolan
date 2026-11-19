@@ -47,7 +47,10 @@ jobs:
         shell: pwsh
         run: |
           $setup = (Get-ChildItem fristaende/windows/Output/*.exe)[0].FullName
-          Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          # Vänta bara på installationsprogrammet (inte appen som det startar efteråt)
+          $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+          if (-not $p.WaitForExit(300000)) { Write-Error "Installationen tog för lång tid"; exit 1 }
+          if ($p.ExitCode -ne 0) { Write-Error "Installationen misslyckades ($($p.ExitCode))"; exit 1 }
           $exe = Join-Path $env:LOCALAPPDATA 'Programs\Laxspelet\Skolan.exe'
           if (-not (Test-Path $exe)) { Write-Error "Installerades inte per användare: $exe"; exit 1 }
           Write-Host "✓ installerad i $exe"

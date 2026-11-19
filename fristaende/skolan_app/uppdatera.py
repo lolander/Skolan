@@ -231,7 +231,8 @@ for ($i = 0; $i -lt 6; $i++) {{
 }}
 if ($ok) {{ "$(Get-Date) OK {ny_version}" | Out-File -Append -FilePath '{logg}'; exit 0 }}
 "$(Get-Date) {ny_version} svarar inte, installerar {self.version} igen" | Out-File -Append -FilePath '{logg}'
-Start-Process -FilePath '{tillbaka}' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+$p = Start-Process -FilePath '{tillbaka}' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+$null = $p.WaitForExit(600000)
 """
         skript = self.mapp / "uppdatering" / "vakt.ps1"
         skript.write_text(ps, encoding="utf-8-sig")
