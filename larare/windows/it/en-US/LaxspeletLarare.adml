@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>Laxspelet Larare (teacher app)</displayName>
+  <description>Settings that school IT locks for Laxspelet Larare.</description>
+  <resources>
+    <stringTable>
+      <string id="SUPPORTED_0_10">Laxspelet Larare 0.10.0 or later</string>
+      <string id="Laxspelet">Laxspelet Larare</string>
+      <string id="MaxNiva">Highest permission level</string>
+      <string id="MaxNiva_Help">The highest level teachers on this computer can get, regardless of the principal's decision in the app.
+
+Level 0: no personal data about pupils. Newsletters, study material, class team and class insight (totals only, at least 5 families). Families are shown as "Familj 1, 2, 3 ...".
+Level 1: as level 0, plus pupils' names, groups and timetables.
+Level 2: as level 1, plus data about individual pupils that guardians choose to share (reports, statistics, notes, test results).
+
+When the level is lowered, the app immediately deletes copies of pupil data that are no longer allowed.
+If the policy is set for both computer and user, the lowest level applies.
+
+Recommended: level 0 until the data protection officer has made an assessment.
+More (Swedish): https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md</string>
+      <string id="Niva0">Level 0: no personal data (recommended)</string>
+      <string id="Niva1">Level 1: pupil names</string>
+      <string id="Niva2">Level 2: data about individual pupils</string>
+      <string id="Uppdateringar">Updates</string>
+      <string id="Uppdateringar_Help">How Laxspelet Larare is updated.
+
+Automatic: the app downloads new versions from the project's GitHub page and installs them silently when not in use. Files are only installed if their SHA-256 fingerprint matches.
+Ask: the teacher sees that a new version exists and installs it.
+Off: the app never contacts GitHub. IT distributes new versions.
+
+Installations for all users (/ALLUSERS) or from Microsoft Store never update themselves.</string>
+      <string id="Automatisk">Automatic</string>
+      <string id="Manuell">Ask the teacher</string>
+      <string id="Av">Off (IT distributes)</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="MaxNiva">
+        <dropdownList refId="MaxNiva" noSort="true" defaultItem="0">Highest level:</dropdownList>
+      </presentation>
+      <presentation id="Uppdateringar">
+        <dropdownList refId="Uppdateringar" noSort="true" defaultItem="2">Updates:</dropdownList>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

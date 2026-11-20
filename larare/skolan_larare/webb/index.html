@@ -183,7 +183,9 @@ function behorighet() {
     <p class="small" style="margin-top:10px">${b.skyddad ? "🔒 Klassens data på datorn är krypterad med ditt Windows-konto." : b.kan_skydda ? "⚠️ Klassens data kunde inte krypteras på den här datorn." : "ℹ️ Klassens data krypteras när appen körs i Windows."} Synken med kollegorna är krypterad.</p>
     ${b.dolda.summa ? `<div class="msg fel">Det finns ${b.dolda.summa} sparade uppgifter som din behörighet inte längre tillåter (${[b.dolda.anteckningar && `${b.dolda.anteckningar} anteckningar`, b.dolda.prov && `${b.dolda.prov} provresultat`, b.dolda.historik && `${b.dolda.historik} rader i historiken`].filter(Boolean).join(", ")}). De syns inte och skickas inte. <button class="m" id="beh-radera">🗑️ Radera dem</button></div>` : ""}</div>`;
   const radera = `<div class="kort"><h3>🗑️ Gallring</h3><p class="small muted">Radera alla elevuppgifter på den här datorn, t.ex. när läsåret är slut: elever, provresultat, anteckningar, grupper, klassens insikt och historiken. Inställningarna, veckobreven och skolan finns kvar. Avinstallation tar inte bort datan, gör det här först.</p>
-    <button class="m" id="beh-gallra">🗑️ Radera klassens data</button> <a class="small" href="https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md" target="_blank" rel="noopener">📄 Information till skolor och dataskyddsombud</a></div>`;
+    <button class="m" id="beh-gallra">🗑️ Radera klassens data</button> <a class="small" href="https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md" target="_blank" rel="noopener">📄 Information till skolor och dataskyddsombud</a></div>
+    <div class="kort"><h3>🧾 Underlag till dataskyddsombudet</h3><p class="small muted">En sida att skriva ut eller spara som PDF: hur appen är inställd här, lärarnas nivåer, registerförteckningen ifylld efter de nivåer som används, och rektorns beslutslogg. Inga uppgifter om elever följer med.</p>
+    <button class="m" id="beh-underlag">🧾 Skapa underlag</button></div>`;
   if (!s) return min + radera + `<div class="kort"><h2>👩‍💼 Rektor</h2><p>Du är inte med i någon skola, så nivå 0 gäller. Under 🏫 Skolan kan du skapa en skola. Den som skapar skolan blir rektor i appen och bestämmer vad lärarna får göra.</p></div>` + nivaer;
   if (!r) return min + radera + `<div class="kort"><h2>👩‍💼 Rektor</h2><p>${esc(s.namn)} har ingen rektor i appen än, så alla lärare har nivå 0.</p>
     <button class="p" id="beh-bli">👩‍💼 Bli skolans rektor</button><p class="small muted">Rektorn bestämmer vad varje lärare får. Ta bara rollen om du ska ansvara för det på skolan (oftast rektorn eller den rektorn utser). Rollen kan lämnas över senare.</p></div>` + nivaer;
@@ -202,6 +204,48 @@ function behorighet() {
       <div><button class="m" id="beh-overlat">👩‍💼 Lämna över</button></div></div><p class="small muted">Den nya rektorn tar över direkt. Du blir vanlig lärare.</p>` : `<p class="small muted">Inga kollegor i skolan än.</p>`}</div>
     <div class="kort"><h3>📜 Beslutslogg</h3><p class="small muted">Alla beslut om behörigheter, till exempel för dataskyddsombudet. <a href="/api/beslut.csv">⬇️ Ladda ner (Excel/CSV)</a></p>
       ${r.beslut.slice(0, 50).map((x) => `<div class="small" style="padding:4px 0;border-bottom:1px solid var(--rand)">${esc(x.tid)} · <b>${esc(x.av)}</b> · ${esc(x.text)}</div>`).join("")}</div>` + nivaer;
+}
+// Skolans eget underlag (registerförteckning, nivåer, beslutslogg). Byggs här i webbläsaren och innehåller inga elevuppgifter.
+function underlagSida() {
+  const b = L.behorighet, s = L.skola, r = s?.rektor, R = b.rattigheter, N = b.nivaer;
+  const niva = (ratt) => Math.max(0, ...(ratt || []).map((k) => (R[k] || [0])[0]));
+  const lar = [{ namn: L.larare || "Läraren", roll: L.roll, amne: L.amne, ratt: b.ratt }, ...(s?.medlemmar || [])];
+  const hogst = Math.max(...lar.map((m) => niva(m.ratt)));
+  const idag = new Date().toLocaleDateString("sv-SE");
+  const rad = (a, c) => `<tr><th>${a}</th><td>${c}</td></tr>`;
+  const reg = hogst === 0 ? `<p>Alla lärare har <b>nivå 0</b>. Lärarappen behandlar då inga personuppgifter om elever: familjerna visas som "Familj 1, 2, 3 …" och klassens insikt består bara av summor (minst 5 familjer). Det som behandlas är lärarnas egna namn och skolans namn, för att lärarna ska kunna samarbeta.</p>`
+    : `<table>${rad("Ändamål", "Planera undervisning och grupparbeten. Kommunicera läxor och material till vårdnadshavare." + (hogst >= 2 ? " Följa upp elevens studier hemma i samarbete med vårdnadshavaren. Underlag till utvecklingssamtal." : ""))}
+      ${rad("Rättslig grund", "Uppgift av allmänt intresse (artikel 6.1 e), skollagen. <i>Skolan avgör.</i>")}
+      ${rad("Registrerade", hogst >= 2 ? "Elever, vårdnadshavare (det de skriver), lärare" : "Elever, lärare")}
+      ${rad("Uppgifter", hogst >= 2 ? "Namn, grupptillhörighet, schema, och det vårdnadshavaren delar: studievanor, provresultat, lappar. Lärarens anteckningar." : "Namn, grupptillhörighet, schema")}
+      ${rad("Mottagare", "Elevens vårdnadshavare (via familjens Läxspelet)" + (hogst >= 2 ? ", elevens mentor på skolan" : ""))}
+      ${rad("Tredje land", "Nej. Lärarappen skickar inget till molntjänster och använder ingen AI.")}
+      ${rad("Lagring", "Lärarens dator, " + (b.skyddad ? "krypterad med lärarens Windows-konto (DPAPI)" : "<b>inte krypterad på den här datorn</b>"))}
+      ${rad("Gallring", "Enligt skolans dokumenthanteringsplan, med funktionen Radera klassens data")}
+      ${rad("Säkerhet", "Se avsnitt 5 i Information till skolor. Synken mellan lärare är krypterad (AES-256-GCM), rektorns beslut är signerade (Ed25519).")}</table>`;
+  const html = `<!doctype html><html lang="sv"><head><meta charset="utf-8"><title>Underlag Läxspelet Lärare ${esc(idag)}</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;max-width:800px;margin:24px auto;padding:0 16px;color:#111}h1{font-size:22px}h2{font-size:17px;margin-top:24px;border-bottom:2px solid #ddd}
+table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;padding:4px 8px;border-bottom:1px solid #eee}th{width:30%}.muted{color:#666;font-size:12px}@media print{button{display:none}}</style></head><body>
+<button onclick="print()">🖨️ Skriv ut / spara som PDF</button>
+<h1>Underlag: Läxspelet Lärare</h1>
+<p class="muted">Skapat ${esc(idag)} av ${esc(L.larare || "läraren")}${s ? ` · ${esc(s.namn)}` : ""}${L.klass ? ` · klass ${esc(L.klass)}` : ""} · lärarappen ${esc(L.version)}. Underlaget innehåller inga uppgifter om elever.</p>
+<h2>1. Inställningar på den här datorn</h2><table>
+${rad("Rektor i appen", r ? esc(r.namn) : "Ingen. Då har alla lärare nivå 0.")}
+${rad("Låst av IT", b.it_max != null ? `Högst nivå ${b.it_max} (grupprincip)` : "Nej")}
+${rad("Data på datorn", b.skyddad ? "Krypterad med lärarens Windows-konto (DPAPI)" : b.kan_skydda ? "Kunde inte krypteras" : "Krypteras när appen körs i Windows")}
+${rad("Uppdateringar", L.uppdatering ? ({ store: "Microsoft Store", alla: "IT (installerad för alla användare)" }[L.uppdatering.installation] || { automatisk: "Automatiska från GitHub, med kontroll av fingeravtryck", manuell: "Läraren uppdaterar själv", av: "Av (IT distribuerar)" }[L.uppdatering.lage]) : "–")}
+${rad("Påslagna funktioner", Object.entries(L.inst).filter(([, v]) => v).map(([k]) => esc(L.funktioner[k]?.namn || L.funktioner[k] || k)).join(", ") || "Inga")}
+${rad("Kopplade familjer", String(L.elever.length))}</table>
+<h2>2. Lärarnas behörigheter</h2><table><tr><th>Lärare</th><td><b>Nivå och rättigheter</b></td></tr>
+${lar.map((m) => rad(esc(m.namn) + `<br><span class="muted">${m.roll === "amne" ? "ämneslärare" + (m.amne ? " i " + esc(m.amne) : "") : "mentor"}</span>`,
+  `<b>${esc(N[niva(m.ratt)][0])}: ${esc(N[niva(m.ratt)][1])}</b><br><span class="muted">${Object.keys(R).filter((k) => (m.ratt || []).includes(k)).map((k) => esc(R[k][1])).join(" · ")}</span>`)).join("")}</table>
+${r ? `<p class="muted">Standard för lärare utan eget beslut: ${esc(N[niva(r.standard)][0])}.</p>` : ""}
+<h2>3. Registerförteckning (artikel 30)</h2><p class="muted">Ifylld efter den högsta nivå som används: nivå ${hogst}. Huvudmannen är personuppgiftsansvarig och avgör.</p>${reg}
+<h2>4. Rektorns beslutslogg</h2>${r && r.beslut.length ? `<table>${r.beslut.map((x) => rad(esc(x.tid), `<b>${esc(x.av)}</b>: ${esc(x.text)}`)).join("")}</table>` : "<p>Inga beslut.</p>"}
+<h2>5. Gallring</h2><p>Läraren raderar alla elevuppgifter i appen med <i>🔐 Behörighet → Radera klassens data</i>. Historik sparas högst 5 000 rader, anteckningar 1 000 och meddelanden 300. Klassens insikt gäller bara innevarande vecka.</p>
+<p class="muted">Mer: Information till skolor, IT och dataskyddsombud, https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md</p></body></html>`;
+  const w = window.open(URL.createObjectURL(new Blob([html], { type: "text/html" })), "_blank");
+  if (!w) alert("Webbläsaren stoppade fönstret. Tillåt popup-fönster för appen och försök igen.");
 }
 function veckobrev() {
   return `${av("veckobrev")}<div class="kort"><h2>Nytt veckobrev</h2>${pamin(P.utskick)}
@@ -556,7 +600,7 @@ function inst() {
   const u = L.uppdatering;
   const uppd = u ? `<div class="kort"><h2>🔄 Uppdateringar</h2>
     <p>Du har version <b>${esc(u.version)}</b>${u.ny ? ` · ny version: <b>${esc(u.senaste)}</b> 🆕` : u.senaste ? " · ✅ det är den senaste" : ""}</p>
-    ${u.it_last ? `<div class="msg ok">🏛️ Skolans IT har låst uppdateringarna: <b>${{ automatisk: "automatiska", manuell: "du trycker själv", av: "IT sköter uppdateringarna" }[u.lage]}</b>.</div>` : `
+    ${u.installation === "store" ? `<div class="msg ok">🛍️ Appen kommer från Microsoft Store. Store sköter uppdateringarna.</div>` : u.installation === "alla" ? `<div class="msg ok">🏛️ Appen är installerad för alla användare av skolans IT. IT sköter uppdateringarna.</div>` : u.it_last ? `<div class="msg ok">🏛️ Skolans IT har låst uppdateringarna: <b>${{ automatisk: "automatiska", manuell: "du trycker själv", av: "IT sköter uppdateringarna" }[u.lage]}</b>.</div>` : `
     <div class="chk"><input type="radio" name="u-lage" value="automatisk" ${u.lage === "automatisk" ? "checked" : ""}> <span><b>Automatiskt</b>: appen uppdaterar sig själv när den inte har använts på 15 minuter</span></div>
     <div class="chk"><input type="radio" name="u-lage" value="manuell" ${u.lage === "manuell" ? "checked" : ""}> <span><b>Fråga mig</b>: du ser när en ny version finns och trycker själv</span></div>`}
     <p class="small muted">Appen kollar var 6:e timme och installerar bara filer som stämmer med sitt fingeravtryck. Uppdateringen sker tyst, utan frågor från Windows, och appen startar om själv. Startar inte en ny version går appen tillbaka till den förra. Elevernas data finns kvar.${u.kollad ? ` Senast kollat ${new Date(u.kollad * 1000).toLocaleString("sv-SE")}.` : ""}</p>
@@ -579,6 +623,7 @@ function koppla() {
   on("#regler-ok", () => andra({ op: "regler_ok" }, "Tack! Reglerna finns alltid under ☰ Meny → 📘 Så gör du rätt."));
   on("#el-lank-ok", () => andra({ op: "elev_lank", lank: $("#el-lank").value }, "Familjen är tillagd och synkad."));
   on("#beh-bli", () => confirm("Bli skolans rektor i appen? Du bestämmer då vad alla lärare får göra.") && andra({ op: "rektor_bli" }, "Du är skolans rektor."));
+  on("#beh-underlag", underlagSida);
   on("#beh-gallra", () => confirm("Radera ALLA elevuppgifter på den här datorn? Det går inte att ångra.") && confirm("Säker? Elever, provresultat, anteckningar och historik försvinner.") && andra({ op: "radera_klass" }, "Klassens data är raderad."));
   on("#beh-radera", () => confirm("Radera uppgifterna för gott?") && andra({ op: "radera_dolda" }, "Raderat."));
   on("#beh-overlat", () => confirm("Lämna över rektorsrollen? Du kan inte ta tillbaka den själv.") && andra({ op: "rektor_overlat", vem: $("#beh-ny").value }, "Rektorsrollen är överlämnad."));

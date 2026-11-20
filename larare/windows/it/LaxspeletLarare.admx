@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Grupprincipmall för Läxspelet Lärare. Lägg filen i PolicyDefinitions och .adml-filen i PolicyDefinitions\sv-SE (och en-US). -->
+<policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <policyNamespaces>
+    <target prefix="laxspelet" namespace="Laxspelet.Larare.Policies"/>
+  </policyNamespaces>
+  <resources minRequiredRevision="1.0"/>
+  <supportedOn>
+    <definitions>
+      <definition name="SUPPORTED_0_10" displayName="$(string.SUPPORTED_0_10)"/>
+    </definitions>
+  </supportedOn>
+  <categories>
+    <category name="Laxspelet" displayName="$(string.Laxspelet)"/>
+  </categories>
+  <policies>
+    <policy name="MaxNiva" class="Both" displayName="$(string.MaxNiva)" explainText="$(string.MaxNiva_Help)"
+            presentation="$(presentation.MaxNiva)" key="SOFTWARE\Policies\Laxspelet Larare">
+      <parentCategory ref="Laxspelet"/>
+      <supportedOn ref="SUPPORTED_0_10"/>
+      <elements>
+        <enum id="MaxNiva" valueName="MaxNiva" required="true">
+          <item displayName="$(string.Niva0)"><value><decimal value="0"/></value></item>
+          <item displayName="$(string.Niva1)"><value><decimal value="1"/></value></item>
+          <item displayName="$(string.Niva2)"><value><decimal value="2"/></value></item>
+        </enum>
+      </elements>
+    </policy>
+    <policy name="Uppdateringar" class="Both" displayName="$(string.Uppdateringar)" explainText="$(string.Uppdateringar_Help)"
+            presentation="$(presentation.Uppdateringar)" key="SOFTWARE\Policies\Laxspelet Larare">
+      <parentCategory ref="Laxspelet"/>
+      <supportedOn ref="SUPPORTED_0_10"/>
+      <elements>
+        <enum id="Uppdateringar" valueName="Uppdateringar" required="true">
+          <item displayName="$(string.Automatisk)"><value><string>automatisk</string></value></item>
+          <item displayName="$(string.Manuell)"><value><string>manuell</string></value></item>
+          <item displayName="$(string.Av)"><value><string>av</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+  </policies>
+</policyDefinitions>

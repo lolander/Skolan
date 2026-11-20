@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>Läxspelet Lärare</displayName>
+  <description>Inställningar som skolans IT låser för Läxspelet Lärare.</description>
+  <resources>
+    <stringTable>
+      <string id="SUPPORTED_0_10">Läxspelet Lärare 0.10.0 och senare</string>
+      <string id="Laxspelet">Läxspelet Lärare</string>
+      <string id="MaxNiva">Högsta behörighetsnivå</string>
+      <string id="MaxNiva_Help">Den högsta nivå lärare på datorn kan få, oavsett vad rektorn beslutar i appen.
+
+Nivå 0: inga personuppgifter om elever. Veckobrev, studiematerial, klasslag och klassens insikt (bara summor, minst 5 familjer). Familjerna visas som "Familj 1, 2, 3 …".
+Nivå 1: som nivå 0, och elevernas namn, grupper och scheman.
+Nivå 2: som nivå 1, och uppgifter om enskilda elever som vårdnadshavaren delar (rapporter, statistik, lappar, provresultat, anteckningar).
+
+Sänks nivån raderar appen genast kopior av elevuppgifter som inte längre är tillåtna.
+Om principen finns både för datorn och användaren gäller den lägsta nivån.
+
+Rekommendation: nivå 0 tills dataskyddsombudet har gjort en bedömning.
+Läs mer: https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md</string>
+      <string id="Niva0">Nivå 0: inga personuppgifter (rekommenderas)</string>
+      <string id="Niva1">Nivå 1: elevnamn</string>
+      <string id="Niva2">Nivå 2: uppgifter om enskilda elever</string>
+      <string id="Uppdateringar">Uppdateringar</string>
+      <string id="Uppdateringar_Help">Hur Läxspelet Lärare uppdateras.
+
+Automatiskt: appen hämtar nya versioner från projektets GitHub-sida och installerar dem tyst när den inte används. Filer installeras bara om deras SHA-256-fingeravtryck stämmer.
+Fråga: läraren ser att en ny version finns och trycker själv.
+Av: appen kontaktar inte GitHub. IT distribuerar nya versioner.
+
+Appar som är installerade för alla användare (/ALLUSERS) eller från Microsoft Store uppdaterar aldrig sig själva.</string>
+      <string id="Automatisk">Automatiskt</string>
+      <string id="Manuell">Fråga läraren</string>
+      <string id="Av">Av (IT distribuerar)</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="MaxNiva">
+        <dropdownList refId="MaxNiva" noSort="true" defaultItem="0">Högsta nivå:</dropdownList>
+      </presentation>
+      <presentation id="Uppdateringar">
+        <dropdownList refId="Uppdateringar" noSort="true" defaultItem="2">Uppdateringar:</dropdownList>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

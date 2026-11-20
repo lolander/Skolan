@@ -1,6 +1,8 @@
 ; Inno Setup: bygger Skolan-Larare-Setup-<version>.exe av dist\SkolanLarare.  ISCC /DVERSION=0.1.0 larare.iss
 ; Från 0.8.0 installeras appen per användare (ingen administratör), så att den kan uppdatera sig själv tyst.
 ; Brandväggsregeln skapas av appen själv första gången den startar (Windows frågar en gång).
+; IT kan installera för alla användare med /ALLUSERS (Program Files). Då sköter IT uppdateringarna,
+; och /MERGETASKS="brandvagg" skapar brandväggsregeln direkt.
 #ifndef VERSION
   #define VERSION "0.0.0"
 #endif
@@ -11,10 +13,11 @@ AppName=Läxspelet Lärare
 AppVersion={#VERSION}
 AppPublisher=Skolan
 AppPublisherURL=https://github.com/lolander/Skolan
-DefaultDirName={localappdata}\Programs\Laxspelet Larare
+DefaultDirName={autopf}\Laxspelet Larare
 DefaultGroupName=Läxspelet Lärare
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=commandline
 DisableDirPage=yes
 UsePreviousAppDir=no
 OutputDir=Output
@@ -31,6 +34,7 @@ Name: "sv"; MessagesFile: "compiler:Languages\Swedish.isl"
 
 [Tasks]
 Name: "skrivbord"; Description: "Skapa en genväg på skrivbordet"; GroupDescription: "Genvägar:"
+Name: "brandvagg"; Description: "Tillåt kollegor och elever i skolans nätverk (TCP 8770)"; Check: IsAdminInstallMode; Flags: unchecked
 
 [Files]
 Source: "..\dist\SkolanLarare\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -47,12 +51,14 @@ Name: "{group}\Avinstallera Läxspelet Lärare"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Läxspelet Lärare"; Filename: "{app}\SkolanLarare.exe"; Tasks: skrivbord
 
 [Run]
-Filename: "{app}\SkolanLarare.exe"; Description: "Starta Läxspelet Lärare nu"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\SkolanLarare.exe"; Description: "Starta Läxspelet Lärare nu"; Flags: nowait postinstall skipifsilent; Check: not IsAdminInstallMode
 ; Automatisk uppdatering (tyst installation): starta appen igen utan att öppna webbläsaren.
-Filename: "{app}\SkolanLarare.exe"; Parameters: "--tyst"; Flags: nowait; Check: WizardSilent
+Filename: "{app}\SkolanLarare.exe"; Parameters: "--tyst"; Flags: nowait; Check: WizardSilent and not IsAdminInstallMode
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Laxspelet Larare"" dir=in action=allow program=""{app}\SkolanLarare.exe"" enable=yes profile=private,domain"; Flags: runhidden; Tasks: brandvagg
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM SkolanLarare.exe"; Flags: runhidden; RunOnceId: "stoppa"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Laxspelet Larare"""; Flags: runhidden; Tasks: brandvagg; RunOnceId: "brandvagg"
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;

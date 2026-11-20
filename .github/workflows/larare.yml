@@ -38,7 +38,46 @@ jobs:
           $version = (Select-String -Path larare/skolan_larare/__init__.py -Pattern 'VERSION = "(.+)"').Matches[0].Groups[1].Value
           & $iscc "/DVERSION=$version" larare/windows/larare.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # Fingeravtryck: appen installerar bara filer som stämmer med det
+
+      # Kodsignering, gratis för öppen källkod via SignPath Foundation (se docs/kodsignering.md).
+      # Görs bara vid en ny version och bara när SIGNPATH_ORGANIZATION_ID finns i repots variabler.
+      - name: Ladda upp för signering
+        id: osignerad
+        if: vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/larare-v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: osignerad-larare
+          path: larare/windows/Output/*.exe
+
+      - name: Signera (SignPath Foundation)
+        if: steps.osignerad.outcome == 'success'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT || 'Skolan' }}
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: larare
+          github-artifact-id: ${{ steps.osignerad.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 86400
+          output-artifact-directory: larare/windows/Signerad
+
+      - name: Använd den signerade filen
+        if: steps.osignerad.outcome == 'success'
+        shell: pwsh
+        run: |
+          Copy-Item larare/windows/Signerad/*.exe larare/windows/Output/ -Force
+          Get-ChildItem larare/windows/Output/*.exe | ForEach-Object {
+            $s = Get-AuthenticodeSignature $_.FullName
+            if ($s.Status -ne 'Valid') { Write-Error "Signaturen är inte giltig: $($s.Status)"; exit 1 }
+            Write-Host "✓ signerad av $($s.SignerCertificate.Subject)"
+          }
+
+      - name: Fingeravtryck
+        shell: pwsh
+        run: |
+          # Appen installerar bara filer som stämmer med fingeravtrycket (räknas efter signeringen)
           Get-ChildItem larare/windows/Output/*.exe | ForEach-Object {
             (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $_.Name | Out-File -Encoding ascii -NoNewline ($_.FullName + ".sha256")
           }
@@ -63,6 +102,50 @@ jobs:
           if ($hash -ne $fil) { Write-Error "Fingeravtrycket stämmer inte"; exit 1 }
           Write-Host "✓ fingeravtrycket stämmer"
 
+      - name: Provinstallera för alla användare (som IT gör)
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem larare/windows/Output/Skolan-Larare-Setup-*.exe)[0].FullName
+          $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/ALLUSERS' -PassThru
+          if (-not $p.WaitForExit(300000) -or $p.ExitCode -ne 0) { Write-Error "Installationen för alla användare misslyckades"; exit 1 }
+          $exe = Join-Path $env:ProgramFiles 'Laxspelet Larare\SkolanLarare.exe'
+          if (-not (Test-Path $exe)) { Write-Error "Installerades inte i Program Files: $exe"; exit 1 }
+          Start-Sleep -Seconds 3
+          if (Get-Process SkolanLarare -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$env:ProgramFiles*" }) { Write-Error "Appen ska inte starta vid IT-installation"; exit 1 }
+          Write-Host "✓ installerad i $exe"
+
+      - name: Komponentlista (SBOM)
+        shell: pwsh
+        run: |
+          # Exakt de paket (och versioner) som följer med appen, i en egen tom miljö
+          pip install cyclonedx-bom
+          python -m venv sbom
+          sbom/Scripts/pip install -q -r larare/requirements.txt
+          $version = (Select-String -Path larare/skolan_larare/__init__.py -Pattern 'VERSION = "(.+)"').Matches[0].Groups[1].Value
+          cyclonedx-py environment sbom/Scripts/python.exe --of JSON -o "larare/windows/Output/Laxspelet-Larare-SBOM-$version.cdx.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: IT-paket (grupprinciper och instruktioner)
+        shell: pwsh
+        run: |
+          Compress-Archive -Path larare/windows/it/* -DestinationPath larare/windows/Output/Laxspelet-Larare-IT.zip -Force
+
+      - name: Bygg Microsoft Store-paketet (MSIX)
+        shell: pwsh
+        env:
+          STORE_NAMN: ${{ vars.STORE_LARARE_NAMN }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_PUBLISHER_NAMN: ${{ vars.STORE_PUBLISHER_NAMN }}
+        run: |
+          pip install pillow
+          $version = (Select-String -Path larare/skolan_larare/__init__.py -Pattern 'VERSION = "(.+)"').Matches[0].Groups[1].Value
+          python larare/windows/msix_bygg.py larare/dist/SkolanLarare $version larare/windows/Store
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Laxspelet-Larare-Store
+          path: larare/windows/Store/*.msix
+
       - uses: actions/upload-artifact@v4
         with:
           name: Skolan-Larare-Setup
@@ -75,13 +158,17 @@ jobs:
           files: |
             larare/windows/Output/*.exe
             larare/windows/Output/*.sha256
+            larare/windows/Output/*.cdx.json
+            larare/windows/Output/Laxspelet-Larare-IT.zip
           prerelease: true
           body: |
             Läxspelet Lärare för Windows: veckobrev, studiematerial, klassens insikt, klasslag och grupper.
             📄 Skolor, IT och dataskyddsombud: läs först https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md (nivåer, rektorns beslut, kryptering, grupprinciper och mallar).
             Utan beslut från en rektor i appen hanterar appen inga personuppgifter om elever (nivå 0).
-            Windows kan varna för att programmet är okänt (det är inte signerat): kontrollera .sha256-filen, tryck sedan "Mer information" → "Kör ändå".
-            Installeras per användare utan administratör. Tyst installation: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+            🧪 Prova utan att installera: https://lolander.github.io/Skolan/demo/ (påhittad klass).
+            🛠️ För IT: Laxspelet-Larare-IT.zip (grupprinciper ADMX/ADML, Intune-instruktioner), komponentlista (SBOM, CycloneDX) och .sha256-fingeravtryck.
+            Installeras per användare utan administratör: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART. För alla användare (IT): lägg till /ALLUSERS.
+            Om filen inte är kodsignerad kan Windows varna: kontrollera .sha256-filen, tryck sedan "Mer information" → "Kör ändå".
 
       # Lägg också den nya lärarappen på senaste familjeversionens sida (med fast namn), så att länken
       # .../releases/latest/download/Laxspelet-Larare-Setup.exe alltid ger senaste lärarappen.
@@ -97,5 +184,8 @@ jobs:
           $senaste = gh release view --repo ${{ github.repository }} --json tagName --jq .tagName
           $gamla = gh release view $senaste --repo ${{ github.repository }} --json assets --jq '.assets[].name' | Where-Object { $_ -like "Skolan-Larare-Setup-*" }
           foreach ($g in $gamla) { gh release delete-asset $senaste $g --repo ${{ github.repository }} --yes }
-          gh release upload $senaste "$($setup.FullName)" "$($setup.FullName).sha256" "$ut/Laxspelet-Larare-Setup.exe" --repo ${{ github.repository }} --clobber
+          $gamla2 = gh release view $senaste --repo ${{ github.repository }} --json assets --jq '.assets[].name' | Where-Object { $_ -like "Laxspelet-Larare-SBOM-*" }
+          foreach ($g in $gamla2) { gh release delete-asset $senaste $g --repo ${{ github.repository }} --yes }
+          $sbom = (Get-ChildItem "$ut/*.cdx.json")[0].FullName
+          gh release upload $senaste "$($setup.FullName)" "$($setup.FullName).sha256" "$ut/Laxspelet-Larare-Setup.exe" "$ut/Laxspelet-Larare-IT.zip" $sbom --repo ${{ github.repository }} --clobber
           Write-Host "✓ lärarappen ligger nu också på $senaste"

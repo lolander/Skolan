@@ -94,6 +94,22 @@ def forbered() -> bool:
 
 
 # ---------- inställningar som skolans IT låser (grupprinciper / Intune) ----------
+def installation() -> str:
+    """Hur appen är installerad: "store" (Microsoft Store), "alla" (för alla användare, av IT) eller "anvandare".
+
+    Från Store sköter Store uppdateringarna. För alla användare ligger appen i Program Files, och då sköter IT dem."""
+    if not ar_windows() or not getattr(sys, "frozen", False):
+        return "anvandare"
+    exe = sys.executable.lower()
+    if "\\windowsapps\\" in exe:
+        return "store"
+    for k in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
+        p = (os.environ.get(k) or "").lower().rstrip("\\")
+        if p and exe.startswith(p + "\\"):
+            return "alla"
+    return "anvandare"
+
+
 POLICY_NYCKEL = r"SOFTWARE\Policies\Laxspelet Larare"
 
 

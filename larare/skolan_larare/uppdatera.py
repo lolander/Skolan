@@ -76,8 +76,10 @@ class Uppdaterare:
     # ---------- inställning ----------
     @property
     def it_lage(self) -> str | None:
-        from .windows import it_policy
+        from .windows import installation, it_policy
 
+        if installation() != "anvandare":  # Store eller IT (Program Files) sköter uppdateringarna
+            return "av"
         return it_policy().get("uppdateringar")
 
     @property
@@ -104,12 +106,15 @@ class Uppdaterare:
             self.spara()
 
     def status(self) -> dict:
+        from .windows import installation
+
         return {
             "version": self.version, "lage": self.lage, "ny": self.ny,
             "senaste": self.senaste["version"] if self.senaste else None,
             "sida": self.senaste["sida"] if self.senaste else SIDA,
             "kollad": int(self.kollad), "fel": self.fel, "steg": self.steg,
             "kan_installera": os.name == "nt" and self.lage != "av", "uppdaterad": self.inst.get("uppdaterad"), "it_last": bool(self.it_lage),
+            "installation": installation(),
         }
 
     # ---------- kolla ----------

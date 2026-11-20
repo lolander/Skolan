@@ -38,7 +38,45 @@ jobs:
           $version = (Get-Content custom_components/skolan/manifest.json | ConvertFrom-Json).version
           & $iscc "/DVERSION=$version" fristaende/windows/skolan.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # Fingeravtryck: appen installerar bara filer som stämmer med det
+
+      # Kodsignering, gratis för öppen källkod via SignPath Foundation (se docs/kodsignering.md).
+      - name: Ladda upp för signering
+        id: osignerad
+        if: vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: osignerad-laxspelet
+          path: fristaende/windows/Output/*.exe
+
+      - name: Signera (SignPath Foundation)
+        if: steps.osignerad.outcome == 'success'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT || 'Skolan' }}
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: laxspelet
+          github-artifact-id: ${{ steps.osignerad.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 86400
+          output-artifact-directory: fristaende/windows/Signerad
+
+      - name: Använd den signerade filen
+        if: steps.osignerad.outcome == 'success'
+        shell: pwsh
+        run: |
+          Copy-Item fristaende/windows/Signerad/*.exe fristaende/windows/Output/ -Force
+          Get-ChildItem fristaende/windows/Output/*.exe | ForEach-Object {
+            $s = Get-AuthenticodeSignature $_.FullName
+            if ($s.Status -ne 'Valid') { Write-Error "Signaturen är inte giltig: $($s.Status)"; exit 1 }
+            Write-Host "✓ signerad av $($s.SignerCertificate.Subject)"
+          }
+
+      - name: Fingeravtryck
+        shell: pwsh
+        run: |
+          # Appen installerar bara filer som stämmer med fingeravtrycket (räknas efter signeringen)
           Get-ChildItem fristaende/windows/Output/*.exe | ForEach-Object {
             (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $_.Name | Out-File -Encoding ascii -NoNewline ($_.FullName + ".sha256")
           }
@@ -96,6 +134,9 @@ jobs:
           $tag = gh release list --repo ${{ github.repository }} --limit 50 --json tagName --jq '[.[] | select(.tagName | startswith("larare-v"))][0].tagName'
           if ($tag) {
             gh release download $tag --repo ${{ github.repository }} --pattern "Skolan-Larare-Setup-*" --dir $ut
+            # IT-paketet och komponentlistan följer också med (finns från lärarappen 0.11.0)
+            gh release download $tag --repo ${{ github.repository }} --pattern "Laxspelet-Larare-IT.zip" --pattern "Laxspelet-Larare-SBOM-*" --dir $ut 2>$null
+            $global:LASTEXITCODE = 0
             $l = Get-ChildItem "$ut/Skolan-Larare-Setup-*.exe" | Select-Object -First 1
             if ($l) { Copy-Item $l.FullName "$ut/Laxspelet-Larare-Setup.exe"; Write-Host "✓ lärarappen $tag följer med" }
           }
@@ -107,6 +148,8 @@ jobs:
           files: |
             fristaende/windows/Output/*.exe
             fristaende/windows/Output/*.sha256
+            fristaende/windows/Output/*.zip
+            fristaende/windows/Output/*.cdx.json
           prerelease: false
           body: |
             ## 📚 Läxspelet för Windows
@@ -114,8 +157,10 @@ jobs:
 
             **Lärare:** ladda ner **[Laxspelet-Larare-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe)** (Läxspelet Lärare). Den installeras på din egen dator, utan administratör, och uppdaterar sig själv.
 
+            **Skolor, IT och dataskyddsombud:** [Information till skolor](https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md) · [Kom igång på nivå 0 (en sida)](https://github.com/lolander/Skolan/blob/main/docs/larare-niva0.md) · [Prova lärarappen utan att installera](https://lolander.github.io/Skolan/demo/) · IT-paket och komponentlista finns bland filerna nedan.
+
             ### Varnar Windows?
-            Läxspelet är nytt och har ännu inte ett köpt signaturcertifikat, så Windows kan visa *”Windows har skyddat datorn”*. Det är normalt för nya, små appar.
+            Om installationsfilen inte är kodsignerad, eller signaturen är ny, kan Windows visa *”Windows har skyddat datorn”*. Det är normalt för nya, små appar.
             Tryck **Mer information** och sedan **Kör ändå**:
 
             ![Så installerar du: Mer information → Kör ändå](https://raw.githubusercontent.com/lolander/Skolan/main/docs/installera-windows.svg)

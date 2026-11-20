@@ -1,6 +1,8 @@
 # Läxspelet Lärare: information till skolor, IT och dataskyddsombud
 
-*Gäller Läxspelet Lärare 0.10.0 och senare. Senast uppdaterad: 20 november 2026.*
+*Gäller Läxspelet Lärare 0.11.0 och senare. Senast uppdaterad: 20 november 2026.*
+
+**Snabbt:** [Kom igång på nivå 0 (en sida)](larare-niva0.md) · [Prova appen utan att installera](https://lolander.github.io/Skolan/demo/) · [Mallar i Word](mallar/) · [IT-paket](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-IT.zip) · [Säkerhet](../SECURITY.md)
 
 Det här dokumentet är till för rektorer, IT-avdelningar och dataskyddsombud. Läs det **innan** appen installeras på skolans datorer. Det beskriver vad appen gör, vilka uppgifter den hanterar, hur spärrarna fungerar och hur skolan själv bestämmer nivån. Dokumentet är ett underlag för skolans egen bedömning och ersätter inte den. Huvudmannen (kommunen eller friskolan) är alltid personuppgiftsansvarig för skolans behandling av elevuppgifter.
 
@@ -18,7 +20,7 @@ Källkoden är öppen (MIT-licens): https://github.com/lolander/Skolan (mappen `
 | **Personuppgifter** | Som standard **inga** (nivå 0). Nivå 1 och 2 måste beslutas av skolans rektor i appen, och skolans IT kan låsa en högsta nivå per dator. |
 | **Familjen bestämmer också** | Varje funktion fungerar bara när både läraren och vårdnadshavaren har slagit på den. Vårdnadshavaren kan när som helst stänga av eller koppla bort läraren. |
 | **Mobiler i skolan** | Behövs inte. Vårdnadshavaren skickar en länk till läraren, till exempel med e-post. |
-| **Installation** | Per användare, ingen administratörsrätt behövs. Kan installeras tyst och styras med grupprinciper. |
+| **Installation** | Per användare utan administratör, eller för alla användare av IT. Grupprincipmall (ADMX) och Intune-instruktioner finns. |
 | **Frivilligt** | Appen ersätter inte skolans lärplattform. Elever utan Läxspelet får allt via skolans ordinarie kanaler. |
 
 ---
@@ -94,7 +96,8 @@ Familjens Läxspelet körs hemma hos familjen och ingår inte i skolans system.
 | Ingen insamling | Ingen telemetri, ingen analys, ingen reklam, inga konton. |
 
 ### Begränsningar
-- **Programmet är inte kodsignerat ännu.** Windows SmartScreen kan varna. Kontrollera fingeravtrycket (`.sha256`-filen bredvid installationsfilen på GitHub) eller bygg själv från källkoden.
+- **Kodsignering:** installationsfilerna signeras via SignPath Foundation, och Store-versionen av Microsoft (se [kodsignering](kodsignering.md)). Tills signeringen är på plats kan Windows SmartScreen varna. Kontrollera då fingeravtrycket (`.sha256`-filen bredvid installationsfilen) eller bygg själv från källkoden.
+- **Komponentlista:** varje version har en SBOM (CycloneDX) med alla bibliotek som följer med. Säkerhetsbrister rapporteras enligt [SECURITY.md](../SECURITY.md).
 - Mappen `%APPDATA%\SkolanLarare\filer` (PDF och foton som läraren laddar upp) och loggfilen `larare.log` är **inte** krypterade. Lägg inte känsliga dokument där.
 - DPAPI skyddar mot att någon läser filen från en stulen dator eller ett annat konto. Det skyddar inte mot den som är inloggad som läraren. Använd skolans vanliga skydd: skärmlås och diskkryptering (BitLocker).
 - Appen sänder en kort signal på det lokala nätverket (UDP 8770) med skolans id, lärarens id och port, så att kollegornas appar hittar varandra. Signalen innehåller inga elevuppgifter.
@@ -115,10 +118,13 @@ Familjens Läxspelet körs hemma hos familjen och ingår inte i skolans system.
 
 ## 7. För IT: installation och styrning
 
+**IT-paket:** [Laxspelet-Larare-IT.zip](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-IT.zip) innehåller grupprincipmallen (ADMX/ADML på svenska och engelska), färdiga `.reg`-filer och instruktioner för Intune.
+
 **Installation**
 - Installationsfil: `Laxspelet-Larare-Setup.exe` från https://github.com/lolander/Skolan/releases/latest
-- Installeras per användare i `%LOCALAPPDATA%\Programs\Laxspelet Larare`. Ingen administratör behövs.
-- Tyst installation: `Laxspelet-Larare-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART` (körs i användarens kontext, t.ex. via Intune som "User"-installation).
+- **Per användare** (standard): `%LOCALAPPDATA%\Programs\Laxspelet Larare`, ingen administratör. Tyst: `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` (Intune: *Användare*). Appen uppdaterar sig själv om IT inte stänger av det.
+- **För alla användare**: lägg till `/ALLUSERS` (Intune: *System*). Appen hamnar i `%ProgramFiles%\Laxspelet Larare` och **uppdaterar aldrig sig själv**, så IT styr versionen. `/MERGETASKS="brandvagg"` skapar brandväggsregeln (TCP 8770, privat och domän).
+- **Microsoft Store**: när appen finns där kan den läggas till i Intune som *Microsoft Store-app (ny)*. Signerad av Microsoft, och Store sköter uppdateringarna.
 - Data: `%APPDATA%\SkolanLarare\`. **Avinstallation raderar inte datan.** Läraren raderar den i appen (🔐 Behörighet → 🗑️ Radera klassens data), eller så tar IT bort mappen.
 
 **Grupprinciper / Intune** (registret, `HKLM` eller `HKCU`):
@@ -169,9 +175,10 @@ Första gången appen startas, och när reglerna ändras, måste läraren läsa 
 
 ## 10. Rekommenderad väg för en skola
 
-1. **Börja med nivå 0.** Inga personuppgifter behandlas. Det enda som krävs är att IT godkänner programmet. Sätt gärna `MaxNiva = 0` centralt.
+1. **Börja med nivå 0.** Inga personuppgifter om elever behandlas. Se [Kom igång på nivå 0](larare-niva0.md). Sätt gärna `MaxNiva = 0` centralt med grupprincipmallen.
 2. **Låt en lärare prova** under en termin, frivilligt för familjerna och parallellt med skolans lärplattform.
-3. **Vill skolan använda nivå 1 eller 2:** gör en bedömning med dataskyddsombudet (bilaga B), för in behandlingen i registerförteckningen (bilaga A), informera vårdnadshavarna (bilaga D) och fatta ett rektorsbeslut (bilaga C). Rektorn ger sedan behörigheten i appen och skriver beslutets diarienummer som grund. IT höjer `MaxNiva` på de datorer det gäller.
+3. **Vill skolan använda nivå 1 eller 2:** gör en bedömning med dataskyddsombudet (bilaga B och [exemplet i Word](mallar/Konsekvensbedomning-exempel.docx)), för in behandlingen i registerförteckningen (bilaga A), informera vårdnadshavarna (bilaga D) och fatta ett rektorsbeslut (bilaga C). Alla finns som [Word-mallar](mallar/). Rektorn ger sedan behörigheten i appen och skriver beslutets diarienummer som grund. IT höjer `MaxNiva` på de datorer det gäller.
+4. **Underlag från appen:** 🔐 Behörighet → 🧾 Skapa underlag ger en utskrivbar sida med skolans faktiska inställningar, lärarnas nivåer, registerförteckningen och beslutsloggen, utan elevuppgifter. Bifoga den till beslutet.
 
 ---
 

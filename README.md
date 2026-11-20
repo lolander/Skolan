@@ -32,6 +32,8 @@ Har ni inte Home Assistant? Ladda ner **[Laxspelet-Setup.exe](https://github.com
 
 **Lärare:** ladda ner **[Laxspelet-Larare-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe)** (Läxspelet Lärare för Windows). Den installeras utan administratör och uppdaterar sig själv. Skolor, IT och dataskyddsombud: läs **[Information till skolor](docs/larare-skolor.md)** (behörighetsnivåer, rektorns beslut, kryptering, grupprinciper och mallar).
 
+🧪 **[Prova lärarappen utan att installera](https://lolander.github.io/Skolan/demo/)** · 📄 [Kom igång på nivå 0](docs/larare-niva0.md) · 📝 [Mallar i Word](docs/mallar/) · 🛠️ [IT-paket](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-IT.zip) · 🔏 [Kodsignering](docs/kodsignering.md) · 🛡️ [Säkerhet](SECURITY.md)
+
 1. Första gången lägger du till familjen (namn och PIN-kod för varje person) och gärna en gratis AI-nyckel från [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 2. Högerklicka på Skolans ikon vid klockan → **Koppla en mobil** och skanna QR-koden med barnens telefoner. Lägg till Skolan på hemskärmen.
 3. Vill ni nå Skolan utanför hemmet och få notiser på iPhone: slå på **Fjärråtkomst** under Inställningar (gratis Cloudflare-tunnel).
