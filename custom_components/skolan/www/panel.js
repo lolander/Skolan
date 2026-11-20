@@ -4960,29 +4960,39 @@ class SkolanPanel extends HTMLElement {
       ])}`;
   }
 
-  // En stjärna per dag i rad, upp till dagen då svitbonusen är som högst.
+  // Streak-rutan: stor låga med antal dagar, stjärnrad, och en färg som visar läget.
   _svitRad(m) {
     const max = m.streak_max || 10;
     const n = m.streak || 0;
-    const stjarnor = Array.from({ length: max }, (_, i) => `<span class="${i < n ? "full" : ""} ${i === n && !m.streak_idag ? "nasta" : ""}">${i < n ? "⭐" : "☆"}</span>`).join("");
-    const text = n >= max
-      ? `🏆 ${n} dagar i rad! Högsta bonusen: +${max} ⭐ varje dag`
-      : m.streak_idag
-      ? `🔥 ${n} dag${n === 1 ? "" : "ar"} i rad. Kom tillbaka imorgon för +${Math.min(max, n + 1)} ⭐`
-      : n
-      ? `🔥 ${n} dag${n === 1 ? "" : "ar"} i rad. Gör något idag för +${Math.min(max, n + 1)} ⭐!`
-      : `Gör något i Läxspelet idag och starta en svit!`;
-    const skydd = m.skydd ? ` <span class="skydd">${"🛡️".repeat(m.skydd)}</span>` : "";
-    const radda = m.skydd_raddar ? `<div class="small"><b>🛡️ Svitskyddet räddar din svit på ${m.skydd_raddar} dagar om du gör något idag!</b></div>` : "";
     const ik = m.ikapp;
-    if (ik) {
-      const pct = Math.round((100 * ik.p) / ik.mal);
-      return `<div class="svit"><div class="svit-stj">${stjarnor}${skydd}</div>
-        <div class="ikapp"><b>🩹 Jobba ikapp och rädda din 🔥 ${ik.svit}-dagars svit!</b>
+    const stjarnor = Array.from({ length: max }, (_, i) => `<span class="${i < n ? "full" : ""} ${i === n && !m.streak_idag ? "nasta" : ""}">${i < n ? "⭐" : "☆"}</span>`).join("");
+    const lage = ik ? "ikapp" : m.streak_idag ? "klar" : n ? "fara" : "ny";
+    const fraga = ik || n || m.skydd_raddar ? (m.streak_idag ? "Hur funkar sviten?" : "Hur räddar jag min svit idag?") : "Varför försvann min svit?";
+    const rubrik = ik ? `${ik.svit} dagar i fara!`
+      : n >= max ? "Högsta bonusen!"
+      : m.streak_idag ? "Klart för idag ✅"
+      : n ? "Rädda din svit idag!"
+      : "Starta en svit!";
+    const text = ik ? ""
+      : n >= max ? `+${max} ⭐ varje dag du fortsätter`
+      : m.streak_idag ? `Kom tillbaka imorgon för +${Math.min(max, n + 1)} ⭐`
+      : n ? `Gör något i Läxspelet idag för +${Math.min(max, n + 1)} ⭐, annars börjar sviten om`
+      : `Gör något i Läxspelet idag, bonusen växer för varje dag i rad`;
+    const skydd = m.skydd ? `<span class="skydd" title="Svitskydd">${"🛡️".repeat(m.skydd)}</span>` : "";
+    const radda = m.skydd_raddar ? `<div class="small svit-not"><b>🛡️ Svitskyddet räddar din svit på ${m.skydd_raddar} dagar om du gör något idag!</b></div>` : "";
+    const skriv = !m.streak_idag && this._s.skrivkrav?.vantar ? `<div class="small svit-not"><b>✍️ Det du gjort väntar på en skrivövning.</b> Gör Skrivverkstaden eller ett Pennuppdrag så räknas det för sviten (och du får ${this._s.skrivkrav.vantar} ⭐).</div>` : "";
+    const ikapp = ik ? `<div class="ikapp"><b>🩹 Jobba ikapp och rädda din 🔥 ${ik.svit}-dagars svit!</b>
         <div class="small">Du missade igår. Men om du tjänar <b>${ik.mal} ⭐</b> med läxor och övningar idag räknas igår också, och sviten fortsätter som om du aldrig missat. Bonusar, kistor och köp räknas inte. Imorgon är det för sent.</div>
-        <div class="ikapp-bar"><span style="width:${pct}%"></span></div><div class="small"><b>${ik.p}/${ik.mal} ⭐</b> idag</div></div></div>`;
-    }
-    return `<div class="svit"><div class="svit-stj">${stjarnor}${skydd}</div><div class="small">${text}</div>${radda}</div>`;
+        <div class="ikapp-bar"><span style="width:${Math.round((100 * ik.p) / ik.mal)}%"></span></div><div class="small"><b>${ik.p}/${ik.mal} ⭐</b> idag</div></div>` : "";
+    return `<div class="svit svit-${lage}">
+      <div class="svit-topp">
+        <div class="svit-eld"><span class="eld">${n || ik ? "🔥" : "🕯️"}</span><b>${ik ? ik.svit : n}</b></div>
+        <div class="svit-info"><div class="svit-titel">${rubrik}</div><div class="small svit-dgr">${ik ? "Du missade igår" : `${n} dag${n === 1 ? "" : "ar"} i rad`}${text ? ` · ${text}` : ""}</div></div>
+        ${skydd}
+      </div>
+      <div class="svit-stj">${stjarnor}</div>${radda}${skriv}${ikapp}
+      ${m.djur ? `<span class="svit-fraga" role="button" tabindex="0" data-svit-fraga="${esc(fraga)}">${m.djur.art} Fråga ${esc(m.djur.namn)} om sviten</span>` : ""}
+    </div>`;
   }
 
   _meriterView() {
@@ -6204,7 +6214,7 @@ class SkolanPanel extends HTMLElement {
     const ikon = `<div class="lar-ikon">${d.art}</div>`;
     const bubbla = (x) => x.vem === "barn" ? `<div class="lar-rad barn"><div class="lar-bubbla">${esc(x.text)}</div></div>`
       : `<div class="lar-rad djur">${ikon}<div class="lar-bubbla">${esc(x.text)}</div></div>`;
-    const forslag = ["Vilken attack ska jag använda nu?", "Hur får jag flest ⭐?", "Hur besegrar jag bossen?", "Vad ska jag köpa?", "Hur funkar sviten?"];
+    const forslag = ["Vilken attack ska jag använda nu?", "Hur får jag flest ⭐?", "Hur besegrar jag bossen?", "Vad ska jag köpa?", "Hur funkar sviten?", "Varför försvann min svit?"];
     return `<div class="lar-chatt">${bubbla({ vem: "djur", text: `Hej! Undrar du något om spelet? Fråga mig om attacker, monster, ⭐ eller vad som helst! ${d.art}` })}
       ${f.historik.map(bubbla).join("")}
       ${f.tanker ? `<div class="lar-rad djur">${ikon}<div class="lar-bubbla tanker">🤔 …</div></div>` : ""}</div>
@@ -7900,6 +7910,11 @@ class SkolanPanel extends HTMLElement {
     on("#fh-senare", () => { this._fhSenare = v.forhor; this._go({ name: "hem" }); });
     on("#fh-logg", () => this._go({ name: "fhlogg" }));
     on("#open-meriter", () => this._go({ name: "meriter" }));
+    r.querySelectorAll("[data-svit-fraga]").forEach((b) => {
+      const go = (e) => { e.stopPropagation(); e.preventDefault(); const q = b.dataset.svitFraga; this._go({ name: "fraga" }); setTimeout(() => this._fragaSkicka(q), 0); };
+      b.addEventListener("click", go);
+      b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") go(e); });
+    });
     // läsläxor & prov
     r.querySelectorAll("[data-open-uppdrag]").forEach((b) =>
       b.addEventListener("click", () => this._go({ name: "uppdrag", id: b.dataset.openUppdrag, amne: b.dataset.amne }))
@@ -9834,7 +9849,28 @@ const CSS = `
   .info-kort h3 { margin:10px 0 6px; }
   .info-rad { padding:5px 0; line-height:1.4; border-top:1px solid var(--divider-color, rgba(127,127,127,.2)); }
   .info-rad:first-of-type { border-top:none; }
-  .svit { margin:8px 0 2px; }
+  .svit { margin:12px 0 4px; padding:10px 12px; border-radius:14px; border:2px solid rgba(127,127,127,.3); background:rgba(127,127,127,.08); }
+  .svit-klar { border-color:rgba(255,140,0,.6); background:linear-gradient(135deg, rgba(255,140,0,.22), rgba(255,200,0,.12)); }
+  .svit-fara { border-color:#e53935; background:linear-gradient(135deg, rgba(229,57,53,.2), rgba(255,140,0,.14)); animation: svitglod 1.8s ease-in-out infinite; }
+  .svit-ikapp { border-color:#ff8c00; background:linear-gradient(135deg, rgba(255,140,0,.25), rgba(255,215,0,.15)); animation: svitglod 1.8s ease-in-out infinite; }
+  @keyframes svitglod { 50% { box-shadow:0 0 14px 2px rgba(255,100,0,.55); } }
+  .svit-topp { display:flex; align-items:center; gap:12px; }
+  .svit-eld { display:flex; align-items:center; gap:2px; flex:none; }
+  .svit-eld .eld { font-size:34px; line-height:1; display:inline-block; }
+  .svit-eld b { font-size:34px; line-height:1; font-weight:800; color:#ff8c00; }
+  .svit-fara .svit-eld b { color:#e53935; }
+  .svit-ny .svit-eld b { color:var(--secondary-text-color); }
+  .svit-klar .eld, .svit-fara .eld, .svit-ikapp .eld { animation: svitflamma 1.2s ease-in-out infinite alternate; transform-origin:50% 100%; }
+  @keyframes svitflamma { from { transform:scale(1) rotate(-3deg); } to { transform:scale(1.12) rotate(3deg); } }
+  .svit-info { flex:1; min-width:0; }
+  .svit-titel { font-weight:800; font-size:16px; }
+  .svit-dgr { opacity:.85; }
+  .svit .skydd { font-size:20px; flex:none; }
+  .svit .svit-stj { margin-top:8px; font-size:20px; }
+  .svit-not { margin-top:6px; }
+  .svit-fraga { display:inline-block; margin-top:8px; padding:5px 10px; border-radius:999px; font-size:13px; font-weight:600; background:rgba(255,255,255,.85); color:#5d4037; cursor:pointer; }
+  .svit-fraga:hover { background:#fff; }
+  @media (prefers-reduced-motion: reduce) { .svit-fara, .svit-ikapp, .svit .eld, .svit-stj span.nasta { animation:none !important; } }
   .ikapp { margin-top:6px; padding:8px 10px; border-radius:10px; background:rgba(255,140,0,.12); border:1px solid rgba(255,140,0,.45); }
   .ikapp-bar { height:8px; border-radius:4px; background:rgba(127,127,127,.25); margin:6px 0 2px; overflow:hidden; }
   .ikapp-bar span { display:block; height:100%; background:#ff8c00; }

@@ -558,6 +558,46 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
             await _notis(hass, b.get("notify"), titel, text, "/skolan")
 
     async_track_time_change(hass, _hungrig_notis, hour=16, minute=0, second=0)
+
+    async def _svit_notis(now) -> None:
+        """16.30 och 19.15: streaken är i fara (inget gjort idag) eller kan räddas genom att jobba ikapp."""
+        sista = now.hour >= 19
+        for b in hass.data[DOMAIN]["conf"]["barn"]:
+            if not b.get("notify"):
+                continue
+            try:
+                data = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
+                m = meriter.sammanfattning(data)
+            except Exception:  # noqa: BLE001
+                continue
+            ik, n = m.get("ikapp"), m["streak"]
+            if ik:
+                titel = f"🩹 Rädda din svit på {ik['svit']} dagar!" if not sista else f"⏰ Sista chansen: rädda din svit på {ik['svit']} dagar!"
+                text = (f"Du missade igår, men du kan jobba ikapp idag. Tjäna {ik['mal']} ⭐ med läxor och övningar"
+                        f" (du har {ik['p']}), så räknas igår också. Imorgon är det för sent!")
+            elif m.get("skydd_raddar"):
+                titel = f"🛡️ Din svit på {m['skydd_raddar']} dagar kan räddas!"
+                text = "Du har ett svitskydd. Gör något i Läxspelet idag så räddar det sviten."
+            elif n >= 2 and not m["streak_idag"]:
+                titel = f"🔥 Din svit på {n} dagar väntar!" if not sista else f"⏰ Din svit på {n} dagar försvinner ikväll!"
+                text = f"Gör något litet i Läxspelet idag så får du +{min(m['streak_max'], n + 1)} ⭐ och sviten fortsätter."
+            else:
+                continue
+            try:
+                tips = fraga.svit_forslag(data)
+                tips = [t for t in tips if not t.startswith("För att jobba ikapp")][:2]
+                if tips:
+                    text += "\n" + "\n".join(f"👉 {t}" for t in tips)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Skolan: svitförslag: %s", err)
+            idag = dt_util.now().date().isoformat()
+            if any(x.get("dag") == idag for x in (data.get("skrivkrav") or {}).get("vantar") or []):
+                text += ("\n✍️ Det du redan gjort idag räknas inte förrän du gjort en skrivövning"
+                         " (Skrivverkstaden eller ett Pennuppdrag). Skriv något så räknas allt!")
+            await _notis(hass, b["notify"], titel, text, f"/skolan?barn={b['id']}")
+
+    async_track_time_change(hass, _svit_notis, hour=16, minute=30, second=0)
+    async_track_time_change(hass, _svit_notis, hour=19, minute=15, second=0)
     async def _vanner_synk(_now=None) -> None:
         """Skicka barnens kort till vänservern och hämta vänner (bara när vänner är påslaget)."""
         if not vanner.pa():
