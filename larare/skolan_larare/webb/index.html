@@ -32,7 +32,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:7px;bord
 .mini-bar{display:inline-block;width:70px;height:8px;background:var(--rand);border-radius:4px;overflow:hidden;vertical-align:middle;margin-right:6px}.mini-bar i{display:block;height:100%;background:var(--acc)}
 .fil-rad{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}.fil-rad input{width:auto}
 tr.klick{cursor:pointer}tr.klick:hover td{background:var(--bg)}td input{padding:5px}.res-in{width:80px}
-h3{font-size:16px;margin:0 0 6px}
+h3{font-size:16px;margin:0 0 6px}.badge{background:var(--fel);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px}
 .rutor{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
 .ruta{background:var(--bg);border-radius:12px;padding:12px}.ruta-r{font-size:13px;color:var(--muted)}.ruta-v{font-size:28px;font-weight:800;margin:2px 0}.ruta-u{font-size:12px;color:var(--muted)}
 .legend{display:flex;gap:16px;font-size:13px;color:var(--muted);margin-bottom:6px}.legend span{display:flex;align-items:center;gap:6px}
@@ -103,7 +103,8 @@ function rita() {
   $("#nav").textContent = flik === "elev" ? `👤 ${(L.elever.find((x) => x.id === valdElev) || {}).namn || "Elev"}` : namn[flik] || namn.oversikt;
   document.querySelector(".meny-bak")?.remove(); document.querySelector(".meny")?.remove();
   if (menyOppen) document.body.insertAdjacentHTML("beforeend", `<div class="meny-bak"></div><div class="meny">${MENY.map(([rubrik, ids]) =>
-    (rubrik ? `<div class="meny-grupp">${rubrik}</div>` : "") + ids.map((id) => `<button class="${id === flik ? "vald" : ""}" data-f="${id}">${namn[id]}</button>`).join("")).join("")}</div>`);
+    (rubrik ? `<div class="meny-grupp">${rubrik}</div>` : "") + ids.map((id) => `<button class="${id === flik ? "vald" : ""}" data-f="${id}">${namn[id]}${id === "skolan" && L.skola?.olasta ? ` (${L.skola.olasta})` : ""}</button>`).join("")).join("")}</div>`);
+  $("#meny-knapp").textContent = `☰ Meny${L.skola?.olasta ? ` (${L.skola.olasta})` : ""}`;
   $("#meny-knapp").onclick = () => { menyOppen = !menyOppen; rita(); };
   const bak = document.querySelector(".meny-bak"); if (bak) bak.onclick = () => { menyOppen = false; rita(); };
   document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { flik = b.dataset.f; location.hash = flik; msg = null; menyOppen = false; rita(); window.scrollTo(0, 0); });
@@ -282,6 +283,13 @@ function elev() {
       <p class="small muted">${e.mentor ? "Du är mentor: du får ämneslärarnas provresultat för eleven när ni är med i samma skola i appen." : "Från familjens Läxspelet."}</p></div>` : ""}
     ${e.fran_kollegor?.length ? `<div class="kort"><h3>📝 Provresultat från ämneslärarna</h3>${liggande(e.fran_kollegor.slice().sort((a, b) => String(b.datum).localeCompare(String(a.datum))).slice(0, 12).map((x) => {
       const pc = S.provPct(x); return { namn: `${x.amne || x.titel}`, v: pc ?? 0, max: 100, text: x.max ? `${tal(x.poang)}/${tal(x.max)}` : `betyg ${x.betyg || "–"}`, tip: `${x.datum} ${x.titel} (${x.larare})${x.kommentar ? `: ${x.kommentar}` : ""}` }; }))}</div>` : ""}
+    <div class="kort"><h3>📝 Anteckningar om ${esc(e.namn)}</h3>
+      <p class="small muted">${L.skola ? "Delas med elevens andra lärare i skolan: mentorn får alla, en ämneslärare bara de som gäller sitt ämne. Aldrig med familjen." : "Bara för dig. Går du med i en skola delas de med elevens andra lärare (mentorn allt, ämneslärare sitt ämne)."}</p>
+      <div class="grid2"><div><label>Ämne</label><input id="ant-amne" value="${esc(L.roll === "amne" ? (L.amne || "").split(",")[0].trim() : "")}" placeholder="Tomt = bara mentorn"></div></div>
+      <label>Anteckning</label><textarea id="ant-text" rows="2" maxlength="1000" placeholder="t.ex. Har kommit ikapp med bråk, behöver träna på textuppgifter"></textarea>
+      <button class="p" id="ant-ny">📝 Spara</button>
+      ${(e.anteckningar || []).map((a) => `<div class="grupp"><b>${esc(a.egen ? "Du" : a.larare)}</b> <span class="small muted">${a.amne ? `${esc(a.amne)} · ` : ""}${esc(a.tid)}</span>
+        ${a.egen ? ` <button class="m" data-ant-bort="${esc(a.id)}">🗑️</button>` : ""}<p style="white-space:pre-wrap;margin:4px 0">${esc(a.text)}</p></div>`).join("")}</div>
     ${e.lappar?.length ? `<div class="kort"><h3>✉️ Lappar från föräldern</h3>${e.lappar.slice().reverse().map((x) => `<div class="grupp"><span class="small muted">${esc(x.tid.replace("T", " "))}</span><p style="white-space:pre-wrap">${esc(x.text)}</p></div>`).join("")}</div>` : ""}
     ${e.samtal ? `<div class="kort"><h3>🗣️ Underlag till utvecklingssamtalet</h3><p class="small muted">${esc(e.samtal.fran)} – ${esc(e.samtal.till)}, kom ${esc(e.samtal.tid.slice(0, 10))}</p>
       ${e.samtal.ai ? `${lista("Styrkor", e.samtal.ai.styrkor)}${lista("Det som är svårt", e.samtal.ai.svart)}${lista("Föräldrarnas frågor", e.samtal.ai.fragor)}` : ""}
@@ -331,6 +339,12 @@ function skolan() {
       <p class="small muted">${s.medlemmar.length + 1} lärare. Apparna synkar med varandra var 10:e minut på skolans nätverk.</p>
       ${s.kod ? `<p>Kod för nya kollegor: <b class="adress" style="font-size:22px">${esc(s.kod)}</b> <span class="small muted">(giltig en vecka)</span></p>` : `<p class="small muted">Ingen giltig kod just nu.</p>`}
       <div class="actions"><button class="m" id="sk-ny-kod">🔑 Ny kod</button><button class="m" id="sk-synka">🔄 Synka nu</button><button class="m" id="sk-lamna">🚪 Lämna skolan</button></div></div>
+    <div class="kort"><h3>💬 Meddelanden${s.olasta ? ` <span class="badge">${s.olasta} nya</span>` : ""}</h3>
+      <div class="grid2"><div><label>Till</label><select id="sk-till"><option value="">Alla på skolan</option>${s.medlemmar.map((m) => `<option value="${m.id}">${esc(m.namn)}</option>`).join("")}</select></div></div>
+      <label>Meddelande</label><textarea id="sk-text" rows="2" maxlength="1000" placeholder="t.ex. Kan vi flytta SO-provet så att 7A inte får tre prov samma vecka?"></textarea>
+      <button class="p" id="sk-skicka">💬 Skicka</button>
+      ${s.meddelanden.length ? `<div style="margin-top:10px">${s.meddelanden.slice(0, 30).map((m) => `<div class="grupp" style="${m.last ? "" : "border-left-color:var(--fel)"}"><b>${esc(m.egen ? "Du" : m.namn)}</b> <span class="small muted">→ ${m.till ? esc(m.egen ? m.till_namn || "?" : "dig") : "alla"} · ${esc(m.tid)}</span><p style="white-space:pre-wrap;margin:4px 0">${esc(m.text)}</p></div>`).join("")}</div>` : `<p class="small muted">Inga meddelanden än.</p>`}
+      ${s.olasta ? `<button class="m" id="sk-last">✓ Markera som lästa</button>` : ""}</div>
     <div class="kort"><h3>👩‍🏫 Lärarna</h3><table><tr><th>Namn</th><th>Roll</th><th>Senast</th></tr>
       <tr><td><b>${esc(L.larare || "Du")}</b> (du)</td><td>${roll({ roll: L.roll, amne: L.amne, klass: L.klass })}</td><td>–</td></tr>
       ${s.medlemmar.map((m) => `<tr><td><b>${esc(m.namn)}</b></td><td>${roll(m)}</td><td class="small">${esc(m.sedd || "–")}${m.fel ? ` <span style="color:var(--fel)">⚠️ ${esc(m.fel)}</span>` : ""}</td></tr>`).join("")}</table></div>
@@ -493,6 +507,10 @@ function koppla() {
   on("#sk-ga", () => { msg = { t: "ok", x: "Letar efter kollegan på nätverket…" }; rita(); andra({ op: "skola_ga_med", kod: $("#sk-kod")?.value || "", adress: $("#sk-adress")?.value || "" }, "Du är med i skolan! 🏫"); });
   on("#sk-ny-kod", () => andra({ op: "skola_kod" }, "Ny kod. Den gamla slutar fungera."));
   on("#sk-synka", () => andra({ op: "skola_synka" }, "Synkat med kollegorna."));
+  on("#sk-skicka", () => andra({ op: "skola_meddelande", text: $("#sk-text").value, till: $("#sk-till").value }, "Skickat. Kollegorna får det vid nästa synk (inom 10 minuter)."));
+  on("#sk-last", () => andra({ op: "skola_last" }));
+  on("#ant-ny", () => andra({ op: "anteckning_ny", elev: valdElev, amne: $("#ant-amne").value, text: $("#ant-text").value }, "Sparad."));
+  document.querySelectorAll("[data-ant-bort]").forEach((b) => b.onclick = () => confirm("Ta bort anteckningen? Kollegor som redan fått den behåller den tills nästa synk.") && andra({ op: "anteckning_bort", id: b.dataset.antBort }));
   on("#sk-lamna", () => confirm("Lämna skolan? Du ser inte provkalendern och kollegorna längre. Din klass och dina elever påverkas inte.") && andra({ op: "skola_lamna" }, "Du har lämnat skolan."));
   const prDatum = $("#pr-datum"); if (prDatum) prDatum.onchange = () => { const v = $("#pr-varning"); if (v) v.innerHTML = krockVarning(prDatum.value, L.klass); };
   document.querySelectorAll("[data-vb-bort]").forEach((b) => b.onclick = () => confirm("Ta bort veckobrevet?") && andra({ op: "veckobrev_bort", id: b.dataset.vbBort }));

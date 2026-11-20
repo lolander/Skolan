@@ -553,6 +553,9 @@ def aktiv(data: dict, dag: str | None = None) -> None:
         m["ovningsdagar"].append(dag)
         m["ovningsdagar"].sort()
         del m["ovningsdagar"][:-400]
+    h = _aktivt(data)
+    if h and dag > _matad(m, h):  # husdjuret som är med när barnet pluggar blir mätt
+        h["matad"] = dag
     n = _streak(m["ovningsdagar"], date.fromisoformat(dag))
     r = m["raknare"]
     r["basta_streak"] = max(r.get("basta_streak", 0), _streak(m["ovningsdagar"]), n)
@@ -664,11 +667,16 @@ def djur(data: dict) -> dict | None:
     intj = _djur_tillvaxt(data)
     steg = max(i for i, (grans, _n) in enumerate(DJUR_STEG) if intj >= grans)
     nasta = DJUR_STEG[steg + 1][0] if steg + 1 < len(DJUR_STEG) else None
-    dagar = sorted(m["ovningsdagar"])
-    idag = dt_util.now().date()
-    sedan = (idag - date.fromisoformat(dagar[-1])).days if dagar else 99
-    humor = "glad" if sedan == 0 else "nojd" if sedan == 1 else "hungrig" if sedan == 2 else "ledsen"
-    return {**d, "steg": steg, "steg_namn": DJUR_STEG[steg][1], "nasta": nasta, "intjanat": intj,
+    h = _aktivt(data)
+    if h:
+        humor, sedan = _humor(data, h)
+    else:  # äldre data utan husdjurslista
+        dagar = sorted(m["ovningsdagar"])
+        sedan = (dt_util.now().date() - date.fromisoformat(dagar[-1])).days if dagar else 99
+        humor = "glad" if sedan == 0 else "nojd" if sedan == 1 else "hungrig" if sedan == 2 else "ledsen"
+    rb = rum_bonus(data)
+    hungriga = [x["namn"] for x in husdjur_lista(data) if not x["aktiv"] and x["humor"] in ("hungrig", "ledsen")]
+    return {**d, "rum_bonus": rb, "hungriga": hungriga, "slappta": slappta(data), "mat_pris": MAT_PRIS, "rum": _vaning(d)["rum"], "vaningar": vaningar(data), "steg": steg, "steg_namn": DJUR_STEG[steg][1], "nasta": nasta, "intjanat": intj,
             "humor": humor, "sedan": sedan, "form": djur_form(data, steg), "bastis": _kompis_bastis(d), "mina": husdjur_lista(data),
             "element": djur_element(d.get("art"))}
 
@@ -1316,13 +1324,111 @@ def djur_valj(data: dict, art: str, namn: str, hid: str | None = None) -> None:
     _byt_till(data, _nytt_djur(data, art, namn or "Kompis"))
 
 
+# ---------- mat: varje husdjur behöver tas om hand ----------
+# Husdjuret som är med när barnet pluggar blir mätt. De andra måste matas varje dag (kostar ⭐) eller få vara med
+# när barnet pluggar. Hungriga husdjur slåss sämre, och ledsna vill inte följa med till arenan.
+MAT_PRIS = 5
+HUNGRIG_KRAFT = 0.8
+
+
+def _matad(m: dict, h: dict) -> str:
+    """Senaste dagen husdjuret fick mat. Husdjur från före maten räknas från senaste pluggdagen."""
+    if h.get("matad"):
+        return h["matad"]
+    dagar = sorted(m.get("ovningsdagar") or [])
+    return dagar[-1] if dagar else (h.get("skapad") or "")[:10]
+
+
+def _humor(data: dict, h: dict) -> tuple[str, int]:
+    m = _m(data)
+    md = _matad(m, h)
+    try:
+        sedan = (dt_util.now().date() - date.fromisoformat(md[:10])).days
+    except ValueError:
+        sedan = 99
+    v = next((x for x in _vaningar(m["djur"]) if x.get("hid") == h["id"]), None)
+    s = sedan - 1 if v and _bonus_av(v["rum"])["mys"] and sedan >= 2 else sedan  # ett mysigt rum: hungrig en dag senare
+    return ("glad" if s <= 0 else "nojd" if s == 1 else "hungrig" if s == 2 else "ledsen"), sedan
+
+
+def mata(data: dict, hid: str) -> None:
+    m = _m(data)
+    d = m.get("djur") or {}
+    h = next((x for x in d.get("husdjur", []) if x["id"] == hid), None)
+    if not h:
+        raise ValueError("Det husdjuret har du inte.")
+    if h["id"] == d.get("aktiv"):
+        raise ValueError(f"{h['namn']} blir mätt när du pluggar.")
+    idag = dt_util.now().date().isoformat()
+    if _matad(m, h) >= idag:
+        raise ValueError(f"{h['namn']} är redan mätt idag.")
+    if m.get("saldo", 0) < MAT_PRIS:
+        raise ValueError(f"Mat kostar {MAT_PRIS} ⭐ (du har {m.get('saldo', 0)}).")
+    ge(data, -MAT_PRIS, f"🍖 Matade {h['namn']} {h['art']}", None, "🛍️")
+    h["matad"] = idag
+
+
+def djur_slapp(data: dict, hid: str) -> None:
+    """Släpp ett husdjur (det flyttar till ett nytt hem). Det går inte att ångra."""
+    m = _m(data)
+    d = m.get("djur") or {}
+    egna = d.get("husdjur", [])
+    h = next((x for x in egna if x["id"] == hid), None)
+    if not h:
+        raise ValueError("Det husdjuret har du inte.")
+    if len(egna) < 2:
+        raise ValueError("Du kan inte släppa ditt enda husdjur.")
+    if h["id"] == d.get("aktiv"):
+        _byt_till(data, next(x for x in egna if x["id"] != hid))
+    egna.remove(h)
+    vaning = None
+    for i, v in enumerate(_vaningar(d)):
+        if v.get("hid") == hid:
+            v["hid"], vaning = None, i
+    # sparas en tid så att en förälder kan låta barnet ångra sig
+    d["slappta"] = (d.get("slappta", []) + [{"h": h, "vaning": vaning, "tid": dt_util.now().isoformat(timespec="minutes")}])[-SLAPPTA_MAX:]
+    ge(data, 0, f"👋 {h['namn']} {h['art']} flyttade till ett nytt hem", None, "👋")
+
+
+SLAPPTA_MAX = 5
+
+
+def slappta(data: dict) -> list[dict]:
+    d = _m(data).get("djur") or {}
+    return [{"id": x["h"]["id"], "art": x["h"]["art"], "namn": x["h"]["namn"], "tid": x["tid"],
+             "steg_namn": DJUR_STEG[max(i for i, (g, _n) in enumerate(DJUR_STEG) if x["h"].get("tillvaxt", 0) >= g)][1]}
+            for x in d.get("slappta", [])]
+
+
+def djur_ater(data: dict, hid: str) -> str:
+    """Föräldern låter barnet ångra sig: husdjuret kommer tillbaka med allt det hade."""
+    d = _m(data).get("djur") or {}
+    x = next((y for y in d.get("slappta", []) if y["h"]["id"] == hid), None)
+    if not x:
+        raise ValueError("Det husdjuret finns inte bland de släppta.")
+    h = x["h"]
+    if any(y["art"] == h["art"] for y in d.get("husdjur", [])):
+        raise ValueError(f"Barnet har redan ett {h['art']}. Släpp det först om {h['namn']} ska komma tillbaka.")
+    d["slappta"].remove(x)
+    h["matad"] = dt_util.now().date().isoformat()  # kommer hem mätt
+    d.setdefault("husdjur", []).append(h)
+    v = _vaningar(d)
+    if x["vaning"] is not None and x["vaning"] < len(v) and not v[x["vaning"]].get("hid"):
+        v[x["vaning"]]["hid"] = h["id"]
+    ge(data, 0, f"🏠 {h['namn']} {h['art']} kom tillbaka hem", None, "🏠")
+    return h["namn"]
+
+
 def husdjur_lista(data: dict) -> list[dict]:
     d = _m(data).get("djur") or {}
     ut = []
+    idag = dt_util.now().date().isoformat()
     for h in d.get("husdjur", []):
         t = h.get("tillvaxt", 0)
         steg = max(i for i, (grans, _n) in enumerate(DJUR_STEG) if t >= grans)
+        humor, sedan = _humor(data, h)
         ut.append({"id": h["id"], "art": h["art"], "namn": h["namn"], "steg": steg, "steg_namn": DJUR_STEG[steg][1],
+                   "humor": humor, "sedan": sedan, "matad_idag": _matad(_m(data), h) >= idag,
                    "form": _form_av(h.get("raknare", {}), steg), "aktiv": h["id"] == d.get("aktiv"), "element": djur_element(h["art"])})
     return ut
 
@@ -1355,14 +1461,14 @@ def husdjur_stats(data: dict) -> list[dict]:
     return ut
 
 
-def djur_kop(data: dict, sak_id: str) -> None:
+def djur_kop(data: dict, sak_id: str, vaning=None) -> None:
     m = _m(data)
     d = m.get("djur")
     sak = next((x for x in DJURBUTIK + RUM_SAKER if x["id"] == sak_id), None)
     if not d or not sak:
         raise ValueError("Det finns inte.")
     agt = d.setdefault("agt", [])
-    if sak_id in agt:
+    if sak_id in agt and not (sak["typ"] == "rum" and _rum_ledig(d, sak_id) <= 0):
         raise ValueError("Du har redan den.")
     if sak.get("hogtid") and sak["hogtid"] not in {h["id"] for h in aktiva_hogtider()}:
         raise ValueError("Den finns bara att köpa runt högtiden.")
@@ -1371,10 +1477,14 @@ def djur_kop(data: dict, sak_id: str) -> None:
     if m.get("saldo", 0) < sak["pris"]:
         raise ValueError(f"Du behöver {sak['pris']} ⭐ (du har {m.get('saldo', 0)}).")
     ge(data, -sak["pris"], f"🛍️ Köpte {sak['namn']} {sak['ikon']} till {d['namn']}", None, "🛍️")
-    agt.append(sak_id)
     if sak["typ"] == "rum":
-        d.setdefault("rum", {})[sak["plats"]] = sak_id  # ställ in direkt
+        ant = d.setdefault("rum_antal", {})
+        ant[sak_id] = _rum_agda(d, sak_id) + 1
+        if sak_id not in agt:
+            agt.append(sak_id)
+        _vaning(d, vaning)["rum"][sak["plats"]] = sak_id  # ställ in direkt på våningen
     else:
+        agt.append(sak_id)
         d.setdefault("pa", {})[sak["typ"]] = sak_id  # ta på direkt
 
 
@@ -1911,7 +2021,12 @@ def _djur_xp(data: dict, poang: int) -> None:
     if "djur_xp" not in k:
         k["djur_xp"] = _djur_tillvaxt(data)
     else:
-        k["djur_xp"] += int(poang)
+        p = int(poang)
+        if p > 0 and rum_bonus(data)["set"]:  # helt inrett rum: +5 % XP (resten sparas till nästa gång)
+            rest = k.get("xp_rum_rest", 0) + p * round(RUM_SET_XP * 100)
+            p += rest // 100
+            k["xp_rum_rest"] = rest % 100
+        k["djur_xp"] += p
 
 
 def djur_niva(data: dict) -> dict:
@@ -2833,7 +2948,67 @@ def rensa_kampe(k: dict, agare: str) -> tuple[dict, int]:
             "traning": _int(k.get("traning"), 0, len(TRANING) - 1)}, okanda
 
 
-def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict | None = None, de: dict | None = None) -> dict:
+ARENA_LAG_MAX = 3  # så många egna husdjur man kan ta med till arenan
+
+
+def _kampe_husdjur(data: dict, hid: str, agare: str) -> dict:
+    """Ett av barnets husdjur som kämpe, räknat på en kopia som om man bytt till det."""
+    import copy
+
+    if hid == (_m(data).get("djur") or {}).get("aktiv"):
+        k = _kampe(data, agare)
+    else:
+        kopia = copy.deepcopy(data)
+        _byt_till(kopia, next(x for x in _m(kopia)["djur"]["husdjur"] if x["id"] == hid))
+        k = _kampe(kopia, agare)
+    k["hid"] = hid
+    h = next((x for x in (_m(data).get("djur") or {}).get("husdjur", []) if x["id"] == hid), None)
+    k["humor"] = _humor(data, h)[0] if h else "glad"
+    if k["humor"] in ("hungrig", "ledsen"):  # ett hungrigt husdjur orkar mindre
+        k["drag"] = {a: max(1, round(v * HUNGRIG_KRAFT)) for a, v in k["drag"].items()}
+    return k
+
+
+def antal_husdjur(data: dict | None) -> int:
+    return len(((_m(data or {}).get("djur") or {}).get("husdjur")) or []) or (1 if _m(data or {}).get("djur") else 0)
+
+
+def _arena_lag(data: dict, agare: str, antal: int) -> list[dict]:
+    """Det aktiva husdjuret först, sedan de starkaste av de andra."""
+    d = _m(data).get("djur") or {}
+    lag = [_kampe_husdjur(data, d.get("aktiv"), agare)]
+    ovriga = [h["id"] for h in d.get("husdjur", []) if h["id"] != d.get("aktiv")]
+    if antal > 1 and ovriga:
+        boende = {x.get("hid") for x in d.get("vaningar") or []}  # husdjur med en egen våning går först
+        andra = [x for x in (_kampe_husdjur(data, hid, agare) for hid in ovriga) if x["humor"] != "ledsen"]  # ledsna stannar hemma
+        lag += sorted(andra, key=lambda x: (x["hid"] not in boende, -x["cp"]))[: antal - 1]
+    return lag
+
+
+def _lag_antal(lag) -> int:
+    try:
+        return max(1, min(ARENA_LAG_MAX, int(lag or 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _kort_kampe(x: dict) -> dict:
+    return {y: x.get(y) for y in ("hid", "namn", "art", "steg", "niva", "max", "skold", "def")}
+
+
+def _hoppa_in(a: dict, sida: str) -> dict | None:
+    """Nästa husdjur med liv kvar hoppar in när det som slåss orkar inte mer."""
+    res = a.get(f"{sida}_res") or []
+    i = next((i for i, x in enumerate(res) if x["liv"] > 0), None)
+    if i is None:
+        return None
+    ny = res.pop(i)
+    res.append(a[sida])
+    a[sida] = ny
+    return ny
+
+
+def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict | None = None, de: dict | None = None, lag=1) -> dict:
     m = _m(data)
     if not m.get("djur"):
         raise ValueError("Du behöver ett husdjur först.")
@@ -2844,8 +3019,11 @@ def arena_start(data: dict, jag: str, mot_id: str, mot_namn: str, mot_data: dict
         raise ValueError("Gör klart lagstriden först.")
     if k.get("energi", 0) < 1:
         raise ValueError("Du behöver 1 ⚡ energi för att gå in i arenan. Plugga så laddas den!")
+    n = min(_lag_antal(lag), lag_max(data), 1 if de is not None else antal_husdjur(mot_data))  # lika många husdjur på båda sidor
     k["energi"] -= 1
-    k["arena"] = {"mot": mot_id, "mot_namn": mot_namn, "jag": _kampe(data, jag), "de": _forsvarare(de or _kampe(mot_data, mot_namn)),
+    mina = _arena_lag(data, jag, n)
+    deras = [_forsvarare(de)] if de is not None else [_forsvarare(x) for x in _arena_lag(mot_data, mot_namn, n)]
+    k["arena"] = {"mot": mot_id, "mot_namn": mot_namn, "jag": mina[0], "de": deras[0], "jag_res": mina[1:], "de_res": deras[1:],
                   "turer": [], "start": dt_util.now().isoformat(timespec="seconds")}
     return k["arena"]
 
@@ -2903,7 +3081,7 @@ def _boss_kampe(data: dict, vi: int) -> dict:
             "steg": 5, "niva": 0, "cp": 0, "liv": mx, "max": mx, "ap": ARENA_AP_START, "drag": drag, "skold": "", "def": 0, "traning": min(5, 1 + vi)}
 
 
-def revansch_start(data: dict, varld: str) -> dict:
+def revansch_start(data: dict, varld: str, lag=1) -> dict:
     m = _m(data)
     if not m.get("djur"):
         raise ValueError("Du behöver ett husdjur först.")
@@ -2916,7 +3094,11 @@ def revansch_start(data: dict, varld: str) -> dict:
     if k.get("energi", 0) < REVANSCH_ENERGI:
         raise ValueError(f"En revansch kostar {REVANSCH_ENERGI} ⚡. Plugga så laddas energin!")
     k["energi"] -= REVANSCH_ENERGI
-    k["arena"] = {"mot": "boss", "mot_namn": BOSSAR[vi]["namn"], "revansch": varld, "jag": _kampe(data, "jag"), "de": _boss_kampe(data, vi),
+    mina = _arena_lag(data, "jag", min(_lag_antal(lag), lag_max(data)))
+    boss = _boss_kampe(data, vi)
+    if len(mina) > 1:  # flera husdjur mot en boss: bossen får mer liv
+        boss["max"] = boss["liv"] = round(boss["max"] * (1 + 0.6 * (len(mina) - 1)))
+    k["arena"] = {"mot": "boss", "mot_namn": BOSSAR[vi]["namn"], "revansch": varld, "jag": mina[0], "de": boss, "jag_res": mina[1:], "de_res": [],
                   "turer": [], "start": dt_util.now().isoformat(timespec="seconds")}
     return k["arena"]
 
@@ -3015,6 +3197,14 @@ def arena_drag(data: dict, at_id: str) -> dict:
     jag["ap"] -= kostar
     x = _slag(jag, at_id, de)
     tur.update({"skada": x["skada"], "miss": x["miss"], "skydd": x["skydd"], "tillbaka": x["tillbaka"], "super": x.get("super")})
+    return _arena_tur(data, a, tur)
+
+
+def _arena_tur(data: dict, a: dict, tur: dict) -> dict:
+    """Motståndarens drag, nästa husdjur hoppar in om något orkar inte mer, och slutet."""
+    jag, de = a["jag"], a["de"]
+    if a.get("jag_res") or a.get("de_res"):  # flera husdjur: vilka som slogs den här turen (för reprisen)
+        tur["j"], tur["d"] = _kort_kampe(jag), _kort_kampe(de)
     if de["liv"] > 0 and jag["liv"] > 0:
         mot = _ai_val(de, jag)
         de["ap"] -= _drag_info(mot)["energi"]
@@ -3024,12 +3214,32 @@ def arena_drag(data: dict, at_id: str) -> dict:
     tur["jag_efter"], tur["de_efter"] = jag["liv"], de["liv"]
     jag["ap"] = min(ARENA_AP_MAX, jag["ap"] + ARENA_AP_TUR)
     de["ap"] = min(ARENA_AP_MAX, de["ap"] + ARENA_AP_TUR)
+    if de["liv"] <= 0 and (ny := _hoppa_in(a, "de")):
+        tur["de_in"] = _kort_kampe(ny)
+    if jag["liv"] <= 0 and (ny := _hoppa_in(a, "jag")):
+        tur["jag_in"] = _kort_kampe(ny)
     a["turer"].append(tur)
-    if de["liv"] <= 0 or jag["liv"] <= 0 or len(a["turer"]) >= 40:
-        vann = de["liv"] <= 0 and jag["liv"] > 0
+    storlek = 1 + max(len(a.get("jag_res") or []), len(a.get("de_res") or []))
+    if a["de"]["liv"] <= 0 or a["jag"]["liv"] <= 0 or len(a["turer"]) >= 40 * storlek:
+        vann = a["de"]["liv"] <= 0 and a["jag"]["liv"] > 0
         tur["slut"] = "vinst" if vann else "forlust"
         _arena_slut(data, vann)
     return tur
+
+
+def arena_byt(data: dict, hid: str) -> dict:
+    """Byt husdjur mitt i striden. Det kostar turen: motståndaren hinner anfalla den som hoppar in."""
+    a = _karta(data).get("arena")
+    if not a:
+        raise ValueError("Ingen strid pågår.")
+    res = a.get("jag_res") or []
+    i = next((i for i, x in enumerate(res) if x.get("hid") == hid), None)
+    if i is None or res[i]["liv"] <= 0:
+        raise ValueError("Det husdjuret kan inte hoppa in.")
+    res[i], a["jag"] = a["jag"], res[i]
+    tur = {"at": "byt", "byt": True, "jag_fore": a["jag"]["liv"], "de_fore": a["de"]["liv"], "skada": 0, "miss": False, "skydd": "",
+           "tillbaka": 0, "jag_in": _kort_kampe(a["jag"])}
+    return _arena_tur(data, a, tur)
 
 
 def arena_ge_upp(data: dict) -> None:
@@ -3068,7 +3278,9 @@ def _arena_slut(data: dict, vann: bool, gav_upp: bool = False) -> None:
         "mot": a["mot"], "mot_namn": a["mot_namn"], "vann": vann, "gav_upp": gav_upp, "tid": dt_util.now().isoformat(timespec="seconds"),
         "jag": {x: a["jag"].get(x) for x in ("namn", "art", "steg", "niva", "max", "skold", "def")},
         "de": {x: a["de"].get(x) for x in ("namn", "art", "steg", "niva", "max", "skold", "def")},
-        "turer": a["turer"][-40:]}])[-10:]
+        **({"jag_lag": [_kort_kampe(x) for x in [a["jag"], *a["jag_res"]]], "de_lag": [_kort_kampe(x) for x in [a["de"], *a["de_res"]]]}
+           if a.get("jag_res") or a.get("de_res") else {}),
+        "turer": a["turer"][-120:]}])[-10:]
 
 
 def arena_status(data: dict) -> dict:
@@ -3077,7 +3289,7 @@ def arena_status(data: dict) -> dict:
     n = djur_niva(data)
     return {"niva": n, "cp": djur_cp(data), "def": djur_def(data), "traning": traning_status(data), "kraft": round(djur_kraft(data), 2), "poang": k.get("arena_poang", 0),
             "vinster": _m(data)["raknare"].get("arena_vinster", 0), "pagar": a, "hist": k.get("arena_hist", [])[-5:],
-            "knuff": KNUFF, "ap_max": ARENA_AP_MAX, "ver": ARENA_VER, "drag": {x["id"]: {y: x.get(y) for y in ("ikon", "namn", "typ", "energi", "ladd", "ganger")} for x in [KNUFF, *ATTACKER]},
+            "knuff": KNUFF, "ap_max": ARENA_AP_MAX, "ver": ARENA_VER, "lag_max": lag_max(data), "husdjur_antal": antal_husdjur(data), "drag": {x["id"]: {y: x.get(y) for y in ("ikon", "namn", "typ", "energi", "ladd", "ganger")} for x in [KNUFF, *ATTACKER]},
             "ladd_max": LADD_MAX, "svag_mot": ELEMENT_SVAG_MOT, "element": DJUR_ELEMENT}
 
 
@@ -3122,18 +3334,123 @@ RUM_SAKER = [
 ]
 
 
-def rum_stall(data: dict, plats: str, sak_id: str | None) -> None:
+def rum_stall(data: dict, plats: str, sak_id: str | None, vaning=None) -> None:
     d = _m(data).get("djur")
     if not d or plats not in RUM_PLATSER:
         raise ValueError("Det går inte.")
-    rum = d.setdefault("rum", {})
+    rum = _vaning(d, vaning)["rum"]
     if not sak_id:
         rum.pop(plats, None)
         return
     sak = _sak(sak_id)
     if not sak or sak.get("plats") != plats or sak_id not in d.get("agt", []):
         raise ValueError("Du har inte köpt den.")
+    if rum.get(plats) != sak_id and _rum_ledig(d, sak_id) <= 0:
+        raise ValueError(f"{sak['namn']} står redan på en annan våning. Köp en till eller flytta den.")
     rum[plats] = sak_id
+
+
+RUM_MYS = 4  # så många saker i rummet: husdjuret blir hungrigt en dag senare
+RUM_SET_XP = 0.05  # alla platser inredda: +5 % XP från plugg
+
+# Våningar: varje våning är ett eget rum åt ett av husdjuren. När översta våningen har VANING_KRAV saker kan man
+# bygga nästa. Varje våning gör att man kan ta med ett husdjur till i arenan. Rumsaker köps till varje våning.
+VANING_MAX = 3
+VANING_KRAV = 6
+VANING_PRIS = [0, 300, 600]
+
+
+def _vaningar(d: dict) -> list[dict]:
+    v = d.get("vaningar")
+    if not v:  # första gången: det gamla rummet blir våning 1, och det aktiva husdjuret bor där
+        v = d["vaningar"] = [{"hid": d.get("aktiv"), "rum": d.pop("rum", None) or {}}]
+    return v
+
+
+def _vaning(d: dict, nr=None) -> dict:
+    v = _vaningar(d)
+    if nr is None or nr == "":
+        return next((x for x in v if x.get("hid") and x["hid"] == d.get("aktiv")), v[0])
+    try:
+        return v[int(nr)]
+    except (ValueError, IndexError, TypeError):
+        raise ValueError("Den våningen finns inte.") from None
+
+
+def _rum_agda(d: dict, sak_id: str) -> int:
+    return int((d.get("rum_antal") or {}).get(sak_id) or (1 if sak_id in d.get("agt", []) else 0))
+
+
+def _rum_ledig(d: dict, sak_id: str) -> int:
+    """Hur många av saken som inte står i något rum."""
+    return _rum_agda(d, sak_id) - sum(1 for x in _vaningar(d) for s in x["rum"].values() if s == sak_id)
+
+
+def _bonus_av(rum: dict) -> dict:
+    n = sum(1 for p in RUM_PLATSER if rum.get(p))
+    return {"saker": n, "max": len(RUM_PLATSER), "mys": n >= RUM_MYS, "set": n >= len(RUM_PLATSER),
+            "mys_grans": RUM_MYS, "xp": round(RUM_SET_XP * 100)}
+
+
+def rum_bonus(data: dict) -> dict:
+    """Bonusen för det aktiva husdjurets eget rum (ingen bonus om det inte har någon våning)."""
+    d = _m(data).get("djur") or {}
+    if not d:
+        return _bonus_av({})
+    v = next((x for x in _vaningar(d) if x.get("hid") == d.get("aktiv")), None)
+    return {**_bonus_av(v["rum"] if v else {}), "eget_rum": bool(v)}
+
+
+def vaningar(data: dict) -> dict:
+    d = _m(data).get("djur") or {}
+    if not d:
+        return {"lista": [], "max": VANING_MAX}
+    v = _vaningar(d)
+    nasta = len(v) if len(v) < VANING_MAX else None
+    topp = _bonus_av(v[-1]["rum"])["saker"]
+    return {"lista": [{"nr": i, "hid": x.get("hid"), "rum": x["rum"], "bonus": _bonus_av(x["rum"])} for i, x in enumerate(v)],
+            "max": VANING_MAX, "krav": VANING_KRAV, "topp_saker": topp,
+            "nasta": {"nr": nasta, "pris": VANING_PRIS[nasta], "kan": topp >= VANING_KRAV} if nasta is not None else None,
+            "antal": {k: _rum_agda(d, k) for k in d.get("agt", []) if k.startswith("r_")}}
+
+
+def vaning_kop(data: dict) -> None:
+    m = _m(data)
+    d = m.get("djur")
+    if not d:
+        raise ValueError("Du behöver ett husdjur först.")
+    v = _vaningar(d)
+    if len(v) >= VANING_MAX:
+        raise ValueError(f"Huset har redan {VANING_MAX} våningar.")
+    if _bonus_av(v[-1]["rum"])["saker"] < VANING_KRAV:
+        raise ValueError(f"Inred översta våningen med minst {VANING_KRAV} saker först.")
+    pris = VANING_PRIS[len(v)]
+    if m.get("saldo", 0) < pris:
+        raise ValueError(f"En ny våning kostar {pris} ⭐ (du har {m.get('saldo', 0)}).")
+    ge(data, -pris, f"🏗️ Byggde våning {len(v) + 1} i husdjurens hus", None, "🛍️")
+    boende = {x.get("hid") for x in v}
+    ledig = next((h["id"] for h in d.get("husdjur", []) if h["id"] not in boende), None)
+    v.append({"hid": ledig, "rum": {}})
+
+
+def vaning_djur(data: dict, nr, hid: str | None) -> None:
+    """Välj vem som bor på en våning. Bor husdjuret redan på en annan våning byter de plats."""
+    d = _m(data).get("djur")
+    if not d:
+        raise ValueError("Det går inte.")
+    v = _vaning(d, nr)
+    if hid and not any(h["id"] == hid for h in d.get("husdjur", [])):
+        raise ValueError("Det husdjuret har du inte.")
+    annan = next((x for x in _vaningar(d) if hid and x.get("hid") == hid and x is not v), None)
+    if annan:
+        annan["hid"] = v.get("hid")
+    v["hid"] = hid or None
+
+
+def lag_max(data: dict | None) -> int:
+    """Så många husdjur man kan ta med till arenan: en per våning (och inte fler än man har)."""
+    d = _m(data or {}).get("djur") or {}
+    return min(ARENA_LAG_MAX, len(_vaningar(d)) if d else 1, max(1, antal_husdjur(data)))
 
 
 # ---------- utvecklingsformer och titlar ----------

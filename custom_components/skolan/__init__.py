@@ -164,8 +164,24 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, BackupView, HemkopplingView, HemView, FjarrView, BoendeView, SyskonView, PackaView, ExtraView, HjarnView, IntresseView, UtvecklingView, LarareView, SamtalView, KlockaView, PlanKalenderView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetBildView, WidgetBildHamtaView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, BackupView, HemkopplingView, HemView, FjarrView, BoendeView, SyskonView, PackaView, ExtraView, HjarnView, IntresseView, UtvecklingView, LarareView, SamtalView, KlockaView, PlanKalenderView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetBildView, WidgetBildHamtaView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, VanAdressView, VanAdressbokView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
         hass.http.register_view(view())
+
+    async def _starta_grind(_event: Event | None = None) -> None:
+        """Ingen Nabu Casa: starta Läxspelets gratistunnel, som bara släpper fram de publika länkarna."""
+        if getattr(hass, "konto", None) is not None:  # Windowsappen har en egen tunnel
+            return
+        if _bas_url_egen(hass) and not conf.get("egen_tunnel"):
+            return
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        from .grind import Grind
+        g = Grind(base / ".cloudflared", hass.http.server_port or 8123, async_get_clientsession(hass))
+        hass.data[DOMAIN]["grind"] = g
+        try:
+            await g.starta()
+        except OSError as err:
+            _LOGGER.warning("Läxspelets tunnel kunde inte starta: %s", err)
 
     async def _ateruppta(_event: Event | None = None) -> None:
         """Fortsätt e-böcker som höll på när Home Assistant startades om."""
@@ -489,6 +505,14 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _kal_start)
     async_track_time_change(hass, _kalendrar, minute=[7, 37], second=0)
 
+    async def _van_adresser(_now=None) -> None:
+        """Gratistunneln byter adress vid omstart: säg till vännerna, och leta reda på vänner vi inte når."""
+        if not vanner.pa():
+            return
+        await _vanner_adress_koll(hass)
+
+    async_track_time_change(hass, _van_adresser, minute=list(range(1, 60, 3)), second=30)
+
     async def _auto_backup(_now=None) -> None:
         """Kl. 03:15: automatisk backup (om föräldern har slagit på den)."""
         inst = await hass.async_add_executor_job(_backup_inst_las, hass)
@@ -591,8 +615,10 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
 
     if hass.is_running:
         hass.async_create_task(_ateruppta())
+        hass.async_create_task(_starta_grind())
     else:
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ateruppta)
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _starta_grind)
 
     # Ny fil = ny adress och nytt elementnamn, så ingen webbläsare visar en gammal app ur cachen.
     panel_v = f"{VERSION}-{int((Path(__file__).parent / 'www' / 'panel.js').stat().st_mtime)}"
@@ -767,6 +793,55 @@ async def _vanner_synka_barn(hass: HomeAssistant, b: dict) -> dict:
     return v
 
 
+async def _vanner_adress_koll(hass: HomeAssistant) -> None:
+    """Meddela vännerna vår nya vänlänk (signerat). Vänner vi inte har nått på ett tag: fråga gemensamma vänner."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    session = async_get_clientsession(hass)
+    bas = _bas_url(hass)
+    if not bas.startswith("https://"):
+        return
+    for b in hass.data[DOMAIN]["conf"]["barn"]:
+        mapp = _dir(hass, b["id"])
+        v = await hass.async_add_executor_job(vanner.las, mapp)
+        egen = vanner.egen_kod(bas, v)
+        if not egen or not v["vanner"]:
+            continue
+        andrat = False
+        for x in v["vanner"]:
+            if not x.get("hemlighet"):
+                continue
+            if x.get("meddelad") != egen:  # ny adress hos oss: säg till
+                try:
+                    async with session.post(f"{x['kod']}/adress", json=vanner.adress_paket(v, x, egen), timeout=vanner.TIMEOUT, allow_redirects=False) as r:
+                        if r.status == 200:
+                            x["meddelad"], andrat = egen, True
+                except Exception:  # noqa: BLE001
+                    pass
+            if x.get("fel", 0) >= 3 and time.time() - x.get("letad", 0) > 3600:  # når inte vännen: fråga gemensamma vänner
+                x["letad"], andrat = time.time(), True
+                for via in [y for y in v["vanner"] if y is not x and y.get("hemlighet") and not y.get("fel")][:10]:
+                    try:
+                        async with session.post(f"{via['kod']}/adressbok", json=vanner.adressbok_fraga(v, via, x["kod"]), timeout=vanner.TIMEOUT,
+                                                allow_redirects=False) as r:
+                            ny = (await r.json()).get("kod") if r.status == 200 else None
+                        ny = vanner.normal_kod(ny) if ny else None
+                        if ny and vanner.samma(ny, x["kod"]) and ny != x["kod"]:
+                            x["kod"], x["fel"] = ny, 0
+                            _LOGGER.info("Vänner: hittade %s via %s", x.get("smeknamn"), via.get("smeknamn"))
+                            break
+                    except Exception:  # noqa: BLE001
+                        continue
+        if andrat:
+            async with _vlock(hass, b["id"]):
+                v2 = await hass.async_add_executor_job(vanner.las, mapp)
+                for x in v2["vanner"]:  # bara fälten vi ändrade
+                    y = next((z for z in v["vanner"] if vanner.samma(z["kod"], x["kod"]) or z.get("hemlighet") == x.get("hemlighet") and z.get("hemlighet")), None)
+                    if y:
+                        x.update({k: y[k] for k in ("kod", "fel", "meddelad", "letad") if k in y})
+                await hass.async_add_executor_job(vanner.spara, mapp, v2)
+
+
 async def _barn_for_vannyckel(hass: HomeAssistant, nyckel: str) -> tuple[dict, dict] | None:
     import hmac
     hitta = None
@@ -825,6 +900,50 @@ textarea{{width:100%;font-size:12px;margin-top:12px;height:70px}}</style></head>
         return web.Response(text=sida, content_type="text/html")
 
 
+class VanAdressView(HomeAssistantView):
+    """En vän har fått ny adress (gratistunneln byter vid omstart). Signerat med vänskapens hemlighet."""
+
+    url = "/api/skolan/van/{nyckel}/adress"
+    name = "api:skolan:van:adress"
+    requires_auth = False
+
+    async def post(self, request: web.Request, nyckel: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        hitta = await _barn_for_vannyckel(hass, nyckel) if vanner.pa() else None
+        if not hitta:
+            raise web.HTTPNotFound
+        b, _ = hitta
+        try:
+            body = json.loads(await request.content.read(2048))
+            async with _vlock(hass, b["id"]):
+                v = await hass.async_add_executor_job(vanner.las, _dir(hass, b["id"]))
+                ok = vanner.ta_emot_adress(v, body)
+                if ok:
+                    await hass.async_add_executor_job(vanner.spara, _dir(hass, b["id"]), v)
+        except (ValueError, AttributeError, TypeError):
+            return self.json({"ok": False}, status_code=400)
+        return self.json({"ok": ok}, status_code=200 if ok else 403)
+
+
+class VanAdressbokView(HomeAssistantView):
+    """En vän frågar om en gemensam väns senaste adress (bara vänner får svar, och bara om vänner till båda)."""
+
+    url = "/api/skolan/van/{nyckel}/adressbok"
+    name = "api:skolan:van:adressbok"
+    requires_auth = False
+
+    async def post(self, request: web.Request, nyckel: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        hitta = await _barn_for_vannyckel(hass, nyckel) if vanner.pa() else None
+        if not hitta:
+            raise web.HTTPNotFound
+        try:
+            kod = vanner.adressbok_svar(hitta[1], json.loads(await request.content.read(2048)))
+        except (ValueError, AttributeError, TypeError):
+            kod = None
+        return self.json({"kod": kod}, status_code=200 if kod else 404)
+
+
 class VanForfraganView(HomeAssistantView):
     """En annan familjs Home Assistant säger att deras barn har lagt till vårt barn."""
 
@@ -842,7 +961,7 @@ class VanForfraganView(HomeAssistantView):
             body = json.loads(await request.content.read(2048))
             async with _vlock(hass, b["id"]):
                 v = await hass.async_add_executor_job(vanner.las, _dir(hass, b["id"]))
-                rad = vanner.ta_emot_forfragan(v, body.get("kod"), body.get("smeknamn"))
+                rad = vanner.ta_emot_forfragan(v, body.get("kod"), body.get("smeknamn"), body.get("hemlighet") or "")
                 if rad:
                     await hass.async_add_executor_job(vanner.spara, _dir(hass, b["id"]), v)
         except (ValueError, AttributeError):
@@ -908,8 +1027,9 @@ class VannerView(HomeAssistantView):
                     if foralder:  # föräldern lägger till direkt
                         kod = vanner.normal_kod(kod)
                         vanner._kolla_ny(v, kod, egen)
-                        vanner.lagg_in_van(v, kod, await vanner.hamta_kort(session, kod))
-                        await vanner.skicka_forfragan(session, kod, egen, v["smeknamn"])
+                        h = vanner.ny_hemlighet()
+                        vanner.lagg_in_van(v, kod, await vanner.hamta_kort(session, kod), h)
+                        await vanner.skicka_forfragan(session, kod, egen, v["smeknamn"], h)
                     else:
                         vanner.onska(v, kod, egen)
                         meddela = (f"🤝 {b['namn']} vill lägga till en vän", "Godkänn eller neka under Vänner i Läxspelet.")
@@ -919,12 +1039,14 @@ class VannerView(HomeAssistantView):
                         if not egen:
                             raise ValueError("Er Home Assistant går inte att nå utifrån, så vänner fungerar inte.")
                         vanner._kolla_ny(v, kod, egen)
-                        vanner.lagg_in_van(v, kod, await vanner.hamta_kort(session, kod))
+                        # vänskapens hemlighet: den som lägger till skapar den, den andra får den med förfrågan
+                        h = vanner.ny_hemlighet() if op == "svar_utgaende" else vanner.inkommande_hemlighet(v, kod)
+                        vanner.lagg_in_van(v, kod, await vanner.hamta_kort(session, kod), h)
                         if op == "svar_utgaende":
-                            await vanner.skicka_forfragan(session, kod, egen, v["smeknamn"])
+                            await vanner.skicka_forfragan(session, kod, egen, v["smeknamn"], h)
                     else:
                         lista = "utgaende" if op == "svar_utgaende" else "inkommande"
-                        v[lista] = [x for x in v[lista] if x["kod"] != kod]
+                        v[lista] = [x for x in v[lista] if not vanner.samma(x["kod"], kod)]
                 elif op == "ta_bort":
                     vanner.ta_bort(v, vanner.normal_kod(kod))
                 else:
@@ -1033,7 +1155,7 @@ def _lag_vanner(hass: HomeAssistant, lag: dict) -> list[dict]:
     ut = []
     for x in lag.get("vanner", []):
         v = vanner.las(_dir(hass, x.get("barn", "")))
-        k = next((y for y in v["vanner"] if y["kod"] == x.get("kod")), None)
+        k = next((y for y in v["vanner"] if vanner.samma(y["kod"], x.get("kod"))), None)
         if k:
             ut.append({"kod": k["kod"], "barn": x["barn"], **k})
     return ut
@@ -1273,6 +1395,9 @@ FRAGA_PROMPT = (
     "var bara retsam och hemlighetsfull (t.ex. 'det är en hemlighet… men välj med hjärtat 😏'). "
     "Prata inte om belöningar från föräldrarna, vänner utanför familjen eller skolans klass. "
     "Om barnet frågar om något skolämne, en läxa, matte, glosor eller fakta: säg ALDRIG svaret, inte ens om det är lätt. Ge bara en liten ledtråd eller ett sätt att tänka, och peppa barnet att räkna/tänka själv. "
+    "Frågar barnet varför hen inte fick stjärnor, poäng eller svit: titta i SENASTE STJÄRNORNA, PLUGGDAGAR, VÄNTAR, SKRIVKRAVET, FOTON och GÅTAN och förklara ärligt och vänligt "
+    "vad som hände och vad hen kan göra nu (t.ex. 'det väntar på att mamma eller pappa godkänner', 'du behövde 5 rätt men fick 3'). Gissa inte: syns det inte i läget, säg att du inte ser det och föreslå att fråga mamma eller pappa. "
+    "Säg aldrig att appen har fel om du inte ser det i läget. "
     "Om du inte vet: säg det ärligt och föreslå 'ℹ️ Så funkar det'. Om frågan inte handlar om spelet eller plugg, svara kort och snällt och styr tillbaka. "
     "Svara bara med JSON: {{\"svar\": \"...\"}}"
 )
@@ -1304,7 +1429,7 @@ class FragaView(HomeAssistantView):
         rakna[barn] = rakna.get(barn, 0) + 1
         data = await hass.async_add_executor_job(_load, _dir(hass, barn))
         d = meriter._m(data).get("djur") or {}
-        lage = fraga.lage(data)
+        lage = fraga.lage(data) + "\n" + fraga.forklaring(data)
         historik = [x for x in (body.get("historik") or []) if isinstance(x, dict)][-8:]
         hist = "\n".join(f"{'Barnet' if x.get('vem') == 'barn' else 'Du'}: {str(x.get('text') or '')[:400]}" for x in historik)
         hist += f"\nBarnet: {text}"
@@ -2848,7 +2973,7 @@ class ActionView(HomeAssistantView):
             if not vanner.pa():
                 raise web.HTTPForbidden
             v = await hass.async_add_executor_job(vanner.las, _dir(hass, barn))
-            van = next((x for x in v["vanner"] if x["kod"] == body.get("van")), None)
+            van = next((x for x in v["vanner"] if vanner.samma(x["kod"], body.get("van"))), None)
             if not van:
                 return self.json_message("Den vännen finns inte.", 400)
             try:
@@ -2886,6 +3011,13 @@ class ActionView(HomeAssistantView):
             except ValueError as err:
                 return self.json_message(str(err), 400)
             return self.json({"lag_lista": lagen})
+        if op == "gata_svar":  # en gissning som inte står i facit: låt AI:n bedöma om den ändå är rätt (t.ex. tvättsvamp/svamp)
+            fraga_ai = dagens.gata_ai_fraga(await hass.async_add_executor_job(_load, path))
+            if fraga_ai:
+                try:
+                    body["_gata_ai"] = _parse_json(await _ai_text(hass, fraga_ai, "Läxspelet gåta"))
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.info("Gåtan: AI kunde inte bedöma svaret: %s", err)
         if op.startswith("butik_"):
             f = hass.data[DOMAIN]["base"] / "butik.json"
             butik = await hass.async_add_executor_job(_load_fil, f)
@@ -2942,6 +3074,7 @@ def _ebok_fil(bok_id: str) -> str:
 
 
 FORALDER_OPS = {
+    "djur_ater",
     "schema_spara", "bonus", "los_in", "butik_lagg_till", "butik_ta_bort",
     "manuell_uppdrag", "manuell_schema", "manuell_forhor", "manuell_ovning", "manuell_plugg", "angra_ovning",
     "hejarop_ny", "hejarop_bort", "fodelsedag_satt", "lektioner_spara", "skolinfo_bort",
@@ -3018,27 +3151,38 @@ def _apply(data: dict, body: dict) -> list[str]:
     if op == "lektioner_spara":
         _lektioner_spara(data, body)
         return []
+    if op == "djur_ater":  # föräldern låter barnet ångra att det släppte ett husdjur
+        meriter.djur_ater(data, str(body.get("hid") or ""))
+        return []
     if op in ("gata_gissa", "gata_svar"):  # dagens gåta (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som gissar.")
         if op == "gata_gissa":
             dagens.gissa(data, str(body.get("svar") or ""))
         else:
-            dagens.visa_svar(data)
+            dagens.visa_svar(data, body.get("_gata_ai") if isinstance(body.get("_gata_ai"), dict) else None)
         return []
-    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "attack_kop", "attack_upp", "uppsattning", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "traning_kop", "lagstrid_start", "lagstrid_drag", "lagstrid_ge_upp", "arena_start", "arena_drag", "arena_ge_upp", "revansch_start", "provboss_start"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
+    if op in ("djur", "djur_kop", "djur_pa", "djur_paket", "pass_hamta", "rum_stall", "vaning_kop", "vaning_djur", "mata", "djur_slapp", "attack_kop", "attack_upp", "uppsattning", "attack", "dryck_kop", "dryck", "energi_kop", "skold_kop", "skold_pa", "traning_kop", "lagstrid_start", "lagstrid_drag", "lagstrid_ge_upp", "arena_start", "arena_drag", "arena_byt", "arena_ge_upp", "revansch_start", "provboss_start"):  # husdjuret: välj, köp saker, ta på (bara barnet själv)
         if not body.get("_barn"):
             raise ValueError("Det är barnet som bestämmer över sitt husdjur.")
         if op == "djur":
             meriter.djur_valj(data, str(body.get("art") or ""), str(body.get("namn") or ""), str(body.get("id") or "") or None)
         elif op == "djur_kop":
-            meriter.djur_kop(data, str(body.get("sak") or ""))
+            meriter.djur_kop(data, str(body.get("sak") or ""), body.get("vaning"))
         elif op == "djur_paket":
             meriter.kop_paket(data, str(body.get("paket") or ""))
         elif op == "pass_hamta":
             meriter.hamta_pass(data, int(body.get("niva") or 0))
         elif op == "rum_stall":
-            meriter.rum_stall(data, str(body.get("plats") or ""), body.get("sak") or None)
+            meriter.rum_stall(data, str(body.get("plats") or ""), body.get("sak") or None, body.get("vaning"))
+        elif op == "mata":
+            meriter.mata(data, str(body.get("hid") or ""))
+        elif op == "djur_slapp":
+            meriter.djur_slapp(data, str(body.get("hid") or ""))
+        elif op == "vaning_kop":
+            meriter.vaning_kop(data)
+        elif op == "vaning_djur":
+            meriter.vaning_djur(data, body.get("vaning"), body.get("hid") or None)
         elif op == "attack_kop":
             meriter.attack_kop(data, str(body.get("attack") or ""))
         elif op == "uppsattning":
@@ -3065,15 +3209,17 @@ def _apply(data: dict, body: dict) -> list[str]:
                 meriter.arena_start(data, jag_namn, mot_id, mot_namn, de=de)
             elif "_mot" in body:
                 mot_id, mot_namn, mot_data, jag_namn = body["_mot"]
-                meriter.arena_start(data, jag_namn, mot_id, mot_namn, mot_data)
+                meriter.arena_start(data, jag_namn, mot_id, mot_namn, mot_data, lag=body.get("lag"))
             else:
                 raise ValueError("Välj en motståndare.")
         elif op == "revansch_start":
-            meriter.revansch_start(data, str(body.get("varld") or ""))
+            meriter.revansch_start(data, str(body.get("varld") or ""), lag=body.get("lag"))
         elif op == "provboss_start":
             meriter.provboss_start(data, str(body.get("id") or ""))
         elif op == "arena_drag":
             meriter.arena_drag(data, str(body.get("drag") or ""))
+        elif op == "arena_byt":
+            meriter.arena_byt(data, str(body.get("hid") or ""))
         elif op == "lagstrid_start":
             lag, medl = body.get("_lag") or (None, [])
             if not lag:
@@ -3708,14 +3854,26 @@ def _widget_nyckel(hass: HomeAssistant, barn: str, skapa: bool = False) -> str |
     return x.get("nyckel")
 
 
-def _bas_url(hass: HomeAssistant) -> str:
-    """Adressen som fungerar även utanför hemmet (Nabu Casa) om den finns."""
+def _bas_url_egen(hass: HomeAssistant) -> str:
+    """Familjens egen adress utifrån (Nabu Casa eller en inställd https-adress), om den finns."""
     try:
         from homeassistant.components import cloud
         if cloud.async_active_subscription(hass) and cloud.async_remote_ui_url(hass):
             return cloud.async_remote_ui_url(hass)
     except Exception:  # noqa: BLE001
         pass
+    u = hass.config.external_url or ""
+    return u if u.startswith("https://") else ""
+
+
+def _bas_url(hass: HomeAssistant) -> str:
+    """Adressen som fungerar även utanför hemmet: Nabu Casa/egen adress, annars Läxspelets gratistunnel (grind.py)."""
+    egen = _bas_url_egen(hass)
+    if egen:
+        return egen
+    g = (hass.data.get(DOMAIN) or {}).get("grind")
+    if g and g.adress:
+        return g.adress
     return hass.config.external_url or hass.config.internal_url or ""
 
 
@@ -5299,10 +5457,13 @@ class UppdragView(HomeAssistantView):
                         sidor = await hass.async_add_executor_job(_sid_lista, path, b, fran, till)
                         if not sidor:
                             raise ValueError("Hittade inga sidor med de sidnumren i e-boken. Har boken en e-bok?")
-                    elif typ == "las":
-                        raise ValueError("Välj en bok.")
+                    elif typ == "las" and not body.get("papper"):
+                        raise ValueError("Välj en bok, eller välj att boken inte finns i appen.")
+                    papper = typ == "las" and not bok_id  # boken finns inte i appen: barnet läser i den riktiga boken
+                    if papper and not str(body.get("kapitel") or "").strip():
+                        raise ValueError("Skriv vad som ska läsas, t.ex. \"SO-boken s. 40–52\".")
                     glosor = [g["id"] for g in a["glosor"] if g["id"] in (body.get("glosor") or [])]
-                    if not sidor and not glosor:
+                    if not sidor and not glosor and not papper:
                         raise ValueError("Välj sidor eller glosor att plugga.")
                     u = {
                         "id": _new_id(),
@@ -5320,6 +5481,7 @@ class UppdragView(HomeAssistantView):
                         "skapad": dt_util.now().isoformat(timespec="minutes"),
                         "av_id": user.id,
                         "av_namn": user.name,
+                        **({"papper": True} if papper else {}),
                     }
                     _framsteg(data, u)
                     lista.append(u)
@@ -5405,8 +5567,8 @@ class UppdragView(HomeAssistantView):
                             d["tid"] = dt_util.now().isoformat(timespec="minutes")
                             be_om = (u, dag)
                             meriter.kolla_utmaning(data)
-                    elif op == "skriv_klar":
-                        if u["typ"] != "skriv" or u.get("klart"):
+                    elif op in ("skriv_klar", "las_klar"):
+                        if (u["typ"] != "skriv" and not (u["typ"] == "las" and u.get("papper"))) or u.get("klart"):
                             raise ValueError("Den är redan klar.")
                         if foralder:
                             _godkann_i(data, u, None, True)
@@ -5502,14 +5664,17 @@ class UppdragView(HomeAssistantView):
 # ---------- veckobrev: högläsning, läxbok och veckans ord ----------
 
 VECKOBREV_PROMPT = (
-    "Du läser ett veckobrev från skolan om läxor för ett barn i Sverige. "
-    "Ta fram veckans läxor. Svara ENDAST med giltig JSON utan markdown, på formen "
+    "Du läser ett veckobrev eller ett meddelande från skolan (t.ex. en skärmdump från InfoMentor, Unikum, SchoolSoft, ett mejl eller sms) "
+    "om läxor för ett barn i Sverige. Ta fram läxorna. Svara ENDAST med giltig JSON utan markdown, på formen "
     '{"kapitel": kapitelnummer som heltal eller null, "kapitel_namn": kapitlets namn om det står, annars null, '
     '"las_dagar": [veckodagar 0=måndag..4=fredag då läsläxan ska läsas], '
     '"hoglasning": true om läsningen görs högt/för en vuxen, annars false, '
     '"skriv_dag": veckodag 0–6 då uppgifterna i läxboken/skrivläxan ska lämnas in, eller null, '
     '"ord": [veckans ord/glosor exakt som de står], '
     '"diktamen_dag": veckodag 0–6 för diktamen/förhör på orden, eller null, '
+    '"uppgifter": [{"typ": "las" om det är något att läsa, annars "gora" (räkna, svara på frågor, göra uppgifter, lämna in), "amne": ämne eller "", '
+    '"vad": konkret och kort, t.ex. "Läs s. 40–52 i SO-boken" eller "Gör uppgift 3–5 på s. 12", "datum": "YYYY-MM-DD" då det ska vara klart}] '
+    '(läxor med eget ämne eller datum, t.ex. från ett meddelande, som inte är veckans läsläxa/läxbok/ord ovan), '
     '"prov": [{"amne": ämne, "namn": kort namn t.ex. "Matteprov kapitel 3", "datum": "YYYY-MM-DD", "omfattning": vad provet handlar om/vad man ska plugga eller ""}], '
     '"handelser": [{"datum": "YYYY-MM-DD" eller "", "tid": "HH:MM" eller "", "text": kort beskrivning t.ex. "Utflykt till Skansen", "ta_med": vad man ska ta med eller ""}], '
     '"kom_ihag": [korta saker att komma ihåg som inte hör till en viss dag, t.ex. "Ta med matlåda och bestick vid skolmat"], '
@@ -5623,6 +5788,13 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
         v = str(v or "")[:10]
         return v if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v) else ""
 
+    uppgifter = []
+    for x in (ai.get("uppgifter") or [])[:10]:
+        if not isinstance(x, dict) or not str(x.get("vad") or "").strip():
+            continue
+        a = _amne_match(amnen, str(x.get("amne") or "")) if x.get("amne") else None
+        uppgifter.append({"typ": "las" if x.get("typ") == "las" else "gora", "vad": str(x["vad"]).strip()[:200], "amne": (a or {}).get("id"),
+                          "amne_namn": str(x.get("amne") or "")[:MAX_NAME], "datum": iso(x.get("datum"))})
     prov = []
     for x in (ai.get("prov") or [])[:6]:
         if not isinstance(x, dict) or not iso(x.get("datum")):
@@ -5640,7 +5812,7 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
             info.append({"text": str(x).strip()[:160], "datum": "", "tid": ""})
     return {
         "mandag": mandag.isoformat(),
-        "prov": prov, "info": info,
+        "prov": prov, "info": info, "uppgifter": uppgifter,
         "regler": [str(x)[:200] for x in (ai.get("regler") or [])][:8],
         "note": str(ai.get("note") or "")[:300],
         "kapitel": {bid: [{k: v for k, v in x.items() if k != "nyckel"} for x in lista] for bid, lista in kapitel.items()},
@@ -6213,6 +6385,27 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
                  "par": par, "forhor": forhor, "skapad": dt_util.now().date().isoformat()}
             a["glosor"].append(g)
         skapat.append(f"📝 {g['namn']} ({len(par)} ord)")
+    for x in (body.get("uppgifter") or [])[:10]:  # läxor ur ett meddelande: läsa (utan bok i appen) eller göra
+        d = datum(x.get("datum"))
+        vad = str(x.get("vad") or "").strip()[:200]
+        if not vad:
+            continue
+        a = _find(amnen, x["amne"]) if x.get("amne") else None
+        if a is None:
+            namn_a = str(x.get("amne_namn") or "").strip()
+            a = _amne_match(amnen, namn_a) if namn_a else None
+            if a is None and namn_a:
+                a = {"id": _new_id(), "namn": _name(namn_a), "farg": FARGER[len(amnen) % len(FARGER)], "bocker": [], "glosor": [], "delar": ["bocker", "glosor"]}
+                amnen.append(a)
+        if a is None:
+            raise ValueError("Välj ett ämne för läxan.")
+        las_ = x.get("typ") == "las"
+        u = {"id": _new_id(), "typ": "las" if las_ else "skriv", "namn": _name(vad), "amne": a["id"], "amne_namn": a["namn"],
+             "bok": None, "fran": None, "till": None, "kapitel": vad, "sidor": [], "glosor": [], "datum": d,
+             "skapad": nu, "av_id": user.id, "av_namn": user.name, "kalla": "meddelande", **({"papper": True} if las_ else {"uppgift": True})}
+        _framsteg(data, u)
+        lista.append(u)
+        skapat.append(f"{'📖' if las_ else '✏️'} {u['namn']}")
     for x in (body.get("prov") or [])[:6]:  # prov ur brevet blir riktiga prov (med provboss)
         d = datum(x.get("datum"))
         if not d:
@@ -6260,9 +6453,11 @@ def _godkann_glosor(data: dict, gid: str, datum: str | None, ok: bool) -> str | 
 def _godkann_bok(data: dict, bok_id: str, ok: bool) -> str | None:
     """Förälder har kollat barnets bokfoton."""
     b = next((b for a in data.get("amnen", []) for b in a.get("bocker", []) if b["id"] == bok_id), None)
-    if not b or not b.get("foto_vantar"):
+    if not b:
         return None
-    b.pop("foto_vantar")
+    if not b.get("foto_vantar") and not (ok and len(meriter.foto_obetalda(b)) >= meriter.FOTO_MIN_SIDOR):
+        return None  # en förälder kan också godkänna utan att barnet har frågat
+    b.pop("foto_vantar", None)
     if ok:
         p = meriter.foto_lon(data, b)
         return f"📸 Fotona i {b['namn']} är godkända! +{p} ⭐"
@@ -6284,7 +6479,7 @@ def _godkann_i(data: dict, u: dict, datum: str | None, ok: bool) -> str | None:
             return f"👍 Högläsningen ({VECKODAG[date.fromisoformat(d['datum']).weekday()]}) är godkänd! +{meriter.P_HOGL_DAG} ⭐"
         d["status"] = "nej"
         return "🙈 Högläsningen blev inte godkänd. Läs högt för mamma eller pappa och tryck igen."
-    if u["typ"] == "skriv":
+    if u["typ"] == "skriv" or (u["typ"] == "las" and u.get("papper")):
         if u.get("klart"):
             return None
         if ok:
@@ -6310,6 +6505,12 @@ async def _be_om_godkannande(hass: HomeAssistant, barn: str, u: dict, datum: str
     elif u["typ"] == "bok":
         titel = f"📸 {namn} har fotat en bok"
         text = f"{u['namn']}: {u['sidor']} nya sidor (+{u['pris']} ⭐). Kolla att sidorna är skarpa och i rätt ordning. Godkänn?"
+    elif u["typ"] == "las":
+        titel = f"📖 {namn} har läst läsläxan"
+        text = f"{u['namn']}: {u.get('kapitel') or ''}. Har du kollat? Godkänn?"
+    elif u.get("uppgift"):
+        titel = f"✏️ {namn} har gjort läxan"
+        text = f"{u.get('amne_namn') or ''}: {u.get('kapitel') or u['namn']}. Har du kollat? Godkänn?"
     else:
         titel = f"✍️ {namn} har gjort läxboken"
         text = f"{u['namn']}. Har du kollat? Godkänn?"
@@ -6560,7 +6761,7 @@ class VanTillsammansView(HomeAssistantView):
         try:
             body = json.loads(await request.content.read(16384))
             kod = vanner.normal_kod(body.get("kod"))
-            van = next((x for x in v["vanner"] if x["kod"] == kod), None)
+            van = next((x for x in v["vanner"] if vanner.samma(x["kod"], kod)), None)
             if not van:  # bara vänner som föräldrarna har godkänt får bjuda in
                 return self.json({"ok": False}, status_code=403)
             sid = str(body.get("id") or "")[:20]

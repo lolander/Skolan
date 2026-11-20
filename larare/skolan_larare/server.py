@@ -209,6 +209,7 @@ class Klass:
                            "lappar": (e.get("lappar") or [])[-10:] if self.d["inst"].get("lapp") else [],
                            "samtal": e.get("samtal") if self.d["inst"].get("samtal") else None,
                            "lararna": [x for x in (e.get("lararna") or []) if x.get("id") != self.d["larar_id"]],
+                           "anteckningar": self.skola.anteckningar_for(e),
                            "mentor": any(x.get("id") == self.d["larar_id"] and x.get("roll") == "mentor" for x in e.get("lararna") or []),
                            "fran_kollegor": kollegor.get(e.get("elev_id") or "-", []) if any(x.get("id") == self.d["larar_id"] and x.get("roll") == "mentor" for x in e.get("lararna") or []) else []})
         mott = {e["id"]: set(e.get("mottagna") or []) for e in self.d["elever"]}
@@ -230,10 +231,15 @@ class Klass:
 
     async def synka(self, session: ClientSession, lank: str) -> dict:
         """Synka med en elevs Skolan. Returnerar elevens rad."""
-        e = next((x for x in self.d["elever"] if x["lank"] == lank), None)
+        # Samma elev även om familjens adress har bytts (gratistunneln får ny adress vid omstart): nyckeln i länken avgör
+        svans = lank.rsplit("/", 1)[-1]
+        e = next((x for x in self.d["elever"] if x["lank"] == lank or x["lank"].rsplit("/", 1)[-1] == svans), None)
         if not e:
             e = {"id": secrets.token_urlsafe(6), "lank": lank}
             self.d["elever"].append(e)
+        elif e["lank"] != lank:
+            e["lank"] = lank
+            self.logga("synk", f"{e.get('namn') or 'En elev'} har en ny adress hemma (uppdaterad).")
         grupper = [{"id": g["id"], "namn": g["namn"], "uppgift": g["uppgift"], "datum": g.get("datum", ""),
                     "medlemmar": [self.elev_namn(x) for x in g["medlemmar"]]}
                    for g in self.d["grupper"] if g.get("aktiv") and e["id"] in g["medlemmar"]] if self.d["inst"].get("grupper") else []
@@ -288,7 +294,7 @@ class Klass:
             self.spara()
             raise
         except Exception as err:  # noqa: BLE001
-            e["fel"] = "Kunde inte nå elevens Läxspelet."
+            e["fel"] = "Kunde inte nå elevens Läxspelet. Har familjen startat om? Be eleven trycka 🔄 Synka med läraren på lektionen, så får appen den nya adressen."
             self.spara()
             raise ValueError(e["fel"]) from err
         e.update({"namn": str(svar.get("namn") or "?")[:40], "foralder": {k: bool((svar.get("foralder") or {}).get(k)) for k in FUNKTIONER},
@@ -588,6 +594,16 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                 klass.skola.ny_kod()
             elif op == "skola_lamna":
                 klass.skola.lamna()
+            elif op == "skola_meddelande":
+                klass.skola.skriv_meddelande(str(body.get("text") or ""), str(body.get("till") or "") or None)
+                asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
+            elif op == "skola_last":
+                klass.skola.last_meddelanden()
+            elif op == "anteckning_ny":
+                e = next(x for x in d["elever"] if x["id"] == body.get("elev"))
+                klass.skola.skriv_anteckning(e, str(body.get("amne") or ""), str(body.get("text") or ""))
+            elif op == "anteckning_bort":
+                d["anteckningar"] = [a for a in d.get("anteckningar", []) if a["id"] != body.get("id")]
             elif op == "skola_synka":
                 await klass.skola.synka_alla(await session())
             elif op in ("synka", "synka_alla"):

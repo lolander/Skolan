@@ -5,12 +5,19 @@ kort (smeknamn, husdjur, nivå, stjärnor, titel). Den som har länken kan se ko
 med kompisar. När en förälder godkänt en ny vän hämtar vår Home Assistant vännens kort direkt från
 vännens Home Assistant och skickar samtidigt en förfrågan dit, så att den familjen kan lägga till oss.
 
-Kräver att båda familjerna kan nås utifrån (t.ex. Nabu Casa). Ingen chatt, inget annat delas.
+Kräver att båda familjerna kan nås utifrån: Nabu Casa, eller Läxspelets egen gratis tunnel (grind.py) som bara
+släpper fram vänlänkarna. Tunnelns adress byts vid varje omstart, så varje vänskap har en gemensam hemlighet och
+hemmet meddelar sina vänner sin nya adress (signerat). Når vi inte en vän frågar vi gemensamma vänner om vännens
+senaste adress. Vänner identifieras av nyckeln i länken (svansen), inte av adressen.
+Ingen chatt, inget annat delas.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import ipaddress
 import json
+import time
 import re
 import secrets
 from pathlib import Path
@@ -20,7 +27,7 @@ from homeassistant.util import dt as dt_util
 
 from . import meriter
 
-PA = False  # dolt tills vidare; True visar Vänner i appen
+PA = True  # Vänner är påslaget
 TIMEOUT = 10
 MAX_VANNER = 50
 MAX_INKOMMANDE = 20
@@ -30,6 +37,19 @@ KOD_RE = re.compile(r"https://[A-Za-z0-9.\-]+(?::\d+)?/api/skolan/van/[A-Za-z0-9
 
 def pa() -> bool:
     return PA
+
+
+def svans(kod: str) -> str:
+    """Nyckeln i en vänlänk (samma även när adressen byts)."""
+    return str(kod or "").split(VAG, 1)[-1].split("/", 1)[0]
+
+
+def samma(a: str, b: str) -> bool:
+    return bool(a and b) and svans(a) == svans(b)
+
+
+def _sig(hemlighet: str, *delar: str) -> str:
+    return hmac.new(hemlighet.encode(), "|".join(delar).encode(), hashlib.sha256).hexdigest()
 
 
 def egen_kod(bas: str, v: dict) -> str:
@@ -148,9 +168,9 @@ def godkann_smeknamn(v: dict) -> None:
 
 
 def _kolla_ny(v: dict, kod: str, egen: str) -> None:
-    if kod == egen or kod.endswith(VAG + v["nyckel"]):
+    if kod == egen or svans(kod) == v["nyckel"]:
         raise ValueError("Det är din egen vänlänk.")
-    if any(x["kod"] == kod for x in v["vanner"]):
+    if any(samma(x["kod"], kod) for x in v["vanner"]):
         raise ValueError("Ni är redan vänner.")
     if len(v["vanner"]) >= MAX_VANNER:
         raise ValueError(f"Du kan ha högst {MAX_VANNER} vänner.")
@@ -160,33 +180,44 @@ def onska(v: dict, text: str, egen: str) -> dict:
     """Barnet klistrar in en kompis vänlänk. En förälder godkänner sedan."""
     kod = normal_kod(text)
     _kolla_ny(v, kod, egen)
-    if any(x["kod"] == kod for x in v["utgaende"]):
+    if any(samma(x["kod"], kod) for x in v["utgaende"]):
         raise ValueError("Den vännen väntar redan på godkännande.")
     rad = {"kod": kod, "tid": dt_util.now().isoformat(timespec="minutes")}
     v["utgaende"].append(rad)
     return rad
 
 
-def lagg_in_van(v: dict, kod: str, k: dict) -> None:
-    v["vanner"] = [x for x in v["vanner"] if x["kod"] != kod]
-    v["vanner"].append({"kod": kod, **_rensa_kort(k), "hamtad": dt_util.now().isoformat(timespec="minutes"), "fel": 0})
-    v["utgaende"] = [x for x in v["utgaende"] if x["kod"] != kod]
-    v["inkommande"] = [x for x in v["inkommande"] if x["kod"] != kod]
+def lagg_in_van(v: dict, kod: str, k: dict, hemlighet: str | None = None) -> None:
+    gammal = next((x for x in v["vanner"] if samma(x["kod"], kod)), {})
+    v["vanner"] = [x for x in v["vanner"] if not samma(x["kod"], kod)]
+    v["vanner"].append({"kod": kod, **_rensa_kort(k), "hamtad": dt_util.now().isoformat(timespec="minutes"), "fel": 0,
+                        "hemlighet": hemlighet or gammal.get("hemlighet") or ""})
+    v["utgaende"] = [x for x in v["utgaende"] if not samma(x["kod"], kod)]
+    v["inkommande"] = [x for x in v["inkommande"] if not samma(x["kod"], kod)]
+
+
+def ny_hemlighet() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def inkommande_hemlighet(v: dict, kod: str) -> str:
+    return next((x.get("hemlighet") or "" for x in v["inkommande"] if samma(x["kod"], kod)), "")
 
 
 def ta_bort(v: dict, kod: str) -> None:
     for lista in ("vanner", "utgaende", "inkommande"):
-        v[lista] = [x for x in v[lista] if x["kod"] != kod]
+        v[lista] = [x for x in v[lista] if not samma(x["kod"], kod)]
 
 
-def ta_emot_forfragan(v: dict, text: str, smeknamn: str) -> dict | None:
+def ta_emot_forfragan(v: dict, text: str, smeknamn: str, hemlighet: str = "") -> dict | None:
     """En annan familjs Home Assistant säger att deras barn har lagt till vårt barn. None om den redan finns."""
     kod = normal_kod(text)
-    if any(x["kod"] == kod for x in v["vanner"] + v["inkommande"]):
+    if any(samma(x["kod"], kod) for x in v["vanner"] + v["inkommande"]):
         return None
     if len(v["inkommande"]) >= MAX_INKOMMANDE:
         raise ValueError("För många förfrågningar.")
-    rad = {"kod": kod, "smeknamn": str(smeknamn or "")[:16], "tid": dt_util.now().isoformat(timespec="minutes")}
+    h = str(hemlighet or "")[:64] if re.fullmatch(r"[A-Za-z0-9_\-]{20,64}", str(hemlighet or "")) else ""
+    rad = {"kod": kod, "smeknamn": str(smeknamn or "")[:16], "tid": dt_util.now().isoformat(timespec="minutes"), "hemlighet": h}
     v["inkommande"].append(rad)
     return rad
 
@@ -194,7 +225,7 @@ def ta_emot_forfragan(v: dict, text: str, smeknamn: str) -> dict | None:
 def uppdatera_van(v: dict, kod: str, k: dict | None) -> None:
     """Efter en hämtning: nytt kort, eller räkna ett misslyckat försök."""
     for x in v["vanner"]:
-        if x["kod"] == kod:
+        if samma(x["kod"], kod):
             if k:
                 x.update(_rensa_kort(k), hamtad=dt_util.now().isoformat(timespec="minutes"), fel=0)
             else:
@@ -247,11 +278,54 @@ async def hamta_kampe(session, kod: str, namn: str) -> dict:
     return svar["kampe"]
 
 
-async def skicka_forfragan(session, kod: str, egen: str, smeknamn: str) -> None:
-    """Säg till vännens Home Assistant att vi har lagt till dem (så att de kan lägga till oss)."""
+async def skicka_forfragan(session, kod: str, egen: str, smeknamn: str, hemlighet: str = "") -> None:
+    """Säg till vännens Home Assistant att vi har lagt till dem (så att de kan lägga till oss). Hemligheten är vänskapens."""
     try:
-        async with session.post(f"{kod}/forfragan", json={"kod": egen, "smeknamn": smeknamn}, timeout=TIMEOUT,
+        async with session.post(f"{kod}/forfragan", json={"kod": egen, "smeknamn": smeknamn, "hemlighet": hemlighet}, timeout=TIMEOUT,
                                 allow_redirects=False) as r:
             await r.read()
     except Exception:  # noqa: BLE001
         pass  # inte så farligt; kompisen kan lägga till oss med vår länk ändå
+
+
+# ---------- ny adress (gratistunneln byter adress vid omstart) ----------
+MAX_SKEV = 3600
+
+
+def adress_paket(v: dict, x: dict, egen: str) -> dict:
+    """Säg till en vän: vår nya vänlänk. Signerat med vänskapens hemlighet."""
+    tid = str(int(time.time()))
+    return {"fran": v["nyckel"], "kod": egen, "tid": tid, "sig": _sig(x["hemlighet"], "adress", v["nyckel"], egen, tid)}
+
+
+def ta_emot_adress(v: dict, body: dict) -> bool:
+    """En vän har fått ny adress. True om vi uppdaterade."""
+    fran, kod, tid, sig = (str(body.get(k) or "") for k in ("fran", "kod", "tid", "sig"))
+    x = next((y for y in v["vanner"] if svans(y["kod"]) == fran and y.get("hemlighet")), None)
+    if not x or not tid.isdigit() or abs(time.time() - int(tid)) > MAX_SKEV:
+        return False
+    if not hmac.compare_digest(_sig(x["hemlighet"], "adress", fran, kod, tid), sig):
+        return False
+    ny = normal_kod(kod)
+    if svans(ny) != fran:
+        return False
+    x["kod"], x["fel"] = ny, 0
+    return True
+
+
+def adressbok_fraga(v: dict, via: dict, vem: str) -> dict:
+    """Fråga en gemensam vän (via) om den senaste adressen till vem (en vän vi inte når)."""
+    tid = str(int(time.time()))
+    return {"fran": v["nyckel"], "vem": svans(vem), "tid": tid, "sig": _sig(via["hemlighet"], "adressbok", v["nyckel"], svans(vem), tid)}
+
+
+def adressbok_svar(v: dict, body: dict) -> str | None:
+    """En vän frågar om en annan väns adress. Svarar bara vänner, och bara om båda är våra vänner."""
+    fran, vem, tid, sig = (str(body.get(k) or "") for k in ("fran", "vem", "tid", "sig"))
+    x = next((y for y in v["vanner"] if svans(y["kod"]) == fran and y.get("hemlighet")), None)
+    if not x or not tid.isdigit() or abs(time.time() - int(tid)) > MAX_SKEV:
+        return None
+    if not hmac.compare_digest(_sig(x["hemlighet"], "adressbok", fran, vem, tid), sig):
+        return None
+    y = next((z for z in v["vanner"] if svans(z["kod"]) == vem), None)
+    return y["kod"] if y and not y.get("fel") else None

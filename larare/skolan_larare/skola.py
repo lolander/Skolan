@@ -7,6 +7,10 @@
 - Det som delas: vem som är med (namn, ämne, roll, klass) och provkalendern (titel, ämne, datum, klass).
 - Elevdata delas bara med elevens mentor: ämneslärarens provresultat för just den eleven, så att mentorn
   får hela bilden. Eleven känns igen på elev_id (samma för alla lärare, från familjens Läxspelet).
+- Meddelanden mellan lärarna (till alla eller till en kollega).
+- Anteckningar om en elev, skrivna av läraren själv: mentorn får alla, en ämneslärare bara de som gäller sitt
+  ämne. De går bara till elevens egna lärare, aldrig till familjen. Det familjen har delat med en lärare
+  (lappar, studieteknik, samtalsunderlag) skickas aldrig vidare till kollegor.
 """
 from __future__ import annotations
 
@@ -33,6 +37,18 @@ PROTO = b"LXS1"
 
 def _t(x, n: int) -> str:
     return re.sub(r"\s+", " ", str(x or "")).strip()[:n]
+
+
+def amne_lika(a: str, b: str) -> bool:
+    """Samma ämne? (Matte/Matematik, Spanska/Moderna språk …) Samma regler som i familjens Läxspelet."""
+    syn = {"matematik": "matte", "ma": "matte", "sv": "svenska", "en": "engelska", "samhällskunskap": "so", "historia": "so",
+           "geografi": "so", "religion": "so", "biologi": "no", "fysik": "no", "kemi": "no"}
+    n = lambda x: syn.get(re.sub(r"[^a-zåäö ]", "", (x or "").lower()).strip(), re.sub(r"[^a-zåäö ]", "", (x or "").lower()).strip())  # noqa: E731
+    a, b = n(a), n(b)
+    sprak = {"spanska", "tyska", "franska", "italienska", "kinesiska", "arabiska", "ryska", "japanska"}
+    if {a, b} & {"moderna språk", "språkval"} and ({a, b} & sprak):
+        return True
+    return bool(a and b) and (a == b or a in b or b in a)
 
 
 def ny_kod() -> str:
@@ -82,7 +98,7 @@ class Skola:
         if not namn:
             raise ValueError("Skriv skolans namn.")
         self.d["skola"] = {"id": secrets.token_urlsafe(9), "namn": namn, "hemlighet": secrets.token_urlsafe(32),
-                           "kod": ny_kod(), "kod_tid": time.time(), "medlemmar": {}, "prov": {}, "resultat": {}}
+                           "kod": ny_kod(), "kod_tid": time.time(), "medlemmar": {}, "prov": {}, "resultat": {}, "meddelanden": [], "anteckningar_in": {}}
         self.k.logga("skola", f"Skolan {namn} skapades.")
         self.k.spara()
         return self.s
@@ -147,7 +163,7 @@ class Skola:
                 senaste_fel = f"Kunde inte nå {a}: {err}"
                 continue
             self.d["skola"] = {"id": _t(j["id"], 40), "namn": _t(j["namn"], 60), "hemlighet": str(j["hemlighet"])[:100], "kod": "", "kod_tid": 0,
-                               "medlemmar": {}, "prov": {}, "resultat": {}}
+                               "medlemmar": {}, "prov": {}, "resultat": {}, "meddelanden": [], "anteckningar_in": {}}
             for mlid, info in (j.get("medlemmar") or {}).items():
                 if mlid != self.lid:
                     self._spara_medlem(_t(mlid, 40), info, None)
@@ -190,10 +206,64 @@ class Skola:
                 ut[e["elev_id"]] = rader[-30:]
         return ut
 
+    # ---------- meddelanden och anteckningar ----------
+    def skriv_meddelande(self, text: str, till: str | None) -> None:
+        if not self.s:
+            raise ValueError("Du är inte med i någon skola.")
+        text = str(text or "").strip()[:1000]
+        if not text:
+            raise ValueError("Skriv ett meddelande.")
+        if till and till not in self.s["medlemmar"]:
+            raise ValueError("Den kollegan finns inte i skolan.")
+        self.s.setdefault("meddelanden", []).append({"id": secrets.token_urlsafe(8), "fran": self.lid, "namn": self.d.get("larare") or "Läraren",
+                                                     "till": till or None, "text": text, "tid": time.strftime("%Y-%m-%d %H:%M"), "last": True})
+        self.s["meddelanden"] = self.s["meddelanden"][-300:]
+        self.k.spara()
+
+    def last_meddelanden(self) -> None:
+        for m in (self.s or {}).get("meddelanden", []):
+            m["last"] = True
+        self.k.spara()
+
+    def skriv_anteckning(self, elev: dict, amne: str, text: str) -> None:
+        """En anteckning om en elev: mentorn får den, och ämnesläraren i ämnet (om ämnet är satt)."""
+        text = str(text or "").strip()[:1000]
+        if not text:
+            raise ValueError("Skriv en anteckning.")
+        self.d.setdefault("anteckningar", []).append({"id": secrets.token_urlsafe(8), "elev": elev["id"], "elev_id": elev.get("elev_id") or "",
+                                                       "elev_namn": elev.get("namn") or "", "amne": _t(amne, 40), "text": text,
+                                                       "larare": self.d.get("larare") or "Läraren", "tid": time.strftime("%Y-%m-%d %H:%M")})
+        self.d["anteckningar"] = self.d["anteckningar"][-1000:]
+        self.k.spara()
+
+    def _roll_hos_elev(self, e: dict, lid: str) -> tuple[str | None, str]:
+        """Vilken roll har kollegan lid hos eleven e (enligt familjens lista)? (roll, ämne)"""
+        x = next((y for y in e.get("lararna") or [] if y.get("id") == lid), None)
+        if not x:
+            return None, ""
+        amne = x.get("amne") or (self.s["medlemmar"].get(lid) or {}).get("amne") or ""
+        return x.get("roll") or "mentor", amne
+
+    def _anteckningar_till(self, lid: str) -> list[dict]:
+        """Mina anteckningar som kollegan lid ska få: mentorn allt om sina elever, ämnesläraren sitt ämne."""
+        ut = []
+        elever = {e["id"]: e for e in self.d.get("elever", [])}
+        for a in self.d.get("anteckningar", [])[-300:]:
+            e = elever.get(a["elev"])
+            if not e or not e.get("elev_id"):
+                continue
+            roll, amne = self._roll_hos_elev(e, lid)
+            if roll == "mentor" or (roll == "amne" and a.get("amne") and any(amne_lika(a["amne"], x) for x in re.split(r"[,/]", amne))):
+                ut.append({k: a[k] for k in ("id", "elev_id", "elev_namn", "amne", "text", "larare", "tid")})
+        return ut
+
     def _paket(self, till: str | None) -> dict:
+        mina = [m for m in self.s.get("meddelanden", []) if m.get("fran") == self.lid and (not m.get("till") or m.get("till") == till)][-100:]
         return {"v": 1, "skola": self.s["id"], "fran": self.lid, "tid": time.time(), "info": self.min_info(), "prov": self.mina_prov(),
                 "medlemmar": {k: {x: v.get(x) for x in ("namn", "amne", "roll", "klass", "adress")} for k, v in self.s["medlemmar"].items()},
-                "till_mentor": self.till_mentor(till) if till else {}}
+                "till_mentor": self.till_mentor(till) if till else {},
+                "meddelanden": [{k: m[k] for k in ("id", "namn", "till", "text", "tid")} for m in mina],
+                "anteckningar": self._anteckningar_till(till) if till else []}
 
     def _ta_emot_paket(self, p: dict, ip: str | None) -> None:
         lid = _t(p.get("fran"), 40)
@@ -206,6 +276,14 @@ class Skola:
                                                   for k in ("titel", "amne", "datum", "max", "poang", "betyg", "kommentar", "larare") if k in x}
                                                  for x in rader[:30] if isinstance(x, dict)]
                                    for eid, rader in list(tm.items())[:200] if isinstance(rader, list)}
+        kanda = {m["id"] for m in self.s.setdefault("meddelanden", [])}
+        for m in (p.get("meddelanden") or [])[:100]:
+            if isinstance(m, dict) and _t(m.get("id"), 20) and m["id"] not in kanda and (not m.get("till") or m.get("till") == self.lid):
+                self.s["meddelanden"].append({"id": _t(m["id"], 20), "fran": lid, "namn": _t(m.get("namn"), 60), "till": m.get("till") or None,
+                                              "text": _t(m.get("text"), 1000), "tid": _t(m.get("tid"), 16), "last": False})
+        self.s["meddelanden"] = sorted(self.s["meddelanden"], key=lambda m: m.get("tid", ""))[-300:]
+        self.s.setdefault("anteckningar_in", {})[lid] = [{k: _t(a.get(k), 1000 if k == "text" else 60) for k in ("id", "elev_id", "elev_namn", "amne", "text", "larare", "tid")}
+                                                         for a in (p.get("anteckningar") or [])[:300] if isinstance(a, dict)]
         for mlid, info in (p.get("medlemmar") or {}).items():  # så hittar alla varandra
             if mlid not in self.s["medlemmar"] and mlid != self.lid and isinstance(info, dict):
                 self._spara_medlem(_t(mlid, 40), info, None)
@@ -256,6 +334,9 @@ class Skola:
         if not s:
             return None
         return {"id": s["id"], "namn": s["namn"], "kod": s.get("kod") if s.get("kod") and time.time() - s.get("kod_tid", 0) < KOD_GILTIG else "",
+                "meddelanden": [{**m, "egen": m.get("fran") == self.lid, "till_namn": (s["medlemmar"].get(m.get("till") or "") or {}).get("namn") if m.get("till") else None}
+                                for m in s.get("meddelanden", [])[-100:]][::-1],
+                "olasta": sum(1 for m in s.get("meddelanden", []) if not m.get("last")),
                 "medlemmar": [{"id": k, **{x: v.get(x) for x in ("namn", "amne", "roll", "klass", "sedd", "fel", "adress")}}
                               for k, v in sorted(s["medlemmar"].items(), key=lambda kv: kv[1].get("namn", ""))]}
 
@@ -267,6 +348,13 @@ class Skola:
             namn = (self.s["medlemmar"].get(lid) or {}).get("namn") or "?"
             ut += [{**x, "larare": namn, "egen": False} for x in lista]
         return sorted(ut, key=lambda x: x.get("datum", ""))
+
+    def anteckningar_for(self, e: dict) -> list[dict]:
+        """Anteckningar om eleven som jag får se: mina egna och de kollegorna har skickat till mig."""
+        egna = [{**a, "egen": True} for a in self.d.get("anteckningar", []) if a.get("elev") == e["id"]]
+        andras = [{**a, "egen": False} for lista in ((self.s or {}).get("anteckningar_in") or {}).values() for a in lista
+                  if e.get("elev_id") and a.get("elev_id") == e["elev_id"]]
+        return sorted(egna + andras, key=lambda a: a.get("tid", ""), reverse=True)
 
     def fran_kollegor(self) -> dict:
         """Provresultat från ämneslärarna, per elev_id (bara för elever där jag är mentor)."""

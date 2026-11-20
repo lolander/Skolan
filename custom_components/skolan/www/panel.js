@@ -745,6 +745,128 @@ const DJUR_STORY = {
   "🐲": "Guldraken är den ovanligaste draken av alla. Den sover på en hög av gyllene stjärnor som barn har tjänat genom åren. Bara den som pluggar troget får se den vakna.",
 };
 
+// ---------- Kameraläget: fota många sidor i följd, gå igenom alla och ta om de som blev dåliga ----------
+// Ligger utanför appens shadow DOM (appen ritar om allt vid varje ändring, och då skulle kameran stängas).
+class Fotolage {
+  constructor({ titel = "Fota sidor", klar }) {
+    this.titel = titel; this.klar = klar; this.foton = []; this.omIdx = null; this.lage = "kamera";
+    this.el = document.createElement("div");
+    this.el.style.cssText = "position:fixed;inset:0;z-index:100000;background:#000;color:#fff;font-family:system-ui,sans-serif;display:flex;flex-direction:column;";
+    document.body.appendChild(this.el);
+    this._tangent = (e) => { if (e.key === "Escape") this.avbryt(); };
+    document.addEventListener("keydown", this._tangent);
+  }
+  async starta() {
+    try {
+      this.strom = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 3840 }, height: { ideal: 2160 } }, audio: false });
+    } catch (e) { this.stang(); throw e; }
+    this.visaKamera();
+  }
+  knapp(text, stil = "") { return `<button style="font-size:17px;padding:12px 16px;border-radius:12px;border:0;background:#ffffff22;color:#fff;${stil}">${text}</button>`; }
+  visaKamera() {
+    this.lage = "kamera";
+    const om = this.omIdx !== null;
+    this.el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;gap:8px">
+        <b>${om ? `🔁 Ta om sida ${this.omIdx + 1}` : `📷 ${this.titel}`}</b><span id="fl-antal">${this.foton.length} foto${this.foton.length === 1 ? "" : "n"}</span>${this.knapp("✕", "padding:8px 14px")}</div>
+      <div style="flex:1;position:relative;overflow:hidden"><video playsinline muted autoplay style="width:100%;height:100%;object-fit:contain;background:#000"></video>
+        <div id="fl-blixt" style="position:absolute;inset:0;background:#fff;opacity:0;transition:opacity .25s;pointer-events:none"></div>
+        <div style="position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:13px;opacity:.8">Håll mobilen rakt över sidan. Bra ljus, ingen skugga.</div></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px 22px">
+        <div id="fl-senast" style="width:64px;height:64px;border-radius:10px;background:#222 center/cover">${this.foton.length ? "" : ""}</div>
+        <button id="fl-ta" aria-label="Ta foto" style="width:78px;height:78px;border-radius:50%;border:5px solid #fff;background:#fff3;"></button>
+        ${om ? this.knapp("Avbryt", "width:64px;padding:10px 4px") : this.knapp(`Klar (${this.foton.length})`, "min-width:64px;background:#43a047")}</div>`;
+    const v = this.el.querySelector("video"); v.srcObject = this.strom; v.play().catch(() => {});
+    const [stang] = this.el.querySelectorAll("button");
+    stang.onclick = () => (this.foton.length && !confirm(`Avbryta? ${this.foton.length} foton sparas inte.`) ? null : this.avbryt());
+    this.el.querySelector("#fl-ta").onclick = () => this.ta();
+    const sista = this.el.querySelector("div:last-child > button:last-child");
+    sista.onclick = () => (om ? (this.omIdx = null, this.visaOversikt()) : this.foton.length ? this.visaOversikt() : null);
+    this.visaSenast();
+  }
+  visaSenast() {
+    const el = this.el.querySelector("#fl-senast"), f = this.foton[this.foton.length - 1];
+    if (el) el.style.backgroundImage = f ? `url(${f.url})` : "";
+    const a = this.el.querySelector("#fl-antal"); if (a) a.textContent = `${this.foton.length} foto${this.foton.length === 1 ? "" : "n"}`;
+  }
+  async ta() {
+    const v = this.el.querySelector("video");
+    if (!v?.videoWidth) return;
+    const max = 2400, sk = Math.min(1, max / Math.max(v.videoWidth, v.videoHeight));
+    const c = document.createElement("canvas"); c.width = Math.round(v.videoWidth * sk); c.height = Math.round(v.videoHeight * sk);
+    c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+    const blixt = this.el.querySelector("#fl-blixt"); blixt.style.opacity = "0.8"; setTimeout(() => (blixt.style.opacity = "0"), 120);
+    navigator.vibrate?.(30);
+    const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.85));
+    const foto = { blob, url: URL.createObjectURL(blob), suddig: Fotolage.suddig(c) };
+    if (this.omIdx !== null) { URL.revokeObjectURL(this.foton[this.omIdx].url); this.foton[this.omIdx] = foto; this.omIdx = null; return this.visaOversikt(); }
+    this.foton.push(foto);
+    const sista = this.el.querySelector("div:last-child > button:last-child"); if (sista) sista.textContent = `Klar (${this.foton.length})`;
+    this.visaSenast();
+  }
+  // Skärpa: variansen av en Laplace-bild på en liten gråskalebild. Låg = troligen suddigt.
+  static suddig(c) {
+    const b = 320, h = Math.round((c.height / c.width) * b), t = document.createElement("canvas"); t.width = b; t.height = h;
+    const x = t.getContext("2d"); x.drawImage(c, 0, 0, b, h);
+    const d = x.getImageData(0, 0, b, h).data, g = new Float32Array(b * h);
+    for (let i = 0; i < b * h; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    let s = 0, s2 = 0, n = 0;
+    for (let y = 1; y < h - 1; y++) for (let xx = 1; xx < b - 1; xx++) { const i = y * b + xx, l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - b] - g[i + b]; s += l; s2 += l * l; n++; }
+    const varians = s2 / n - (s / n) ** 2;
+    return varians < 60;
+  }
+  visaOversikt() {
+    this.lage = "oversikt";
+    const n = this.foton.length, sudd = this.foton.filter((f) => f.suddig).length;
+    this.el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;gap:8px"><b>🗂️ ${n} sid${n === 1 ? "a" : "or"}</b>${this.knapp("✕", "padding:8px 14px")}</div>
+      <div style="padding:0 12px 6px;font-size:14px;opacity:.85">Tryck på en sida för att se den stort, ta om den eller ta bort den.${sudd ? ` <b style="color:#ffb74d">⚠️ ${sudd} kan vara suddig${sudd === 1 ? "" : "a"}: titta extra på ${sudd === 1 ? "den" : "dem"}.</b>` : ""}</div>
+      <div style="flex:1;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:8px;padding:8px 12px;align-content:start">
+        ${this.foton.map((f, i) => `<button data-i="${i}" style="position:relative;border:${f.suddig ? "3px solid #ffb74d" : "1px solid #444"};border-radius:10px;padding:0;background:#111 url(${f.url}) center/cover;aspect-ratio:3/4">
+          <span style="position:absolute;left:4px;top:4px;background:#000a;border-radius:8px;padding:1px 7px;font-size:13px">${i + 1}</span>${f.suddig ? `<span style="position:absolute;right:4px;top:4px">⚠️</span>` : ""}</button>`).join("")}</div>
+      <div style="display:flex;gap:10px;padding:12px 14px 22px">${this.knapp("📷 Ta fler", "flex:1")}${this.knapp(`✅ Spara ${n} sid${n === 1 ? "a" : "or"}`, "flex:2;background:#43a047;font-weight:700")}</div>`;
+    const kn = this.el.querySelectorAll(":scope > div > button");
+    kn[0].onclick = () => (confirm(`Avbryta? ${n} foton sparas inte.`) ? this.avbryt() : null);
+    this.el.querySelectorAll("[data-i]").forEach((b) => (b.onclick = () => this.visaSida(Number(b.dataset.i))));
+    const [fler, spara] = this.el.querySelectorAll(":scope > div:last-child > button");
+    fler.onclick = () => this.visaKamera();
+    spara.onclick = () => { if (!n) return; const filer = this.foton.map((f, i) => new File([f.blob], `sida-${String(i + 1).padStart(3, "0")}.jpg`, { type: "image/jpeg" })); this.stang(); this.klar(filer); };
+  }
+  visaSida(i) {
+    const f = this.foton[i], n = this.foton.length;
+    this.el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px"><b>Sida ${i + 1} av ${n}</b>${f.suddig ? `<span style="color:#ffb74d">⚠️ Kan vara suddig</span>` : ""}</div>
+      <div style="flex:1;background:#000 url(${f.url}) center/contain no-repeat"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 14px 22px;justify-content:center">
+        ${this.knapp("◀", i ? "" : "opacity:.3")}${this.knapp("🔁 Ta om", "background:#1e88e5")}${this.knapp("🗑️ Ta bort")}${this.knapp("▶", i < n - 1 ? "" : "opacity:.3")}${this.knapp("↩️ Översikt", "background:#43a047")}</div>`;
+    const [fore, om, bort, nasta, tillbaka] = this.el.querySelectorAll(":scope > div:last-child > button");
+    fore.onclick = () => i && this.visaSida(i - 1);
+    nasta.onclick = () => i < n - 1 && this.visaSida(i + 1);
+    om.onclick = () => { this.omIdx = i; this.visaKamera(); };
+    bort.onclick = () => { URL.revokeObjectURL(f.url); this.foton.splice(i, 1); this.foton.length ? this.visaOversikt() : this.visaKamera(); };
+    tillbaka.onclick = () => this.visaOversikt();
+  }
+  avbryt() { this.stang(); }
+  stang() {
+    (this.strom?.getTracks() || []).forEach((t) => t.stop());
+    document.removeEventListener("keydown", this._tangent);
+    this.el.remove();
+  }
+}
+
+// ---------- QR-koder (vänner läggs till på plats: visa din kod, skanna kompisens) ----------
+const _skript = {};
+function laddaSkript(namn) { // biblioteken ligger i www/lib och laddas först när de behövs
+  if (!_skript[namn]) _skript[namn] = new Promise((ok, fel) => {
+    const el = document.createElement("script");
+    el.src = `/skolan_static/lib/${namn}`; el.onload = ok; el.onerror = () => { delete _skript[namn]; fel(new Error("Kunde inte ladda " + namn)); };
+    document.head.appendChild(el);
+  });
+  return _skript[namn];
+}
+async function qrSvg(text) {
+  await laddaSkript("qrcode.js");
+  const q = window.qrcode(0, "M"); q.addData(text); q.make();
+  return q.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+}
+
 // ---------- Hjärngympa: frågorna i spelen (nivå 1-10) ----------
 const hjR = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 const hjValj = (lista) => lista[Math.floor(Math.random() * lista.length)];
@@ -1192,22 +1314,68 @@ class SkolanPanel extends HTMLElement {
     const inn = v.inkommande.map((x) => `<li>🤝 ${esc(x.smeknamn || x.kod)} vill bli vän
       ${f ? `<button class="mini primary" data-van-in="${esc(x.kod)}" data-ja="1">Godkänn</button><button class="mini" data-van-in="${esc(x.kod)}" data-ja="">Neka</button>` : " · ⏳ en förälder godkänner"}</li>`).join("");
     return `
-      ${!v.kan_nas ? `<div class="card"><b>⚠️ Er Home Assistant går inte att nå utifrån.</b><div class="small">Vänner kräver fjärråtkomst, till exempel Nabu Casa.</div></div>`
-        : v.kod ? `<div class="card center"><div class="small muted">Din vänlänk</div>
-        <div class="actions"><button class="primary" id="van-dela">📤 Dela med en kompis</button><button id="van-kopiera">📋 Kopiera</button></div>
-        <div class="small muted">Ge länken bara till kompisar. Den visar ditt smeknamn, husdjur, nivå och stjärnor.</div></div>`
+      ${!v.kan_nas ? `<div class="card"><b>⏳ Läxspelet kopplar upp sig…</b><div class="small">Läxspelet startar en gratis, säker förbindelse så att kompisar kan nå dig (det tar någon minut efter en omstart). Ingen Nabu Casa behövs. Försök igen om en stund.</div></div>`
+        : v.kod ? `<div class="card center"><b>🤝 Bli vän på riktigt</b>
+        <div class="small muted">Träffas ni? Visa din kod för kompisen, eller skanna kompisens kod.</div>
+        <div class="van-qr" id="van-qr">${this._vanQr || ""}</div>
+        <div class="actions" style="justify-content:center"><button class="primary" id="van-skanna">📷 Skanna kompisens kod</button></div>
+        <details class="small"><summary>Inte på samma ställe? Dela länken</summary>
+          <div class="actions"><button id="van-dela">📤 Dela</button><button id="van-kopiera">📋 Kopiera</button></div>
+          <div class="muted">Ge länken bara till kompisar. Den visar ditt smeknamn, husdjur, nivå och stjärnor.</div></details></div>`
         : `<div class="card center small muted">Din vänlänk kommer när smeknamnet är godkänt.</div>`}
       <div class="card">
         <div class="row"><input id="van-smek" maxlength="16" placeholder="Smeknamn" value="${esc(v.smeknamn)}"><button id="van-smek-spara">Spara</button></div>
         <div class="small ${v.smeknamn_ok ? "" : "muted"}">${!v.smeknamn ? "Välj ett smeknamn som kompisarna ser. Skriv inte ditt efternamn." : v.smeknamn_ok ? "✅ Godkänt smeknamn" : "⏳ En förälder behöver godkänna smeknamnet"}
           ${f && v.smeknamn && !v.smeknamn_ok ? `<button class="mini primary" id="van-smek-ok">Godkänn</button>` : ""}</div>
       </div>
-      <div class="card"><div class="row"><input id="van-kod" placeholder="Klistra in kompisens vänlänk"><button class="primary" id="van-lagg">Lägg till</button></div>
+      ${this._vanSkanna ? `<div class="van-skanna"><video id="van-video" playsinline muted></video><div class="small">Rikta kameran mot kompisens kod</div><button class="ghost" id="van-skanna-stang">Stäng</button></div>` : ""}
+      <div class="card"><details ${v.utgaende.length || v.inkommande.length ? "open" : ""}><summary class="small">Har du fått en länk? Klistra in den</summary><div class="row"><input id="van-kod" placeholder="Klistra in kompisens vänlänk"><button class="primary" id="van-lagg">Lägg till</button></div></details>
         ${inn ? `<h3>Förfrågningar</h3><ul class="van-vantar">${inn}</ul>` : ""}
         ${ut ? `<h3>Väntar</h3><ul class="van-vantar">${ut}</ul>` : ""}</div>
       <h3>🏆 Vänner på kartan</h3><ol class="van-lista">${lista.map(rad).join("")}</ol>
       <div class="actions"><button class="ghost" id="van-synka">🔄 Uppdatera</button></div>
       <p class="small muted center">Kompisar ser bara ditt smeknamn, husdjur, nivå och stjärnor. En förälder godkänner varje ny vän.</p>`;
+  }
+
+  // Kameran: BarcodeDetector där den finns, annars jsQR (t.ex. iPhone)
+  async _vanStartaSkanning() {
+    this._vanSkanna = true; this._render();
+    try {
+      const strom = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      this._vanStrom = strom;
+      const video = this.shadowRoot.querySelector("#van-video");
+      video.srcObject = strom; await video.play();
+      const detektor = "BarcodeDetector" in window ? new window.BarcodeDetector({ formats: ["qr_code"] }) : null;
+      if (!detektor) await laddaSkript("jsQR.js");
+      const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const leta = async () => {
+        if (!this._vanSkanna || !video.videoWidth) { if (this._vanSkanna) requestAnimationFrame(leta); return; }
+        let text = null;
+        if (detektor) { const r = await detektor.detect(video).catch(() => []); text = r[0]?.rawValue || null; }
+        else {
+          canvas.width = video.videoWidth; canvas.height = video.videoHeight; ctx.drawImage(video, 0, 0);
+          text = window.jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height)?.data || null;
+        }
+        if (text && text.includes("/api/skolan/van/")) {
+          this._vanStoppaSkanning();
+          if (await this._vanOp("lagg_till", { kod: text })) this._msg = { type: "ok", text: this._vanner?.foralder ? "Tillagd! 🤝" : "Snyggt! 🤝 En förälder godkänner den nya vännen." };
+          return this._render();
+        }
+        setTimeout(() => requestAnimationFrame(leta), 150);
+      };
+      leta();
+    } catch (e) {
+      this._vanStoppaSkanning();
+      this._msg = { type: "error", text: "Kameran gick inte att starta. Tillåt kameran för appen, eller be kompisen dela länken." };
+      this._render();
+    }
+  }
+
+  _vanStoppaSkanning() {
+    this._vanSkanna = false;
+    (this._vanStrom?.getTracks() || []).forEach((t) => t.stop());
+    this._vanStrom = null;
+    this._render();
   }
 
   async _act(op, args = {}) {
@@ -1250,8 +1418,57 @@ class SkolanPanel extends HTMLElement {
       if (!res.ok) throw new Error(body.message || res.statusText);
       this._nyData(body.data);
       this._msg = { type: "ok", text: "Sparat!" };
+      if (!omslag) await this._fotoLonAuto();
     } catch (e) {
       this._msg = { type: "error", text: e.message || String(e) };
+    }
+    this._busy = false;
+    this._render();
+  }
+
+  // Barnet har fotat minst 10 nya sidor: be mamma eller pappa om lön direkt (så att det inte glöms bort)
+  async _fotoLonAuto() {
+    const v = this._view, s = this._s;
+    if (s.kan_valja) return;
+    const b = (this._amne(v.amne)?.bocker || []).find((x) => x.id === v.bok);
+    if (!b || b.foto_vantar) return;
+    const betalda = new Set(b.foto_betalda || []);
+    const nya = (b.barn_sidor || []).filter((f) => b.sidor.includes(f) && !betalda.has(f)).length;
+    if (nya < 10 || Math.min(Math.floor(nya / 2), 50 - (b.foto_lon || 0)) <= 0) return;
+    if (await this._act("bok_lon_be", { amne: v.amne, bok: v.bok })) {
+      this._msg = { type: "ok", text: `📸 ${nya} sidor sparade! Mamma eller pappa har fått en fråga om att kolla fotona, sedan får du din lön.` };
+    }
+  }
+
+  // Många foton: ladda upp några i taget (Home Assistant tar emot ungefär 16 MB per gång)
+  async _uploadIDelar(filer) {
+    const v = this._view;
+    const delar = [];
+    let del = [], storlek = 0;
+    for (const f of filer) {
+      if (del.length && (del.length >= 6 || storlek + f.size > 12 * 1024 * 1024)) { delar.push(del); del = []; storlek = 0; }
+      del.push(f); storlek += f.size;
+    }
+    if (del.length) delar.push(del);
+    this._busy = true;
+    let klara = 0;
+    try {
+      for (const d of delar) {
+        this._msg = { type: "info", text: `Sparar sidorna… ${klara} av ${filer.length}` };
+        this._render();
+        const fd = new FormData();
+        fd.append("barn", this._s.barn); fd.append("amne", v.amne); fd.append("bok", v.bok);
+        for (const f of d) fd.append("file", f, f.name);
+        const res = await this._f("/api/skolan/upload", { method: "POST", body: fd });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.message || res.statusText);
+        this._nyData(body.data);
+        klara += d.length;
+      }
+      this._msg = { type: "ok", text: `${klara} sidor sparade! 📚` };
+      await this._fotoLonAuto();
+    } catch (e) {
+      this._msg = { type: "error", text: `${klara} av ${filer.length} sidor sparades. ${e.message || e}` };
     }
     this._busy = false;
     this._render();
@@ -1357,7 +1574,7 @@ class SkolanPanel extends HTMLElement {
       }
       title = `${TYP_IKON[u.typ] || "📖"} ${esc(u.namn)}`;
       back = { name: "hem" };
-      body = u.typ === "hogl" ? this._hoglView(u) : u.typ === "skriv" ? this._skrivView(u) : this._uppdragView(u);
+      body = u.typ === "hogl" ? this._hoglView(u) : u.typ === "skriv" || u.papper ? this._skrivView(u) : this._uppdragView(u);
     } else if (v.name === "pass") {
       title = "🎟️ Läxpasset";
       back = { name: "hem" };
@@ -1558,7 +1775,7 @@ class SkolanPanel extends HTMLElement {
       back = { name: "foralder" };
       body = this._kalenderView();
     } else if (v.name === "veckobrev") {
-      title = "📸 Veckobrev";
+      title = "📸 Meddelande från skolan";
       back = { name: "foralder" };
       body = this._veckobrevView();
     } else if (v.name === "foralder") {
@@ -2026,6 +2243,7 @@ class SkolanPanel extends HTMLElement {
         ${this._s.prat && !agg ? `<div class="prat-bubbla">💬 ${esc(this._s.prat)}</div>` : ""}
         <div class="djur-rubrik">${esc(d.namn)} <span class="muted small">· ${d.form ? `${d.form.ikon} ${esc(d.form.namn)}` : esc(d.steg_namn)}</span>${d.element && !agg ? ` <span class="element-bricka" title="Attacker av samma typ gör +25 %">${d.element.namn}</span>` : ""}</div>
         ${this._s.titel ? `<div class="small"><b>${esc(this._s.titel)}</b></div>` : ""}
+        ${(d.hungriga || []).length ? `<div class="small"><b>🍖 ${esc(d.hungriga.join(", "))} är hungrig${d.hungriga.length > 1 ? "a" : ""}!</b> Mata i 🛍️ Butik.</div>` : ""}
         ${d.bastis && !agg ? (() => { const k = (this._s.djurbutik || []).find((x) => x.id === d.pa?.kompis);
           return k ? `<div class="bastis-bricka">💞 ${esc(d.namn)} och ${k.ikon} ${esc(k.namn)} är bästisar!</div>` : ""; })() : ""}
         <div class="small">${agg ? `Ägget kläcks om ${kvar} ⭐. Gör läxor för att värma det!` : DJUR_HUMOR[d.humor](esc(d.namn))}</div>
@@ -2228,9 +2446,12 @@ class SkolanPanel extends HTMLElement {
       ${typer.map(([typ, rubrik]) => `<h3>${rubrik}</h3>${typ === "kompis" ? this._kompisRetas(d) : ""}<div class="sak-rutnat">${vanliga(typ).map(kort).join("")}</div>`).join("")}
       ${titta ? (() => {
         const mina = d.mina || [];
-        return `<h3>🐾 ${esc(s.namn)}s husdjur</h3><div class="small muted">Statistik för varje djur finns på föräldrasidan. Tryck på ett djur för att läsa dess story.</div>
-        <div class="mina-djur">${mina.map((h) => `<div class="mitt-djur ${h.aktiv ? "aktiv" : ""}"><button class="rit-val" data-djur-story="${h.art}" data-mitt="${h.id}">${ritaDjur(h.art, "glad", h.steg, { form: h.form })}</button>
-          <div class="small"><b>${esc(h.namn)}</b><br>${h.form ? `${h.form.ikon} ${esc(h.form.namn)}` : esc(h.steg_namn)}<br>${h.element ? h.element.namn : ""}</div>${h.aktiv ? `<div class="small"><b>✅ Aktiv</b></div>` : ""}</div>`).join("")}</div>
+        return `${(d.slappta || []).length ? `<h3>👋 Släppta husdjur</h3><div class="small muted">${esc(s.namn)} har släppt de här. Du kan låta ${esc(s.namn)} ångra sig, och då kommer husdjuret tillbaka med allt det hade.</div>
+          <ul class="lista">${d.slappta.slice().reverse().map((h) => `<li>${h.art} <b>${esc(h.namn)}</b> · ${esc(h.steg_namn)} · släppt ${esc(String(h.tid).slice(0, 10))}
+            <button class="mini primary" data-djur-ater="${esc(h.id)}" data-namn="${esc(h.namn)}">↩️ Hämta tillbaka</button></li>`).join("")}</ul>` : ""}
+        <h3>🐾 ${esc(s.namn)}s husdjur</h3><div class="small muted">Statistik för varje djur finns på föräldrasidan. Tryck på ett djur för att läsa dess story.</div>
+        <div class="mina-djur">${mina.map((h) => `<div class="mitt-djur ${h.aktiv ? "aktiv" : ""}"><button class="rit-val" data-djur-story="${h.art}" data-mitt="${h.id}">${ritaDjur(h.art, h.humor || "glad", h.steg, { form: h.form })}</button>
+          <div class="small"><b>${esc(h.namn)}</b><br>${h.form ? `${h.form.ikon} ${esc(h.form.namn)}` : esc(h.steg_namn)}<br>${h.element ? h.element.namn : ""}<br>${{ glad: "😄 Mätt", nojd: "🙂 Nöjd", hungrig: "😟 Hungrig", ledsen: "😢 Ledsen" }[h.humor] || ""}</div>${h.aktiv ? `<div class="small"><b>✅ Aktiv</b></div>` : ""}</div>`).join("")}</div>
         <h3>📖 Alla husdjur i spelet (${(s.alla_djur || []).length})</h3><div class="small muted">Tryck på ett djur för att läsa dess story. ${esc(s.namn)} skaffar nya djur själv för ${s.nytt_djur_pris} ⭐.</div>
         <div class="djur-val">${(s.alla_djur || []).map((a) => `<button data-djur-story="${a}" class="rit-val">${ritaDjur(a, "glad", 2)}</button>`).join("")}</div>`;
       })() : (() => {
@@ -2240,9 +2461,13 @@ class SkolanPanel extends HTMLElement {
         const elIkon = (a) => { const e = (s.djur_element || {})[a]; return e ? `${(s.typer || {})[e]?.split(" ")[0] || ""}💪 ${(s.typer || {})[(s.element_dalig || {})[e]]?.split(" ")[0] || ""}😕` : ""; };
         return `<h3>🐾 Mina husdjur</h3>
         <div class="small muted">Varje husdjur växer och utvecklas av det du gör medan just det är med dig. Byt gratis mellan dina djur. Tryck på ett djur för att läsa dess story.</div>
-        <div class="mina-djur">${mina.map((h) => `<div class="mitt-djur ${h.aktiv ? "aktiv" : ""}"><button class="rit-val" data-djur-story="${h.art}" data-mitt="${h.id}">${ritaDjur(h.art, "glad", h.steg, { form: h.form })}</button>
+        <div class="mina-djur">${mina.map((h) => `<div class="mitt-djur ${h.aktiv ? "aktiv" : ""}"><button class="rit-val" data-djur-story="${h.art}" data-mitt="${h.id}">${ritaDjur(h.art, h.humor || "glad", h.steg, { form: h.form })}</button>
           <div class="small"><b>${esc(h.namn)}</b><br>${h.form ? `${h.form.ikon} ${esc(h.form.namn)}` : esc(h.steg_namn)}<br>${h.element ? h.element.namn : ""}</div>
-          ${h.aktiv ? `<div class="small"><b>✅ Med dig nu</b></div>` : `<button class="mini primary" data-djur-till="${h.id}">🔄 Byt</button>`}</div>`).join("")}</div>
+          <div class="small">${{ glad: "😄 Mätt", nojd: "🙂 Nöjd", hungrig: "😟 Hungrig", ledsen: "😢 Ledsen" }[h.humor] || ""}</div>
+          ${h.aktiv ? `<div class="small"><b>✅ Med dig nu</b></div>` : `<button class="mini primary" data-djur-till="${h.id}">🔄 Byt</button>
+            ${h.matad_idag ? `<div class="small">🍖 Mätt idag</div>` : `<button class="mini ${h.humor === "glad" ? "" : "primary"}" data-mata="${h.id}" ${(s.meriter?.saldo ?? 0) >= (d.mat_pris || 5) ? "" : "disabled"}>🍖 Mata · ${d.mat_pris || 5}⭐</button>`}`}
+          ${mina.length > 1 ? `<button class="mini ghost" data-slapp="${h.id}" data-namn="${esc(h.namn)}">👋 Släpp</button>` : ""}</div>`).join("")}</div>
+        ${mina.length > 1 ? `<div class="small muted">🍖 Husdjuret som är med dig blir mätt när du pluggar. De andra måste du mata varje dag (${d.mat_pris || 5} ⭐ var), annars blir de hungriga och sedan ledsna. Hungriga husdjur slåss sämre, och ledsna vill inte följa med till arenan. Blir det för många kan du släppa ett husdjur till ett nytt hem.</div>` : ""}
         ${paket.length ? `<h3>📦 Dina paketdjur</h3><div class="small muted">Redan betalda. De börjar som ägg.</div><div class="djur-val">${paket.map((a) => `<button data-djur-story="${a}" data-gratis="1" class="rit-val med-element">${ritaDjur(a, "glad", 2)}<span class="el">${elIkon(a)}</span></button>`).join("")}</div>` : ""}
         <h3>🥚 Skaffa ett nytt husdjur · ${pris} ⭐</h3>
         <div class="small muted">Det nya djuret börjar om från början: ett ägg utan attacker och kompisar. Dina andra djur finns kvar med allt de har.</div>
@@ -3305,7 +3530,7 @@ class SkolanPanel extends HTMLElement {
         l({ name: "foralder" }, "⚙️", "Föräldrasidan"),
         l({ name: "rapport" }, "📊", "Veckorapport"),
         l({ name: "coach" }, "🧠", "Studiecoach"),
-        l({ name: "veckobrev" }, "📸", "Veckobrev"),
+        l({ name: "veckobrev" }, "📸", "Meddelande eller veckobrev"),
         l({ name: "kalender" }, "📅", "Skolkalendrar"),
         l({ name: "boende" }, "🔄", "Växelvis boende"),
         l({ name: "hem2" }, "🏡", "Två hem"),
@@ -3551,7 +3776,10 @@ class SkolanPanel extends HTMLElement {
     const k = this._s.skola;
     if (!k || !k.lank) return "";
     const kl = k.klass, kvar = kl ? Math.max(0, kl.hp - kl.skada) : 0;
-    return `<div class="card"><b>🏫 Klassen${k.larare?.klass ? `: ${esc(k.larare.klass)}` : ""}</b>
+    const lararna = k.lararna || [], skolaNamn = lararna.find((x) => x.skola?.namn)?.skola.namn, mentor = lararna.find((x) => x.roll !== "amne");
+    const amnesl = lararna.filter((x) => x.roll === "amne");
+    return `<div class="card"><b>🏫 ${skolaNamn ? esc(skolaNamn) : "Klassen"}${k.larare?.klass ? ` · ${esc(k.larare.klass)}` : ""}</b>
+      ${mentor || amnesl.length ? `<div class="small">${mentor ? `Mentor: <b>${esc(mentor.namn || "")}</b>` : ""}${amnesl.length ? `${mentor ? " · " : ""}${amnesl.map((x) => `${esc(x.amne || "Ämne")}: ${esc(x.namn || "")}`).join(" · ")}` : ""}</div>` : ""}
       ${kl ? `<div class="small">Klassens boss: ${esc(kl.ikon)} ${esc(kl.boss)} · ❤️ ${kvar} av ${kl.hp} kvar · ${kl.antal} elever med</div>
         <div class="progress boss-hp"><div style="width:${Math.round((kvar / kl.hp) * 100)}%"></div></div>
         <div class="small muted">Allt du pluggar hjälper klassen. Klarar ni bossen får alla ${30} ⭐. Synka på lektionen så räknas ditt plugg.</div>` : ""}
@@ -3885,6 +4113,9 @@ class SkolanPanel extends HTMLElement {
           <div class="small muted">${n.till ? `${n.xp - n.fran} av ${n.till - n.fran} XP till nivå ${n.niva + 1}. Allt du pluggar ger XP.` : "Högsta nivån!"}</div>
           <div class="small">🏆 ${a.poang} arenapoäng · ${a.vinster} vinster · ⚡ ${k.energi}</div></div></div>
       ${this._traningKort(a, d, barn)}
+      ${barn && !a.pagar && a.lag_max >= 2 ? `<div class="card small">🐾 <b>Husdjur i striden:</b> ${Array.from({ length: a.lag_max }, (_, i) => i + 1).map((n) =>
+          `<button class="mini ${this._lagAntal() === n ? "primary" : ""}" data-arena-lag="${n}">${n}</button>`).join(" ")}
+          <br><span class="muted">Varje våning i husdjurens hus ger plats för ett husdjur till. Med flera husdjur hoppar nästa in när ett orkar inte mer, och du kan byta mitt i striden (det kostar turen). Mot syskon och bossar. Den du utmanar tar med lika många. Hungriga husdjur slåss sämre och ledsna stannar hemma.</span></div>` : ""}
       ${a.pagar ? `<button class="primary" id="arena-fortsatt">⚔️ Fortsätt striden mot ${esc(a.pagar.mot_namn)}</button>` : ""}
       ${(() => { const pb = (s.provbossar || []).filter((b) => !b.vunnen); const tr = s.data?.meriter?.karta?.provtrofeer || [];
         if (!pb.length && !tr.length) return "";
@@ -3924,10 +4155,13 @@ class SkolanPanel extends HTMLElement {
     const at = info[tur?.at] || { ikon: "⚔️", namn: "Strid", typ: "kraft" };
     const motAt = tur?.mot_at ? info[tur.mot_at] : null;
     const rv = a.revansch && (this._s.revansch?.bossar || []).find((x) => x.varld === a.revansch);
-    return { at, djur: { art: a.jag.art, steg: Math.max(1, a.jag.steg), namn: a.jag.namn }, motDjur: a.de.boss ? null : { art: a.de.art, steg: Math.max(1, a.de.steg) },
-      mon: a.de.boss ? { ikon: a.de.art, namn: `${a.de.namn}`, boss: true, varld: { farg: rv?.farg || (a.provboss ? "#c62828" : "#6a1b9a") } } : { ikon: "", namn: `${a.de.namn}`, boss: false, varld: { farg: "#6a1b9a" } }, hp: a.de.max, kvar: tur ? tur.de_fore : a.de.liv,
+    const J = tur?.j || a.jag, D = tur?.d ? { ...a.de, ...tur.d } : a.de;  // med flera husdjur: de som slogs just den turen
+    const byt = tur?.byt ? { ikon: "🔄", namn: `${tur.jag_in?.namn || ""} hoppar in!`, typ: "byt" } : null;
+    return { at: byt || at, byt: !!byt, jagIn: tur?.slut ? null : tur?.byt ? null : tur?.jag_in, deIn: tur?.slut ? null : tur?.de_in,
+      djur: { art: J.art, steg: Math.max(1, J.steg), namn: J.namn }, motDjur: D.boss ? null : { art: D.art, steg: Math.max(1, D.steg) },
+      mon: D.boss ? { ikon: D.art, namn: `${D.namn}`, boss: true, varld: { farg: rv?.farg || (a.provboss ? "#c62828" : "#6a1b9a") } } : { ikon: "", namn: `${D.namn}`, boss: false, varld: { farg: "#6a1b9a" } }, hp: D.max, kvar: tur ? tur.de_fore : a.de.liv,
       skada: tur?.skada || 0, jagMiss: !!tur?.miss, svag: !!tur?.super, klar: tur?.slut === "vinst", mot: tur?.mot || 0, miss: !!tur?.mot_miss, motAt,
-      livFore: tur ? tur.jag_fore : a.jag.liv, livMax: a.jag.max, arena: true,
+      livFore: tur ? tur.jag_fore : a.jag.liv, livMax: J.max, arena: true,
       efter: tur?.de_efter, livEfter: tur?.jag_efter, skold: a.jag.skold, motSkold: a.de.skold,
       deSkydd: tur?.skydd, deTillbaka: tur?.tillbaka, skydd: tur?.mot_skydd, tillbaka: tur?.mot_tillbaka, ...extra };
   }
@@ -3937,17 +4171,22 @@ class SkolanPanel extends HTMLElement {
     if (a) this._strid(this._arenaO(a, null, { idle: true, live: true }));
   }
 
+  _lagAntal() {
+    const max = this._s.arena?.lag_max || 1;
+    return Math.min(max, this._arenaLag || max);
+  }
+
   async _arenaStart(mot, van = null) {
     if (this._busy) return;
-    if (!(await this._act("arena_start", van ? { van } : { mot }))) return this._render();
+    if (!(await this._act("arena_start", van ? { van } : { mot, lag: this._lagAntal() }))) return this._render();
     await this._load();
     this._arenaVisa();
   }
 
-  async _arenaDrag(drag) {
+  async _arenaDrag(drag, hid = null) {
     const fore = this._s.arena?.pagar;
     if (!fore || this._busy) return false;
-    if (!(await this._act("arena_drag", { drag }))) return false;
+    if (!(await this._act(hid ? "arena_byt" : "arena_drag", hid ? { hid } : { drag }))) return false;
     const k = this._s.data?.meriter?.karta || {};
     const a = k.arena || (fore.revansch || fore.provboss ? k.revansch_hist : k.arena_hist || [])?.at(-1);
     const tur = a?.turer?.at(-1);
@@ -4075,6 +4314,7 @@ class SkolanPanel extends HTMLElement {
 
   _arenaMeny(el, o) {
     const a = this._s.arena?.pagar, info = this._s.arena?.drag || {}, barn = !this._s.kan_valja;
+    if (a && (o.jagIn || o.deIn || o.byt)) return this._strid(this._arenaO(a, null, { idle: true, live: true }));
     const fel = this._msg?.type === "error" ? this._msg.text : "";
     this._msg = null;
     if (a) {
@@ -4100,6 +4340,9 @@ class SkolanPanel extends HTMLElement {
            const sv = this._s.arena?.svag_mot?.[a.de.element || this._s.arena?.element?.[a.de.art] || "kraft"] === x.typ && id !== "knuff";
            return `<button data-s-drag="${id}" ${barn && x.energi <= a.jag.ap ? "" : "disabled"}>${x.ikon} ${esc(x.namn)} <small>${x.energi}⚡ · ${dmg}${sv ? " 🎯" : ""}</small></button>`;
          }).join("")}
+         ${(a.jag_res || []).length ? `<div class="srubrik">🔄 Byt husdjur</div>${a.jag_res.map((x) =>
+           `<button data-s-byt="${esc(x.hid || "")}" ${barn && x.liv > 0 ? "" : "disabled"}>${x.art} ${esc(x.namn)} <small>${x.liv > 0 ? `❤️ ${x.liv}/${x.max}` : "😵"}</small></button>`).join("")}` : ""}
+         ${(a.de_res || []).length ? `<div class="shint">${esc(a.mot_namn)} har kvar: ${a.de_res.map((x) => `${x.art}${x.liv > 0 ? "" : "😵"}`).join(" ")}</div>` : ""}
          <button data-s-geupp ${barn ? "" : "disabled"}>🏳️ Ge upp</button><button data-s-lamna>🏃 Pausa</button>`;
     meny.onclick = async (e) => {
       e.stopPropagation();
@@ -4114,7 +4357,7 @@ class SkolanPanel extends HTMLElement {
         await this._load();
         return el.dispatchEvent(new Event("stang"));
       }
-      if (!(await this._arenaDrag(b.dataset.sDrag))) { el.classList.remove("valjer"); this._stridMeny(el, o); }
+      if (!(await this._arenaDrag(b.dataset.sDrag, b.dataset.sByt || null))) { el.classList.remove("valjer"); this._stridMeny(el, o); }
     };
   }
 
@@ -4183,7 +4426,7 @@ class SkolanPanel extends HTMLElement {
       return `<i class="meteor ${stor ? "" : "liten"}" style="--x:${slump(-90, 90).toFixed(0)}px;--y:${slump(-30, 40).toFixed(0)}px;--d:${(i * (stor ? 0.22 : 0.15) + (stor ? 0 : 0.1)).toFixed(2)}s;--s:${stor ? slump(42, 60).toFixed(0) : slump(18, 26).toFixed(0)}px">☄️</i>${stor ? `<b class="nedslag" style="--x:${slump(-70, 70).toFixed(0)}px;--y:${slump(-20, 40).toFixed(0)}px;--d:${(i * 0.22 + 0.55).toFixed(2)}s">💥</b>` : ""}`;
     }).join("")}<div class="meteor-antal">☄️ ×${antalMeteorer}</div>` : "";
     if (o.idle) this._msg = null;
-    const siffror = (o.jagMiss ? "MISS!" : String(o.skada)).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("");
+    const siffror = (o.byt ? "🔄" : o.jagMiss ? "MISS!" : String(o.skada)).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("");
     const el = document.createElement("div");
     el.id = "skolan-strid";
     el.className = `strid t-${typ}${o.klar ? " seger" : ""}${o.svag ? " svag" : ""}${lugn ? " lugn" : ""}${motFas ? " mot" : ""}${o.miss ? " miss" : ""}${ko ? " ko" : ""}${o.idle ? " idle" : ""}${o.fortsatt ? " fortsatt" : ""}`;
@@ -4203,7 +4446,8 @@ class SkolanPanel extends HTMLElement {
           ${motFas ? `<div class="tal motal">${o.miss ? "<span>MISS!</span>" : String(o.mot).split("").map((c, i) => `<span style="--i:${i}">${c}</span>`).join("")}</div>` : ""}</div>
         ${motFas ? `<div class="motnamn">${o.motAt ? `${esc(o.mon?.namn || "")} använder ${o.motAt.ikon} ${esc(o.motAt.namn)}!` : `${o.mon?.ikon || "👾"} ${esc(o.mon?.boss ? o.mon.namn : "Monstret")} slår tillbaka!`}</div>` : ""}
         ${motFas && o.motLak ? `<div class="motlak">🌸 +${o.motLak} ❤️</div>` : ""}
-        ${ko ? `<div class="kotext">😵 ${esc(o.djur?.namn || "Husdjuret")} orkar inte mer<small>${o.arena ? "Förlust · +2 🏆 · bra kämpat!" : "Plugga för att få tillbaka liv ❤️"}</small></div>` : ""}
+        ${ko ? `<div class="kotext">😵 ${esc(o.djur?.namn || "Husdjuret")} orkar inte mer<small>${o.jagIn ? `🔄 ${esc(o.jagIn.namn)} hoppar in!` : o.arena ? "Förlust · +2 🏆 · bra kämpat!" : "Plugga för att få tillbaka liv ❤️"}</small></div>` : ""}
+        ${o.deIn ? `<div class="skyddtext fi">😵 ${esc(o.mon?.namn || "")} orkar inte mer · 🔄 ${esc(o.deIn.namn)} hoppar in!</div>` : ""}
         <div class="segertext">${o.arena ? "VINST!" : "SEGER!"}<small>${o.arena ? "+10 🏆 · +15 XP" : "Nivå klar 🎉"}</small></div>
         <div class="meny">
           <div class="ruta vanster"><div class="rad"><span>${esc(o.mon?.boss ? "👑 " + o.mon.namn : o.mon?.namn || "Monster")}</span><span class="hpnum">${o.kvar}/${o.hp}</span></div>
@@ -4341,16 +4585,15 @@ class SkolanPanel extends HTMLElement {
   }
 
   // ---------- husdjurets rum ----------
-  _rumScen(d) {
+  _rumScen(d, r = d.rum || {}) {
     const sak = (id) => (this._s.djurbutik || []).find((x) => x.id === id);
-    const r = d.rum || {};
     const t = sak(r.tapet), g = sak(r.golv);
     const em = (plats, cls) => (r[plats] ? `<span class="rum-sak ${cls}">${sak(r[plats])?.ikon || ""}</span>` : "");
     return `<div class="rum-scen" style="background:${t?.farg || "#fff3e0"}">
       <div class="rum-golv" style="background:${g?.farg || "#bcaaa4"}"></div>
       ${r.fonster ? `<span class="rum-sak rum-fonster">${sak(r.fonster)?.ikon}</span>` : `<span class="rum-sak rum-fonster tomt">🪟</span>`}
       ${em("tavla", "rum-tavla")}${em("lampa", "rum-lampa")}${em("sang", "rum-sang")}${em("vaxt", "rum-vaxt")}${em("leksak", "rum-leksak")}
-      <div class="rum-djur">${this._djurFigur({ ...d, pa: { ...(d.pa || {}), bakgrund: null } })}</div>
+      ${d.art ? `<div class="rum-djur">${this._djurFigur({ ...d, pa: { ...(d.pa || {}), bakgrund: null } })}</div>` : ""}
     </div>`;
   }
 
@@ -4359,18 +4602,44 @@ class SkolanPanel extends HTMLElement {
     const d = s.meriter?.djur;
     if (!d) return `<p>Välj ett husdjur på förstasidan först.</p>`;
     const saldo = s.meriter.saldo, titta = s.kan_valja;
+    const V = d.vaningar || { lista: [{ nr: 0, hid: d.aktiv, rum: d.rum || {}, bonus: d.rum_bonus }], max: 1 };
+    const egen = V.lista.findIndex((x) => x.hid && x.hid === d.aktiv);
+    if (this._vaning == null || this._vaning >= V.lista.length) this._vaning = Math.max(0, egen);
+    const vn = V.lista[this._vaning], rum = vn.rum || {};
+    const mina = d.mina || [];
+    const bor = mina.find((h) => h.id === vn.hid);
+    const figur = bor ? (bor.aktiv ? d : { ...d, art: bor.art, namn: bor.namn, steg: bor.steg, form: bor.form, pa: {}, variant: null }) : {};
     const namn = { tapet: "🎨 Tapet", golv: "🟫 Golv", sang: "🛏️ Säng", lampa: "💡 Lampa", tavla: "🖼️ Väggen", vaxt: "🪴 Växt", leksak: "🧸 Leksak", fonster: "🪟 Fönster" };
+    const iRum = (id) => V.lista.reduce((n, x) => n + Object.values(x.rum || {}).filter((y) => y === id).length, 0);
     const kort = (x) => {
-      const har = (d.agt || []).includes(x.id), pa = d.rum?.[x.plats] === x.id, last = d.steg < x.steg;
+      const agda = V.antal?.[x.id] ?? ((d.agt || []).includes(x.id) ? 1 : 0);
+      const ledig = agda - iRum(x.id), pa = rum[x.plats] === x.id, last = d.steg < x.steg;
       let knapp;
-      if (titta) knapp = pa ? `<span class="small">✅ I rummet</span>` : har ? `<span class="small">Köpt</span>` : `<span class="small muted">${x.pris} ⭐</span>`;
+      if (titta) knapp = pa ? `<span class="small">✅ I rummet</span>` : agda ? `<span class="small">Köpt</span>` : `<span class="small muted">${x.pris} ⭐</span>`;
       else if (pa) knapp = `<button class="mini" data-rum-av="${x.plats}">Ta bort</button>`;
-      else if (har) knapp = `<button class="mini primary" data-rum-pa="${x.id}" data-plats="${x.plats}">Ställ in</button>`;
+      else if (ledig > 0) knapp = `<button class="mini primary" data-rum-pa="${x.id}" data-plats="${x.plats}">Ställ in</button>`;
       else if (last) knapp = `<span class="small muted">🔒 ${esc(s.djur_steg[x.steg])}</span>`;
-      else knapp = `<button class="mini ${saldo >= x.pris ? "primary" : ""}" data-djur-kop="${x.id}" ${saldo >= x.pris ? "" : "disabled"}>${x.pris} ⭐</button>`;
-      return `<div class="sak-kort ${pa ? "pa" : ""} ${last ? "last" : ""}"><div class="sak-ikon">${x.ikon}</div><div class="small">${esc(x.namn)}</div>${knapp}</div>`;
+      else knapp = `<button class="mini ${saldo >= x.pris ? "primary" : ""}" data-djur-kop="${x.id}" ${saldo >= x.pris ? "" : "disabled"}>${agda ? "En till · " : ""}${x.pris} ⭐</button>`;
+      return `<div class="sak-kort ${pa ? "pa" : ""} ${last ? "last" : ""}"><div class="sak-ikon">${x.ikon}</div><div class="small">${esc(x.namn)}${agda > 1 ? ` ×${agda}` : ""}</div>${knapp}</div>`;
     };
-    return `${this._rumScen(d)}
+    const rb = vn.bonus || { saker: 0, max: 8, mys_grans: 4, xp: 5 };
+    const vem = bor ? esc(bor.namn) : "husdjuret som bor här";
+    const nasta = V.nasta;
+    return `${V.lista.length > 1 || nasta ? `<div class="vaning-flikar">${V.lista.map((x, i) => {
+          const h = mina.find((y) => y.id === x.hid);
+          return `<button class="mini ${i === this._vaning ? "primary" : ""}" data-vaning="${i}">🏠 Våning ${i + 1}${h ? ` · ${h.art}` : ""}</button>`;
+        }).join(" ")}</div>` : ""}
+      ${this._rumScen(figur, rum)}
+      ${mina.length > 1 ? `<div class="small">${titta ? `Här bor: <b>${bor ? `${bor.art} ${esc(bor.namn)}` : "ingen"}</b>`
+        : `Här bor: <select data-vaning-djur="${this._vaning}"><option value="">Ingen</option>${mina.map((h) => `<option value="${esc(h.id)}" ${h.id === vn.hid ? "selected" : ""}>${h.art} ${esc(h.namn)}</option>`).join("")}</select>`}</div>` : ""}
+      <div class="card small">🏠 <b>${rb.saker} av ${rb.max}</b> platser inredda${bor ? ` åt ${esc(bor.namn)}` : ""}<br>
+        ${rb.mys ? "✅" : "⬜"} <b>Mysigt rum</b> (${rb.mys_grans} saker): ${vem} blir hungrig en dag senare<br>
+        ${rb.set ? "✅" : "⬜"} <b>Helt inrett</b> (alla ${rb.max}): +${rb.xp} % XP när du pluggar med ${vem}<br>
+        <span class="muted">Bonusen gäller när ${vem} är ditt aktiva husdjur.</span></div>
+      ${nasta ? `<div class="card small">🏗️ <b>Bygg våning ${nasta.nr + 1}</b>: ett eget rum åt ett husdjur till, och du kan ta med ${nasta.nr + 1} husdjur till arenan.<br>
+        ${nasta.kan ? "" : `Inred översta våningen med minst ${V.krav} saker först (${V.topp_saker}/${V.krav}).<br>`}
+        ${titta ? "" : `<button class="mini ${nasta.kan && saldo >= nasta.pris ? "primary" : ""}" data-vaning-kop ${nasta.kan && saldo >= nasta.pris && !this._busy ? "" : "disabled"}>Bygg · ${nasta.pris} ⭐</button>`}</div>`
+        : V.lista.length >= (V.max || 1) && V.max > 1 ? `<div class="small muted">🏰 Huset är fullt utbyggt med ${V.max} våningar.</div>` : ""}
       <div class="butik-saldo">${titta ? `${esc(s.namn)} har <b>⭐ ${saldo}</b>.` : `Du har <b>⭐ ${saldo}</b> att inreda för`}</div>
       ${(s.rum_platser || []).map((pl) => `<h3>${namn[pl] || pl}</h3><div class="sak-rutnat">${(s.djurbutik || []).filter((x) => x.typ === "rum" && x.plats === pl).sort((a, b) => a.pris - b.pris).map(kort).join("")}</div>`).join("")}`;
   }
@@ -4750,7 +5019,7 @@ class SkolanPanel extends HTMLElement {
         <button class="row foralder-knapp" id="open-hem2" style="margin-top:4px"><span>🏡 <b>Två hem</b><br><span class="muted small">Bor ${esc(s.namn)} i två hem? Koppla ihop hemmens Läxspelet så att kontot är detsamma i båda</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-backup" style="margin-top:4px"><span>💾 <b>Backup och flytt</b><br><span class="muted small">Ladda ner allt, automatisk backup till moln eller mapp, eller flytta till ett annat Läxspelet (Windows ↔ Home Assistant)</span></span><span>›</span></button>
         <button class="row foralder-knapp" id="open-rapport" style="margin-top:4px"><span>📊 <b>Veckorapport</b><br><span class="muted small">Vad ${esc(s.namn)} har pluggat, vad som är svårt, AI:ns tankar om studietaktiken och frågor till middagen</span></span><span>›</span></button>
-        <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Veckobrev</b><br><span class="muted small">Fota brevet från skolan så lägger AI:n in veckans läxor åt ${esc(s.namn)}</span></span><span>›</span></button>
+        <button class="row foralder-knapp" id="open-veckobrev" style="margin-top:4px"><span>📸 <b>Meddelande eller veckobrev från skolan</b><br><span class="muted small">Ta en skärmdump av lärarens meddelande eller fota veckobrevet, så lägger AI:n in läxor, prov och annat åt ${esc(s.namn)}</span></span><span>›</span></button>
         <h3 style="margin-top:4px">📅 Läxschema för ${esc(s.namn)}</h3>
         <p class="muted small">När läxan brukar komma. Lägger ${esc(s.namn)} in den samma dag eller dagen efter blir det +${p.i_tid} ⭐. Glosor får förhörsdagen ifylld automatiskt. ${esc(s.namn)} får en påminnelse kl. 17.15 den dagen läxan brukar komma.</p>
         ${amnen.length ? "" : `<p class="muted">Skapa ett ämne först.</p>`}
@@ -4933,6 +5202,7 @@ class SkolanPanel extends HTMLElement {
     const amnen = this._s.data.amnen || [];
     if (v.steg === "amne" || !v.steg) {
       return `
+        ${this._s.kan_valja ? `<button class="row foralder-knapp" id="open-veckobrev" style="margin-bottom:12px"><span>📸 <b>Har läraren skickat ett meddelande?</b><br><span class="muted small">Ta en skärmdump (eller fota veckobrevet) så lägger AI:n in läxor, prov och annat åt ${esc(this._s.namn)}</span></span><span>›</span></button>` : ""}
         <p class="guide-fraga">Vilket ämne är läxan i?</p>
         <div class="grid">
           ${amnen.map((a) => `<button class="card amne" style="--c:${a.farg}" data-laxa-amne="${a.id}"><div class="amne-namn">${esc(a.namn)}</div></button>`).join("")}
@@ -4990,13 +5260,16 @@ class SkolanPanel extends HTMLElement {
         <label>Ämne <select id="u-amne"><option value="">Välj…</option>${amnen.map((x) => `<option value="${x.id}" ${x.id === v.amne ? "selected" : ""}>${esc(x.namn)}</option>`).join("")}</select></label>
         ${
           a
-            ? `<label>Bok ${v.typ === "prov" ? "(valfritt)" : ""} <select id="u-bok"><option value="">${bocker.length ? "Välj…" : "Inga böcker med e-bok i ämnet"}</option>${bocker
+            ? `<label>Bok ${v.typ === "prov" ? "(valfritt)" : ""} <select id="u-bok"><option value="">${bocker.length ? "Välj…" : v.typ === "prov" ? "Inga böcker med e-bok i ämnet" : "Välj…"}</option>${bocker
                 .map((b) => `<option value="${b.id}" ${b.id === v.bok ? "selected" : ""}>${esc(b.namn)}</option>`)
-                .join("")}</select></label>`
+                .join("")}${v.typ !== "prov" ? `<option value="__papper" ${v.bok === "__papper" ? "selected" : ""}>📄 Boken finns inte i appen</option>` : ""}</select></label>`
             : ""
         }
         ${
-          v.bok
+          v.bok === "__papper"
+            ? `<label>Vad ska läsas? <input id="u-vad" value="${esc(v.vad || "")}" maxlength="200" placeholder="t.ex. SO-boken s. 40–52 eller kapitel 3"></label>
+               <div class="small muted">${esc(s.kan_valja ? s.namn : "Du")} läser i den riktiga boken och trycker <b>Jag har läst</b> när det är klart. Mamma eller pappa godkänner. Vill ni läsa i appen och få kontrollfrågor: fota boken under ämnet först.</div>`
+            : v.bok
             ? `${kapitel.length ? `<div class="small muted">Välj kapitel:</div><div class="kap-val">${kapitel
                 .map((k, i) => `<label class="kap-rad"><input type="checkbox" data-kap="${i}" ${v.valda?.includes(i) ? "checked" : ""}> ${esc(k.text)} <span class="muted small">s. ${k.fran}–${k.till}</span></label>`)
                 .join("")}</div><div class="small muted">…eller skriv sidorna:</div>` : ""}
@@ -5366,6 +5639,8 @@ class SkolanPanel extends HTMLElement {
   _skrivView(u) {
     const s = this._s;
     const f = forhorInfo(u.datum);
+    const las = u.typ === "las"; // läsläxa i en bok som inte finns i appen
+    const upp = u.uppgift; // läxa från ett meddelande (inte läxboken)
     const a = this._amne(u.amne);
     const bok = a?.bocker.find((b) => b.id === u.bok);
     let mitt = "";
@@ -5373,16 +5648,16 @@ class SkolanPanel extends HTMLElement {
       mitt = `<div class="done" style="padding:10px 0"><div class="big">🎉</div><div class="score">Klar!</div>${u.manuell ? `<div class="muted small">Registrerad som gjord i boken.</div>` : ""}</div>`;
     } else if (u.vantar) {
       mitt = s.kan_valja
-        ? `<div class="forhor-kort">${esc(s.namn)} säger att läxboken är gjord. Har du kollat?</div>
+        ? `<div class="forhor-kort">${esc(s.namn)} säger att ${las ? "läsläxan är läst" : upp ? "läxan är gjord" : "läxboken är gjord"}. Har du kollat?</div>
            <div class="actions"><button class="primary" data-godkann="" data-ok="1">👍 Godkänn</button><button class="ghost danger" data-godkann="" data-ok="0">Neka</button></div>`
         : `<div class="forhor-kort">⏳ Väntar på att mamma eller pappa kollar och godkänner.</div>`;
     } else if (!s.kan_valja) {
-      mitt = `<button class="primary stor-las" id="skriv-klar">✅ Jag har gjort läxboken</button>
-        <p class="muted small center">Klar senast ${esc(f.text)} = +25 ⭐ när mamma eller pappa har godkänt.</p>`;
+      mitt = `<button class="primary stor-las" id="skriv-klar" data-op="${las ? "las_klar" : "skriv_klar"}">✅ ${las ? "Jag har läst" : upp ? "Jag har gjort läxan" : "Jag har gjort läxboken"}</button>
+        <p class="muted small center">Klar senast ${esc(f.text)} = +${las ? 30 : 25} ⭐ när mamma eller pappa har godkänt.</p>`;
     }
     return `
-      <div class="forhor-kort ${!u.klart && f.dagar >= 0 && f.dagar <= 1 ? "snart" : ""}">✍️ Läxboken i ${esc(u.amne_namn)}${bok ? ` · ${esc(bok.namn)}` : ""}<br>
-        <b>${esc(u.kapitel || u.namn)}</b> ${this._sidText(u)} · lämnas in <b>${esc(f.text)}</b> · ${f.kvar}</div>
+      <div class="forhor-kort ${!u.klart && f.dagar >= 0 && f.dagar <= 1 ? "snart" : ""}">${las ? `📖 Läsläxa i ${esc(u.amne_namn)}` : upp ? `✏️ Läxa i ${esc(u.amne_namn)}` : `✍️ Läxboken i ${esc(u.amne_namn)}`}${bok ? ` · ${esc(bok.namn)}` : ""}<br>
+        <b>${esc(u.kapitel || u.namn)}</b> ${las || upp ? "" : this._sidText(u)} · ${las || upp ? "klart senast" : "lämnas in"} <b>${esc(f.text)}</b> · ${f.kvar}</div>
       ${mitt}
       ${u.sidor.length ? `<button class="ghost" id="u-las" data-nyckel="${esc(u.sidor[0].nyckel)}" style="width:100%;margin:6px 0">📘 Visa sidan i läxboken</button>` : ""}
       ${this._kopplad(u)}
@@ -5395,9 +5670,10 @@ class SkolanPanel extends HTMLElement {
     const v = this._view;
     const amnen = s.data.amnen || [];
     const opt = (lista, val) => lista.map(([k, t]) => `<option value="${esc(k)}" ${String(val ?? "") === String(k) ? "selected" : ""}>${esc(t)}</option>`).join("");
-    const ladda = this._fotoVal("vb-foto", v.f ? "Fota ett nytt brev" : "Fota veckobrevet", "Är brevet flera bilder eller skärmdumpar? Välj alla på en gång, eller lägg till en i taget, och tryck sedan Läs brevet.", "Läs brevet");
+    const ladda = this._fotoVal("vb-foto", v.f ? "Välj en ny bild" : "Välj skärmdump eller foto", "Är meddelandet flera bilder eller skärmdumpar? Välj alla på en gång, eller lägg till en i taget, och tryck sedan Läs.", "Läs");
     if (!v.f) {
-      return `${ladda}<p class="muted small">AI:n läser brevet och föreslår veckans läxor åt ${esc(s.namn)}: högläsning varje dag, läxboken och veckans ord. Du ser förslaget och kan ändra innan något sparas.</p>`;
+      return `<p>Fått ett meddelande från läraren i InfoMentor, Unikum, SchoolSoft, ett mejl eller sms? <b>Ta en skärmdump</b> och välj den här. Det går också att fota ett veckobrev på papper.</p>
+        ${ladda}<p class="muted small">AI:n läser det och föreslår läxor åt ${esc(s.namn)} (läsa, göra uppgifter, högläsning, läxboken, veckans ord), prov och annat att komma ihåg. Du ser förslaget och kan ändra innan något sparas.</p>`;
     }
     const f = v.f;
     const bokVal = (x, del) => {
@@ -5451,6 +5727,15 @@ class SkolanPanel extends HTMLElement {
       </div>` : ""}`;
     }
     const amnOpt = (val, nytt) => opt([...(nytt ? [] : [["", "Välj ämne…"]]), ...amnen.map((y) => [y.id, y.namn])], val);
+    if (f.uppgifter?.length) {
+      html += `<h3>📋 Läxor</h3>${f.uppgifter.map((x, i) => `<div class="form vb-rad ${x.med === false ? "av" : ""}">
+        <label class="kap-rad"><input type="checkbox" data-vbu-med="${i}" ${x.med === false ? "" : "checked"}> <b>Lägg in läxan</b></label>
+        <label>Vad ska göras? <input data-vbu="${i}" data-f="vad" value="${esc(x.vad)}" maxlength="200"></label>
+        <div class="two"><label>Ämne <select data-vbu="${i}" data-f="amne">${!x.amne && x.amne_namn ? `<option value="" selected>➕ Nytt ämne: ${esc(x.amne_namn)}</option>` : ""}${amnOpt(x.amne, !x.amne && x.amne_namn)}</select></label>
+          <label>Klart senast <input data-vbu="${i}" data-f="datum" type="date" value="${esc(x.datum || "")}"></label></div>
+        <label>Sort <select data-vbu="${i}" data-f="typ"><option value="las" ${x.typ === "las" ? "selected" : ""}>📖 Läsa</option><option value="gora" ${x.typ !== "las" ? "selected" : ""}>✏️ Göra uppgifter</option></select></label>
+        <div class="small muted">${esc(this._s.namn)} trycker <b>${x.typ === "las" ? "Jag har läst" : "Jag har gjort läxan"}</b> när det är klart, och du godkänner.</div></div>`).join("")}`;
+    }
     if (f.prov?.length) {
       html += `<h3>📝 Prov</h3>${f.prov.map((x, i) => `<div class="form vb-rad ${x.med === false ? "av" : ""}">
         <label class="kap-rad"><input type="checkbox" data-vbp-med="${i}" ${x.med === false ? "" : "checked"}> <b>Lägg in provet</b> <span class="small muted">(blir en provboss 📝)</span></label>
@@ -5466,8 +5751,8 @@ class SkolanPanel extends HTMLElement {
           <div class="two"><label>Datum (valfritt) <input data-vbi="${i}" data-f="datum" type="date" value="${esc(x.datum || "")}"></label><label>Tid <input data-vbi="${i}" data-f="tid" type="time" value="${esc(x.tid || "")}"></label></div></div>`).join("")}`;
     }
     html += `<button class="ghost" id="vb-info-ny">＋ Lägg till något att komma ihåg</button>`;
-    const nagot = f.las || f.skriv || f.ord || f.prov?.length || f.info?.length;
-    if (!f.las && !f.skriv && !f.ord) html += `<p class="muted">AI:n hittade inga läxor i brevet.${f.prov?.length || f.info?.length ? " Men prov och annat viktigt sparas ändå." : ""}</p>`;
+    const nagot = f.las || f.skriv || f.ord || f.uppgifter?.length || f.prov?.length || f.info?.length;
+    if (!f.las && !f.skriv && !f.ord && !f.uppgifter?.length) html += `<p class="muted">AI:n hittade inga läxor i brevet.${f.prov?.length || f.info?.length ? " Men prov och annat viktigt sparas ändå." : ""}</p>`;
     if (nagot) html += `<div class="actions"><button class="primary" id="vb-spara">Spara</button></div>`;
     return html;
   }
@@ -6345,11 +6630,11 @@ class SkolanPanel extends HTMLElement {
     const barn = !this._s.kan_valja;
     const ig = g.igar;
     let igar = "";
-    if (ig.visad) igar = `<div class="gata-igar">🔓 Gårdagens gåta: <i>${esc(ig.gata)}</i><br>Svar: <b>${esc(ig.svar)}</b>${ig.gissning ? ` · du gissade ”${esc(ig.gissning)}” ${ig.ratt ? `✅ Rätt! +${g.p_gata} ⭐` : "❌"}` : ""}</div>`;
+    if (ig.visad) igar = `<div class="gata-igar">🔓 Gårdagens gåta: <i>${esc(ig.gata)}</i><br>Svar: <b>${esc(ig.svar)}</b>${ig.gissning ? ` · du gissade ”${esc(ig.gissning)}” ${ig.ratt ? `✅ Rätt! +${g.p_gata} ⭐` : "❌"}` : ""}${ig.varfor ? `<div class="small muted">${esc(ig.varfor)}</div>` : ""}</div>`;
     else if (barn) igar = `<button class="mini" id="gata-visa">🔓 Se svaret på gårdagens gåta${ig.gissning ? " (du gissade!)" : ""}</button>`;
     const fraga = g.gissning
       ? `<div class="small">Din gissning: <b>${esc(g.gissning)}</b> · svaret kommer i morgon 🤫 ${barn ? `<button class="mini" id="gata-andra">Ändra</button>` : ""}</div>`
-      : barn ? `<div class="gata-rad"><input id="gata-svar" maxlength="60" placeholder="Din gissning…"><button class="mini primary" id="gata-gissa">Gissa</button></div>`
+      : barn ? `<div class="gata-rad"><input id="gata-svar" maxlength="60" placeholder="Din gissning…"><button class="mini primary" id="gata-gissa">Gissa</button></div><div class="small muted" id="gata-sparad"></div>`
       : `<div class="small muted">Barnet har inte gissat än.</div>`;
     return `<div class="card dagens-kort">
       <div class="dagens-halsning">🌞 ${esc(g.halsning)}</div>
@@ -6928,10 +7213,12 @@ class SkolanPanel extends HTMLElement {
 
   _sidorLista(b) {
     return `<div class="sidor-innehall">
-      <label class="primary upload">
-        📷 Lägg till sidor (foto eller PDF)
-        <input type="file" id="pages" accept="image/*,application/pdf" multiple hidden>
-      </label>
+      <div class="actions">
+        ${navigator.mediaDevices?.getUserMedia ? `<button class="primary" id="fota-sidor">📸 Fota sidor i följd</button>` : ""}
+        <label class="${navigator.mediaDevices?.getUserMedia ? "" : "primary "}upload">${navigator.mediaDevices?.getUserMedia ? "🖼️ Välj bilder eller PDF" : "📷 Lägg till sidor (foto eller PDF)"}
+          <input type="file" id="pages" accept="image/*,application/pdf" multiple hidden></label>
+      </div>
+      ${navigator.mediaDevices?.getUserMedia ? `<div class="small muted">Fota alla sidor efter varandra utan att lämna kameran. Sedan ser du alla och kan ta om de som blev dåliga innan du sparar.</div>` : ""}
       <div class="pages">
         ${b.sidor
           .map(
@@ -7017,6 +7304,9 @@ class SkolanPanel extends HTMLElement {
     const pris = Math.max(0, Math.min(Math.floor(nya / 2), 50 - (b.foto_lon || 0)));
     const v = b.foto_vantar;
     if (s.kan_valja) {
+      if (!v && nya >= 10 && pris) return `<div class="forhor-kort foto-lon">📸 <b>${esc(s.namn)} har fotat ${nya} nya sidor</b> (+${pris} ⭐ i lön).
+        <div class="muted small">Tryck ✏️ Redigera för att se sidorna. Kolla att de är skarpa, hela och i rätt ordning.</div>
+        <div class="actions" style="margin-top:6px"><button class="primary" data-foto-lon="1">👍 Godkänn och ge lön</button></div>${b.foto_lon ? `<div class="muted small">Tidigare lön för boken: ${b.foto_lon} ⭐</div>` : ""}</div>`;
       if (!v) return b.foto_lon ? `<div class="muted small">📸 ${esc(s.namn)} har fått ${b.foto_lon} ⭐ för att fota boken.</div>` : "";
       return `<div class="forhor-kort foto-lon">📸 <b>${esc(s.namn)} har fotat ${v.sidor} nya sidor</b> och ber om lön (<b>+${pris} ⭐</b>).
         <div class="muted small">Tryck ✏️ Redigera för att se sidorna. Kolla att de är skarpa, hela och i rätt ordning.</div>
@@ -7392,6 +7682,11 @@ class SkolanPanel extends HTMLElement {
       const files = [...e.target.files];
       if (files.length) this._upload(files);
     });
+    on("#fota-sidor", async () => {
+      const bok = (this._amne(v.amne)?.bocker || []).find((b) => b.id === v.bok);
+      const fl = new Fotolage({ titel: bok ? `Fota ${bok.namn}` : "Fota sidor", klar: (filer) => this._uploadIDelar(filer) });
+      try { await fl.starta(); } catch (err) { this._msg = { type: "error", text: "Kameran gick inte att starta. Tillåt kameran för appen, eller välj bilder i stället." }; this._render(); }
+    });
     r.querySelectorAll("input[data-omslag]").forEach((inp) =>
       inp.addEventListener("change", (e) => {
         const f = e.target.files[0];
@@ -7636,6 +7931,7 @@ class SkolanPanel extends HTMLElement {
       v.datum = $("#u-datum")?.value ?? v.datum;
       v.fran = $("#u-fran")?.value ?? v.fran;
       v.till = $("#u-till")?.value ?? v.till;
+      v.vad = $("#u-vad")?.value ?? v.vad;
     };
     $("#u-amne")?.addEventListener("change", (e) => {
       uSync();
@@ -7645,6 +7941,7 @@ class SkolanPanel extends HTMLElement {
     $("#u-bok")?.addEventListener("change", async (e) => {
       uSync();
       Object.assign(v, { bok: e.target.value, kapitelLista: [], valda: [], fran: "", till: "" });
+      if (v.bok === "__papper") return this._render();
       if (v.bok) {
         try {
           const res = await this._f(
@@ -7688,9 +7985,10 @@ class SkolanPanel extends HTMLElement {
     on("#u-spara", async () => {
       uSync();
       const kap = (v.valda || []).sort((x, y) => x - y).map((x) => v.kapitelLista[x].text).join(", ");
+      const papper = v.bok === "__papper";
       const ok = await this._uppdragAct("skapa", {
-        typ: v.typ, namn: v.namn, amne: v.amne, bok: v.bok || null, fran: v.fran, till: v.till,
-        kapitel: kap, datum: v.datum, glosor: v.glosor || [],
+        typ: v.typ, namn: v.namn, amne: v.amne, bok: papper ? null : v.bok || null, fran: v.fran, till: v.till,
+        kapitel: papper ? (v.vad || "") : kap, datum: v.datum, glosor: v.glosor || [], papper,
       });
       if (ok) {
         this._go({ name: "hem" });
@@ -7832,7 +8130,10 @@ class SkolanPanel extends HTMLElement {
       if (v.name !== "veckobrev" || !v.f) return;
       r.querySelectorAll("[data-vbp]").forEach((el) => { v.f.prov[Number(el.dataset.vbp)][el.dataset.f] = el.value; });
       r.querySelectorAll("[data-vbi]").forEach((el) => { v.f.info[Number(el.dataset.vbi)][el.dataset.f] = el.value; });
+      r.querySelectorAll("[data-vbu]").forEach((el) => { v.f.uppgifter[Number(el.dataset.vbu)][el.dataset.f] = el.value; });
     };
+    r.querySelectorAll("[data-vbu-med]").forEach((el) => el.addEventListener("change", () => { vbListSync(); v.f.uppgifter[Number(el.dataset.vbuMed)].med = el.checked; this._render(); }));
+    r.querySelectorAll("select[data-vbu]").forEach((el) => el.addEventListener("change", () => { vbListSync(); this._render(); }));
     r.querySelectorAll("[data-vbp-med]").forEach((el) => el.addEventListener("change", () => { vbListSync(); v.f.prov[Number(el.dataset.vbpMed)].med = el.checked; this._render(); }));
     r.querySelectorAll("[data-vbi-med]").forEach((el) => el.addEventListener("change", () => { vbListSync(); v.f.info[Number(el.dataset.vbiMed)].med = el.checked; this._render(); }));
     on("#vb-info-ny", () => { vbListSync(); v.f.info = [...(v.f.info || []), { text: "", datum: "", tid: "" }]; this._render(); });
@@ -7844,6 +8145,9 @@ class SkolanPanel extends HTMLElement {
       if (f.las && v.med.las) args.las = f.las;
       if (f.skriv && v.med.skriv) args.skriv = f.skriv;
       if (f.ord && v.med.ord) args.ord = f.ord;
+      const uppg = (f.uppgifter || []).filter((x) => x.med !== false && x.vad.trim());
+      if (uppg.some((x) => !x.datum)) { this._msg = { type: "error", text: "Välj när läxan ska vara klar." }; return this._render(); }
+      if (uppg.length) args.uppgifter = uppg;
       const prov = (f.prov || []).filter((x) => x.med !== false);
       if (prov.some((x) => !x.datum)) { this._msg = { type: "error", text: "Välj datum för provet." }; return this._render(); }
       if (prov.length) args.prov = prov;
@@ -7853,7 +8157,7 @@ class SkolanPanel extends HTMLElement {
       if (await this._uppdragAct("veckoplan", args)) {
         if (v.inkorg) await this._skolaAct({ op: "inkorg_klar", id: v.inkorg });
         this._go({ name: "hem" });
-        this._msg = { type: "ok", text: "Veckobrevet är inlagt! 📅" };
+        this._msg = { type: "ok", text: "Det är inlagt! 📅" };
         this._render();
       }
     });
@@ -8611,6 +8915,16 @@ class SkolanPanel extends HTMLElement {
       this._render();
     });
     $("#gata-svar")?.addEventListener("keydown", (e) => { if (e.key === "Enter") $("#gata-gissa")?.click(); });
+    // Gissningen sparas av sig själv medan barnet skriver (så att den inte går förlorad om hen glömmer trycka Gissa)
+    $("#gata-svar")?.addEventListener("input", (e) => {
+      clearTimeout(this._gataTimer);
+      const text = e.target.value.trim();
+      if (!text) return;
+      this._gataTimer = setTimeout(() => {
+        this._f("/api/skolan/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, op: "gata_gissa", svar: text }) })
+          .then((res) => { if (res.ok && this._s?.dagens) { this._s.dagens.gissning = this._s.dagens.gissning || ""; const el = this.shadowRoot.querySelector("#gata-sparad"); if (el) el.textContent = "✓ sparad"; } }).catch(() => {});
+      }, 1200);
+    });
     on("#gata-andra", () => { this._gataAndra = true; this._render(); });
     on("#gata-visa", async () => {
       if (await this._act("gata_svar", {})) {
@@ -8689,18 +9003,22 @@ class SkolanPanel extends HTMLElement {
     r.querySelectorAll("[data-lag-redigera]").forEach((b) => b.addEventListener("click", () => { this._lagRed = b.dataset.lagRedigera; this._render(); }));
     r.querySelectorAll("[data-arena-mot]").forEach((b) => b.addEventListener("click", () => this._arenaStart(b.dataset.arenaMot)));
     r.querySelectorAll("[data-revansch]").forEach((b) => b.addEventListener("click", async () => {
-      if (this._busy || !(await this._act("revansch_start", { varld: b.dataset.revansch }))) return this._render();
+      if (this._busy || !(await this._act("revansch_start", { varld: b.dataset.revansch, lag: this._lagAntal() }))) return this._render();
       await this._load();
       this._arenaVisa();
     }));
     r.querySelectorAll("[data-arena-van]").forEach((b) => b.addEventListener("click", () => this._arenaStart(null, b.dataset.arenaVan)));
     r.querySelector("#arena-fortsatt")?.addEventListener("click", () => this._arenaVisa());
+    r.querySelectorAll("[data-arena-lag]").forEach((b) => b.addEventListener("click", () => { this._arenaLag = +b.dataset.arenaLag; this._render(); }));
     r.querySelectorAll("[data-arena-repris]").forEach((b) => b.addEventListener("click", () => this._arenaRepris(b.dataset.arenaRepris)));
     on("#open-vanner", () => this._go({ name: "vanner" }));
     on("#van-smek-spara", () => this._vanOp("smeknamn", { namn: r.querySelector("#van-smek").value }));
     on("#van-smek-ok", () => this._vanOp("godkann_smeknamn"));
     on("#van-lagg", async () => { if (await this._vanOp("lagg_till", { kod: r.querySelector("#van-kod").value })) this._msg = { type: "ok", text: "Tillagd! 🤝" }; this._render(); });
     on("#van-synka", () => this._vanOp("synka"));
+    if (this._vanner?.kod && !this._vanQr) qrSvg(this._vanner.kod).then((svg) => { this._vanQr = svg; const el = this.shadowRoot.querySelector("#van-qr"); if (el) el.innerHTML = svg; }).catch(() => {});
+    on("#van-skanna", () => this._vanStartaSkanning());
+    on("#van-skanna-stang", () => this._vanStoppaSkanning());
     on("#van-kopiera", async () => {
       try { await navigator.clipboard.writeText(this._vanner.kod); this._msg = { type: "ok", text: "Vänlänken är kopierad! 📋" }; }
       catch (e) { prompt("Kopiera vänlänken:", this._vanner.kod); }
@@ -8723,8 +9041,16 @@ class SkolanPanel extends HTMLElement {
       })
     );
     r.querySelectorAll("[data-variant]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: "variant", sak: b.dataset.variant || null })));
-    r.querySelectorAll("[data-rum-pa]").forEach((b) => b.addEventListener("click", () => this._act("rum_stall", { plats: b.dataset.plats, sak: b.dataset.rumPa })));
-    r.querySelectorAll("[data-rum-av]").forEach((b) => b.addEventListener("click", () => this._act("rum_stall", { plats: b.dataset.rumAv, sak: null })));
+    r.querySelectorAll("[data-rum-pa]").forEach((b) => b.addEventListener("click", () => this._act("rum_stall", { plats: b.dataset.plats, sak: b.dataset.rumPa, vaning: this._vaning ?? null })));
+    r.querySelectorAll("[data-rum-av]").forEach((b) => b.addEventListener("click", () => this._act("rum_stall", { plats: b.dataset.rumAv, sak: null, vaning: this._vaning ?? null })));
+    r.querySelectorAll("[data-vaning]").forEach((b) => b.addEventListener("click", () => { this._vaning = +b.dataset.vaning; this._render(); }));
+    r.querySelectorAll("[data-vaning-djur]").forEach((b) => b.addEventListener("change", () => this._act("vaning_djur", { vaning: +b.dataset.vaningDjur, hid: b.value || null })));
+    r.querySelector("[data-vaning-kop]")?.addEventListener("click", async () => {
+      const n = this._s.meriter?.djur?.vaningar?.nasta;
+      if (!n || !confirm(`Bygga våning ${n.nr + 1} för ${n.pris} ⭐?`)) return;
+      if (await this._act("vaning_kop")) { this._vaning = n.nr; this._msg = { type: "ok", text: `🏗️ Våning ${n.nr + 1} är byggd! Välj vem som ska bo där.` }; }
+      this._render();
+    });
     on("#open-widget", async () => {
       this._go({ name: "widget" });
       try {
@@ -8747,7 +9073,7 @@ class SkolanPanel extends HTMLElement {
       b.addEventListener("click", async () => {
         const x = (this._s.djurbutik || []).find((y) => y.id === b.dataset.djurKop);
         if (!x || !confirm(`Köpa ${x.namn} ${x.ikon} för ${x.pris} ⭐?`)) return;
-        if (await this._act("djur_kop", { sak: x.id })) this._msg = { type: "ok", text: `${x.ikon} ${x.namn} är köpt!` };
+        if (await this._act("djur_kop", { sak: x.id, vaning: this._view?.name === "rum" ? this._vaning ?? null : null })) this._msg = { type: "ok", text: `${x.ikon} ${x.namn} är köpt!` };
         this._render();
       })
     );
@@ -8831,6 +9157,22 @@ class SkolanPanel extends HTMLElement {
     }));
     r.querySelectorAll("[data-djur-av]").forEach((b) => b.addEventListener("click", () => this._act("djur_pa", { typ: b.dataset.djurAv, sak: null })));
     r.querySelectorAll("[data-upps]").forEach((b) => b.addEventListener("click", () => this._act("uppsattning", { attack: b.dataset.upps })));
+    r.querySelectorAll("[data-mata]").forEach((b) => b.addEventListener("click", async () => {
+      if (await this._act("mata", { hid: b.dataset.mata })) this._msg = { type: "ok", text: "🍖 Mums! Nu är husdjuret mätt idag." };
+      this._render();
+    }));
+    r.querySelectorAll("[data-djur-ater]").forEach((b) => b.addEventListener("click", async () => {
+      if (!confirm(`Låta ${b.dataset.namn} komma tillbaka?`)) return;
+      if (await this._act("djur_ater", { hid: b.dataset.djurAter })) this._msg = { type: "ok", text: `🏠 ${b.dataset.namn} är tillbaka hemma!` };
+      this._render();
+    }));
+    r.querySelectorAll("[data-slapp]").forEach((b) => b.addEventListener("click", async () => {
+      const n = b.dataset.namn;
+      if (!confirm(`Släppa ${n}? ${n} flyttar till ett nytt hem och tar med allt: attacker, kompisar och nivåer. Bara en förälder kan hämta tillbaka ${n}.`)) return;
+      if (!confirm(`Helt säker på att du vill släppa ${n}?`)) return;
+      if (await this._act("djur_slapp", { hid: b.dataset.slapp })) this._msg = { type: "ok", text: `👋 ${n} har flyttat till ett nytt hem.` };
+      this._render();
+    }));
     r.querySelectorAll("[data-djur-till]").forEach((b) => b.addEventListener("click", async () => {
       const h = (this._s.meriter?.djur?.mina || []).find((x) => x.id === b.dataset.djurTill);
       if (h && await this._act("djur", { id: h.id, art: h.art, namn: "" })) {
@@ -8921,8 +9263,9 @@ class SkolanPanel extends HTMLElement {
       }
     });
     on("#skriv-klar", async () => {
-      if (await this._uppdragAct("skriv_klar", { id: v.id })) {
-        this._msg = { type: "ok", text: "Bra! Mamma eller pappa får en fråga om att kolla och godkänna. ✍️" };
+      const op = $("#skriv-klar")?.dataset.op || "skriv_klar";
+      if (await this._uppdragAct(op, { id: v.id })) {
+        this._msg = { type: "ok", text: `Bra! Mamma eller pappa får en fråga om att kolla och godkänna. ${op === "las_klar" ? "📖" : "✍️"}` };
         this._render();
       }
     });
@@ -10066,6 +10409,7 @@ const CSS = `
   .butik-knapp { align-self:flex-start; margin-top:4px; }
   .butik-saldo { text-align:center; margin:10px 0; font-size:16px; }
   .sak-rutnat { display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:8px; }
+  .vaning-flikar { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
   .sak-kort { background:var(--card-background-color); border-radius:12px; padding:10px 6px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:4px;
               border:2px solid transparent; box-shadow:var(--ha-card-box-shadow, 0 1px 2px rgba(0,0,0,.12)); }
   .sak-kort.pa { border-color:#4fc98a; } .sak-kort.last { opacity:.55; }
@@ -10099,6 +10443,9 @@ const CSS = `
   .las-alt { display:grid; gap:6px; margin-top:8px; } .las-alt button { text-align:left; padding:10px 12px; border-radius:10px; border:2px solid transparent; background:var(--secondary-background-color); color:var(--primary-text-color); cursor:pointer; font-size:15px; }
   .las-alt button.vald { border-color:var(--primary-color); } .las-alt button.ratt { background:#4fc98a; color:#fff; } .las-alt button.fel { background:#f44336; color:#fff; }
   .sk-larare { border-top:1px solid var(--divider-color); padding:8px 0; } .sk-larare summary { cursor:pointer; }
+  .van-qr { width:220px; max-width:70vw; margin:10px auto; background:#fff; padding:8px; border-radius:14px; } .van-qr svg { width:100%; height:auto; display:block; }
+  .van-skanna { position:fixed; inset:0; z-index:30; background:#000c; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:#fff; padding:16px; }
+  .van-skanna video { width:min(92vw,480px); border-radius:16px; background:#000; }
   .hj-dag { display:flex; align-items:center; gap:10px; padding:8px 4px; border-bottom:1px solid var(--divider-color); } .hj-dag > span:nth-child(2) { flex:1; }
   .hj-dag.klar { opacity:.75; } .hj-ikon { font-size:28px; }
   .hj-fri { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; margin-top:8px; }

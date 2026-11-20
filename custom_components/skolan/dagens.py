@@ -131,8 +131,30 @@ def gissa(data: dict, svar: str) -> None:
     _gator(data)[idag] = {"gissning": svar}
 
 
-def visa_svar(data: dict) -> dict:
-    """Barnet öppnar gårdagens svar. Rätt gissning ger stjärnor (en gång)."""
+GATA_AI_PROMPT = (
+    "Ett barn har gissat på en gåta. Avgör om barnets svar ska räknas som rätt.\n"
+    "Gåta: {fraga}\nFacit (godkända svar): {svar}\nBarnets svar: {gissning}\n\n"
+    "Räkna det som rätt om svaret betyder samma sak som facit, är en mer specifik variant av det (t.ex. tvättsvamp när facit är svamp), "
+    "en synonym, eller ett annat svar som verkligen passar gåtans alla ledtrådar. Stavfel gör inget. "
+    "Räkna det som fel om det bara delvis passar eller är en gissning som inte uppfyller gåtan.\n"
+    'Svara ENDAST med JSON: {{"ratt": true/false, "varfor": "en kort mening till barnet"}}'
+)
+
+
+def gata_ai_fraga(data: dict) -> str | None:
+    """Prompt till AI:n om gårdagens gissning inte matchar facit (annars None, då behövs ingen AI)."""
+    igar = dt_util.now().date() - timedelta(days=1)
+    post = _gator(data).get(igar.isoformat(), {})
+    if post.get("visad") or not post.get("gissning"):
+        return None
+    fraga, svar = gata(igar)
+    if ratt_svar(post["gissning"], svar):
+        return None
+    return GATA_AI_PROMPT.format(fraga=fraga, svar=", ".join(svar), gissning=post["gissning"])
+
+
+def visa_svar(data: dict, ai: dict | None = None) -> dict:
+    """Barnet öppnar gårdagens svar. Rätt gissning ger stjärnor (en gång). ai = AI:ns bedömning av ett svar som inte står i facit."""
     igar = dt_util.now().date() - timedelta(days=1)
     post = _gator(data).setdefault(igar.isoformat(), {})
     if post.get("visad"):
@@ -140,7 +162,9 @@ def visa_svar(data: dict) -> dict:
     post["visad"] = True
     fraga, svar = gata(igar)
     if post.get("gissning"):
-        post["ratt"] = ratt_svar(post["gissning"], svar)
+        post["ratt"] = ratt_svar(post["gissning"], svar) or bool((ai or {}).get("ratt"))
+        if (ai or {}).get("varfor"):
+            post["varfor"] = str(ai["varfor"])[:200]
         if post["ratt"]:
             meriter.ge(data, P_GATA, "🧩 Du löste gåtan!", f"gata:{igar.isoformat()}", "🧩")
     return post
@@ -177,7 +201,7 @@ def dagens(data: dict, namn: str) -> dict:
         "gata": gata(idag)[0],
         "gissning": i_post.get("gissning", ""),
         "igar": {"gata": fraga_igar, "gissning": g_post.get("gissning", ""), "visad": bool(g_post.get("visad")),
-                 "svar": svar_igar[0] if g_post.get("visad") else None, "ratt": g_post.get("ratt")},
+                 "svar": svar_igar[0] if g_post.get("visad") else None, "ratt": g_post.get("ratt"), "varfor": g_post.get("varfor", "")},
         "p_gata": P_GATA,
     }
 
