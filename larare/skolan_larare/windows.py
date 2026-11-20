@@ -91,3 +91,48 @@ def forbered() -> bool:
     except Exception as err:  # noqa: BLE001
         _LOGGER.warning("Kunde inte be Windows om lov: %s", err)
         return False
+
+
+# ---------- inställningar som skolans IT låser (grupprinciper / Intune) ----------
+POLICY_NYCKEL = r"SOFTWARE\Policies\Laxspelet Larare"
+
+
+def it_policy() -> dict:
+    """Det skolans IT har låst för alla lärare på datorn.
+
+    Registret (HKLM eller HKCU) under SOFTWARE\\Policies\\Laxspelet Larare:
+      MaxNiva        DWORD  0, 1 eller 2: högsta behörighetsnivån, oavsett vad rektorn beslutar
+      Uppdateringar  REG_SZ automatisk, manuell eller av
+    Utanför Windows (och för test): miljövariablerna LAXSPELET_MAX_NIVA och LAXSPELET_UPPDATERINGAR."""
+    ut: dict = {"max_niva": None, "uppdateringar": None}
+    varden: list[tuple[str, object]] = []
+    if ar_windows():
+        try:
+            import winreg
+
+            for rot in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                try:
+                    with winreg.OpenKey(rot, POLICY_NYCKEL) as k:
+                        for namn in ("MaxNiva", "Uppdateringar"):
+                            try:
+                                varden.append((namn, winreg.QueryValueEx(k, namn)[0]))
+                            except OSError:
+                                pass
+                except OSError:
+                    pass
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.info("Grupprinciper: %s", err)
+    if os.environ.get("LAXSPELET_MAX_NIVA"):
+        varden.append(("MaxNiva", os.environ["LAXSPELET_MAX_NIVA"]))
+    if os.environ.get("LAXSPELET_UPPDATERINGAR"):
+        varden.append(("Uppdateringar", os.environ["LAXSPELET_UPPDATERINGAR"]))
+    for namn, v in varden:
+        if namn == "MaxNiva":
+            try:
+                n = max(0, min(2, int(v)))
+                ut["max_niva"] = n if ut["max_niva"] is None else min(ut["max_niva"], n)  # det strängaste gäller
+            except (TypeError, ValueError):
+                pass
+        elif namn == "Uppdateringar" and str(v).lower() in ("automatisk", "manuell", "av"):
+            ut["uppdateringar"] = str(v).lower() if ut["uppdateringar"] != "av" else "av"
+    return ut

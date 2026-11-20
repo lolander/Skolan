@@ -3801,6 +3801,7 @@ class SkolanPanel extends HTMLElement {
       : !lararna.length ? "inte kopplad än" : lararna.map((x) => `${esc(x.namn || "Läraren")} ${x.inst?.[id] ? "✅" : "❌"}`).join(" · ");
     const roll = (x) => (x.roll === "amne" ? `ämneslärare${x.amne ? ` i ${esc(x.amne)}` : ""}` : `mentor${x.amne ? ` (${esc(x.amne)})` : ""}`);
     const larKort = lararna.length ? `<div class="card"><b>🏫 ${esc(s.namn)}s lärare</b>
+        ${lararna.some((x) => x.behorighet) ? `<div class="small">${lararna.filter((x) => x.behorighet).map((x) => `🔐 ${esc(x.namn || "Läraren")}: nivå ${x.behorighet.niva}${x.behorighet.rektor ? ` (beslutad av rektor ${esc(x.behorighet.rektor)})` : ""}`).join(" · ")}. Nivå 0 = läraren får inga uppgifter om ditt barn, bara klassens summor.</div>` : ""}
         <div class="small muted">Alla lärare synkar med samma klasslänk. Mentorn får allt du delar. En ämneslärare får bara sitt eget ämne i rapporter, statistik och studieteknik. Du kan ändra vad varje lärare får.</div>
         ${lararna.map((x) => `<details class="sk-larare"><summary><b>${esc(x.namn || "Läraren")}</b> · ${roll(x)}${x.klass ? ` · ${esc(x.klass)}` : ""}${x.skola?.namn ? ` · ${esc(x.skola.namn)}` : ""}
             <span class="small muted"> · synkad ${esc((x.synkad || "").replace("T", " "))}</span></summary>
@@ -3820,7 +3821,7 @@ class SkolanPanel extends HTMLElement {
         <div class="lag-marken">${vd.map((d, i) => `<label><input type="checkbox" data-sk-dag="${i}" ${(f.mejl_dagar || []).includes(i) ? "checked" : ""}> ${d}</label>`).join("")}</div>
         <button class="primary" id="sk-spara">💾 Spara</button>
         ${lararna.length ? `<button class="mini" id="sk-koppla-bort">Koppla bort alla lärare (ny klasslänk)</button>` : ""}
-        <div class="small" style="margin-top:8px">👩‍🏫 <b>Lärarappen</b> (gratis, Windows): ge läraren länken <a href="https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe" target="_blank" rel="noopener">Laxspelet-Larare-Setup.exe</a> <button class="mini" id="sk-larlank">📋 Kopiera länken</button></div>
+        <div class="small" style="margin-top:8px">👩‍🏫 <b>Lärarappen</b> (gratis, Windows): ge läraren länken <a href="https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe" target="_blank" rel="noopener">Laxspelet-Larare-Setup.exe</a> <button class="mini" id="sk-larlank">📋 Kopiera länken</button> · <a href="https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md" target="_blank" rel="noopener">📄 Information till skolan</a> (säkerhet och dataskydd, för rektor och IT)</div>
         <div class="small" style="margin-top:8px"><b>Klasslänk</b> (läraren behöver den för att synka; eleven skickar den när hen ansluter på lektionen)</div>
         ${k.lank ? `<div class="small muted" style="word-break:break-all">${esc(k.lank)}</div><button class="mini" id="sk-kopiera">📋 Kopiera</button>` : `<div class="small muted">${k.kan_nas ? "Slå på något ovan först." : "Home Assistant behöver gå att nå utifrån (t.ex. Nabu Casa)."}</div>`}</div>
       ${k.inkorg?.length ? `<h3>📬 Från läraren</h3><ul class="lista">${k.inkorg.map((x) => this._inkorgRad(x)).join("")}</ul>` : ""}

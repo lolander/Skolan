@@ -77,9 +77,11 @@ jobs:
             larare/windows/Output/*.sha256
           prerelease: true
           body: |
-            Förhandsversion av Skolan Lärare för Windows: veckobrev, klasslag, grupper och historik.
-            Windows kan varna för att programmet är okänt (det är inte signerat): tryck "Mer information" → "Kör ändå".
-            Från 0.8.0 installeras appen per användare och uppdaterar sig själv tyst. Första gången frågar Windows en gång om brandväggen.
+            Läxspelet Lärare för Windows: veckobrev, studiematerial, klassens insikt, klasslag och grupper.
+            📄 Skolor, IT och dataskyddsombud: läs först https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md (nivåer, rektorns beslut, kryptering, grupprinciper och mallar).
+            Utan beslut från en rektor i appen hanterar appen inga personuppgifter om elever (nivå 0).
+            Windows kan varna för att programmet är okänt (det är inte signerat): kontrollera .sha256-filen, tryck sedan "Mer information" → "Kör ändå".
+            Installeras per användare utan administratör. Tyst installation: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
       # Lägg också den nya lärarappen på senaste familjeversionens sida (med fast namn), så att länken
       # .../releases/latest/download/Laxspelet-Larare-Setup.exe alltid ger senaste lärarappen.

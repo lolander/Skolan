@@ -32,6 +32,8 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:7px;bord
 .mini-bar{display:inline-block;width:70px;height:8px;background:var(--rand);border-radius:4px;overflow:hidden;vertical-align:middle;margin-right:6px}.mini-bar i{display:block;height:100%;background:var(--acc)}
 .fil-rad{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}.fil-rad input{width:auto}
 tr.klick{cursor:pointer}tr.klick:hover td{background:var(--bg)}td input{padding:5px}.res-in{width:80px}
+.pamin{background:#fff8e1;color:#5d4037;border-radius:9px;padding:8px 10px;font-size:13px;margin:0 0 10px;line-height:1.4}.regler li{margin:8px 0;line-height:1.45}
+.beh-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:2px 12px;margin:6px 0}.beh-rad{margin-top:6px}.m.vald{background:var(--acc);color:#fff}
 h3{font-size:16px;margin:0 0 6px}.badge{background:var(--fel);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px}
 .rutor{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
 .ruta{background:var(--bg);border-radius:12px;padding:12px}.ruta-r{font-size:13px;color:var(--muted)}.ruta-v{font-size:28px;font-weight:800;margin:2px 0}.ruta-u{font-size:12px;color:var(--muted)}
@@ -56,13 +58,13 @@ h3{font-size:16px;margin:0 0 6px}.badge{background:var(--fel);color:#fff;border-
 <script>
 // Samma menysystem som i Läxspelet: ☰ Meny öppnar en lista i grupper
 const MENY = [[null, ["oversikt"]], ["Eleverna", ["statistik", "studieteknik", "rapporter", "foraldrar"]], ["Skicka till klassen", ["veckobrev", "prov", "material"]],
-  ["Klassen", ["grupper", "klasslag"]], ["Skolan", ["skolan"]], ["Övrigt", ["historik", "inst"]]];
+  ["Klassen", ["grupper", "klasslag"]], ["Skolan", ["skolan", "behorighet", "regler"]], ["Övrigt", ["historik", "inst"]]];
 let menyOppen = false;
 // Hovra (eller tryck) på en stapel för att se siffrorna
 document.addEventListener("pointerover", (ev) => { const m = ev.target.closest?.("[data-tip]"); const tip = document.getElementById("tip") || document.body.appendChild(Object.assign(document.createElement("div"), { id: "tip" }));
   if (!m) { tip.style.display = "none"; return; } tip.textContent = m.dataset.tip; tip.style.display = "block"; });
 document.addEventListener("pointermove", (ev) => { const tip = document.getElementById("tip"); if (tip?.style.display === "block") { tip.style.left = Math.min(ev.clientX + 12, innerWidth - 290) + "px"; tip.style.top = (ev.clientY + 14) + "px"; } });
-const flikar = [["oversikt", "🏫 Översikt"], ["statistik", "📈 Statistik"], ["studieteknik", "🧠 Studieteknik"], ["veckobrev", "📬 Veckobrev"], ["prov", "📝 Prov"], ["material", "📎 Material"], ["grupper", "👥 Grupper"], ["klasslag", "🐲 Klasslag"], ["rapporter", "📊 Rapporter"], ["foraldrar", "✉️ Från föräldrar"], ["historik", "📜 Historik"], ["skolan", "🏫 Skolan"], ["inst", "⚙️ Inställningar"]];
+const flikar = [["oversikt", "🏫 Översikt"], ["statistik", "📈 Statistik"], ["studieteknik", "🧠 Studieteknik"], ["veckobrev", "📬 Veckobrev"], ["prov", "📝 Prov"], ["material", "📎 Material"], ["grupper", "👥 Grupper"], ["klasslag", "🐲 Klasslag"], ["rapporter", "📊 Rapporter"], ["foraldrar", "✉️ Från föräldrar"], ["historik", "📜 Historik"], ["skolan", "🏫 Skolan"], ["behorighet", "🔐 Behörighet"], ["regler", "📘 Så gör du rätt"], ["inst", "⚙️ Inställningar"]];
 let valdElev = null, valtProv = null, filer = {}, forraFlik = "oversikt";
 const VD = ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"];
 let L = null, flik = location.hash.slice(1) || "oversikt", msg = null;
@@ -78,7 +80,7 @@ async function uppdatera(body, ok) {
 // Ny version: en rad överst på alla sidor
 function uppdRad() {
   const u = L.uppdatering, w = L.windows;
-  const brand = w && w.windows && !w.brandvagg ? `<div class="msg fel">⚠️ Eleverna kan inte ansluta än: Windows brandvägg behöver öppnas för appen (en gång). <button class="m" id="u-brand">🔓 Öppna brandväggen</button><div class="small">Windows frågar ”Vill du tillåta…”. Har du inte administratörsrätt på datorn: be IT trycka på knappen.</div></div>` : "";
+  const brand = w && w.windows && !w.brandvagg ? `<div class="msg">ℹ️ Vill du att eleverna ansluter från mobilen på lektionen? Då behöver Windows brandvägg öppnas för appen (en gång). <button class="m" id="u-brand">🔓 Öppna brandväggen</button><div class="small">Kräver administratör. Det behövs inte om föräldrarna skickar klasslänken till dig (📧 på Översikten).</div></div>` : "";
   const klar = u?.uppdaterad ? `<div class="msg ok">✅ Läxspelet Lärare är uppdaterad till version ${esc(u.uppdaterad.till)}. <button class="m" id="u-ok">OK</button></div>` : "";
   return brand + klar + uppdRad2(u);
 }
@@ -108,10 +110,14 @@ function rita() {
   $("#meny-knapp").onclick = () => { menyOppen = !menyOppen; rita(); };
   const bak = document.querySelector(".meny-bak"); if (bak) bak.onclick = () => { menyOppen = false; rita(); };
   document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { flik = b.dataset.f; location.hash = flik; msg = null; menyOppen = false; rita(); window.scrollTo(0, 0); });
-  $("#main").innerHTML = uppdRad() + (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, elev, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, foraldrar, skolan, historik, inst }[flik] || oversikt)();
+  if (!L.regler_last && flik !== "regler") { $("#main").innerHTML = regler(true); koppla(); return; }
+  $("#main").innerHTML = uppdRad() + (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, elev, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, foraldrar, skolan, behorighet, regler, historik, inst }[flik] || oversikt)();
   koppla();
 }
-const av = (k) => L.inst[k] ? "" : `<div class="msg fel">Den här funktionen är avstängd. Slå på den under ⚙️ Inställningar.</div>`;
+const lasRatt = (k) => !(L.behorighet?.ratt || []).includes(k);
+const nivaFor = (k) => (L.behorighet?.rattigheter?.[k] || [0])[0];
+const lasText = (k) => `🔒 Kräver nivå ${nivaFor(k)}. ${L.skola?.rektor ? `Rektorn (${esc(L.skola.rektor.namn)}) bestämmer.` : "Utan beslut från en rektor gäller nivå 0."} Se 🔐 Behörighet.`;
+const av = (k) => lasRatt(k) ? `<div class="msg fel">${lasText(k)}</div>` : L.inst[k] ? "" : `<div class="msg fel">Den här funktionen är avstängd. Slå på den under ⚙️ Inställningar.</div>`;
 function oversikt() {
   const f = (e) => Object.entries(e.foralder || {}).filter(([, v]) => v).map(([k]) => ({ veckobrev: "📬", rapport: "📊", klasslag: "🏫", mejl: "📧", grupper: "👥", statistik: "📈", material: "📎", schema: "🗓️", studieteknik: "🧠", riktlinjer: "📝", lapp: "✉️", samtal: "🗣️" })[k]).join(" ");
   return `<div class="kort flex"><img class="qr" src="/api/qr.svg" alt="QR-kod">
@@ -122,10 +128,83 @@ function oversikt() {
     ${L.elever.length ? `<table><tr><th>Namn</th><th>Senast synkad</th><th>Föräldern har slagit på</th><th></th></tr>
     ${L.elever.map((e) => `<tr><td><a href="#" data-elev="${e.id}"><b>${esc(e.namn)}</b></a>${e.fel ? `<div class="small" style="color:var(--fel)">⚠️ ${esc(e.fel)}</div>` : ""}</td><td>${esc(e.senast || "–")}</td><td>${f(e) || "<span class='muted'>inget</span>"}</td>
       <td>${e.har_schema ? `<a class="m" href="/schema/${encodeURIComponent(e.id)}" target="_blank" title="Digitalt schema, sök och skriv ut">🗓️</a> ` : ""}<button class="m" data-synka="${e.id}">🔄</button> <button class="m" data-bort="${e.id}">🗑️</button></td></tr>`).join("")}</table>
-    <button class="p" id="synka-alla">🔄 Synka alla</button>` : `<p class="muted">Inga elever har anslutit än.</p>`}</div>`;
+    <button class="p" id="synka-alla">🔄 Synka alla</button>` : `<p class="muted">Inga elever har anslutit än.</p>`}
+    ${lasRatt("namn") ? `<p class="small muted">🔐 Nivå 0: elevernas namn sparas inte, familjerna visas som Familj 1, 2, 3 …</p>` : ""}
+    <details style="margin-top:10px"><summary class="small"><b>📧 Fått en klasslänk från en förälder?</b> Klistra in den här (ingen mobil behövs i skolan)</summary>
+      <input id="el-lank" placeholder="https://…/api/skolan/klass/…"><button class="p" id="el-lank-ok">➕ Lägg till</button>
+      <p class="small muted">Föräldern hittar länken i Läxspelet under Föräldrar → Skolan → Klasslänk.</p></details></div>
+  ${insiktKort()}`;
+}
+const pamin = (t) => `<div class="pamin">💡 ${t}</div>`;
+const P = {
+  utskick: "Lägg också ut det här i skolans lärplattform eller på papper, så att alla elever får det. Skriv inget om enskilda elever: familjens AI-tjänst kan läsa det du skickar.",
+  betyg: "Visar plugg hemma för de familjer som delar. Använd det i samtal med elev och vårdnadshavare, <b>inte</b> som underlag för bedömning eller betyg.",
+  anteckning: "Kan bli en allmän handling och omfattas av sekretess. Skriv sakligt och kort. Inget om hälsa, diagnoser eller stödåtgärder: det hör hemma i skolans eget system.",
+  meddelande: "Skriv inga uppgifter om enskilda elever i meddelanden mellan lärare.",
+  grupp: "Eleverna i en grupp ser varandras namn. Tänk på det som vid all gruppindelning.",
+  prov: "Provresultat här är en extra kopia till familjen. Lägg in dem i skolans system som vanligt.",
+  lapp: "Lappar och samtalsunderlag är vårdnadshavarens egna uppgifter. Hantera dem som annan post från hemmet och sprid dem inte vidare.",
+};
+function regler(forsta) {
+  return `<div class="kort"><h2>📘 Så gör du rätt</h2>${forsta ? `<p><b>Läs det här innan du börjar.</b> Det tar en minut och skyddar både eleverna och dig.</p>` : ""}
+    <ol class="regler">
+      <li><b>Frivilligt komplement.</b> Allt du skickar här ska också finnas i skolans vanliga kanaler (lärplattform eller papper). Ingen elev får krävas att använda Läxspelet, och elever utan appen får inte gå miste om något (skollagen: avgiftsfri och likvärdig utbildning).</li>
+      <li><b>Inga uppgifter om enskilda elever i veckobrev, material eller meddelanden.</b> Skriv till hela klassen. Det du skickar kan läsas av den AI-tjänst familjen använder.</li>
+      <li><b>Inte för betyg.</b> Det familjerna delar visar plugg hemma. Det får inte användas som underlag för bedömning eller betyg.</li>
+      <li><b>Klassens insikt gäller bara familjerna som är med</b>, inte hela klassen.</li>
+      <li><b>Anteckningar och provresultat</b> (nivå 2) kan vara allmänna handlingar och omfattas av sekretess. Skriv sakligt. Inget om hälsa, diagnoser eller stödåtgärder.</li>
+      <li><b>Använd bara det rektorn har beslutat.</b> Din behörighet syns under 🔐 Behörighet. Är du osäker: fråga rektorn.</li>
+      <li><b>Gallra.</b> Radera klassens data när läsåret är slut (🔐 Behörighet → 🗑️).</li>
+    </ol>
+    <p class="small muted">Mer för rektor, IT och dataskyddsombud: <a href="https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md" target="_blank" rel="noopener">📄 Information till skolor</a></p>
+    ${L.regler_last ? `<p class="small muted">✅ Du har läst reglerna.</p>` : `<button class="p" id="regler-ok">✅ Jag har läst och förstår</button>`}</div>`;
+}
+function insiktKort() {
+  const i = L.insikt;
+  if (!i) return lasRatt("insikt") ? "" : `<div class="kort"><h2>🔎 Klassens insikt</h2><p class="small muted">Slå på 🔎 Klassens insikt under ⚙️ Inställningar.</p></div>`;
+  if (!i.visas) return `<div class="kort"><h2>🔎 Klassens insikt</h2><p class="muted">${i.antal} av minst ${i.min} familjer har delat den här veckan. Insikten visas när minst ${i.min} är med, så att ingen enskild elev går att känna igen.</p></div>`;
+  return `<div class="kort"><h2>🔎 Klassens insikt v.${esc(i.vecka.split("-W")[1])}</h2><p class="small muted">Bara summor från ${i.antal} familjer. Inga namn, och inget som går att koppla till en elev. Ord visas bara om minst 2 familjer har missat dem.</p>${pamin(`Gäller bara de ${i.antal} familjer som är med, inte hela klassen.`)}
+    <p>✏️ <b>${i.ovat} av ${i.antal}</b> har övat glosorna i ditt ämne den här veckan.</p>
+    ${(i.ord || []).length ? `<h3>Ord som många missar</h3>${liggande(i.ord.map((o) => ({ namn: o.ord, v: o.familjer, max: i.antal, text: `${o.familjer} familjer`, tip: `${o.ord}: ${o.fel} fel totalt, i ${o.familjer} av ${i.antal} familjer` })))}` : `<p class="muted">Inga ord som flera missar.</p>`}
+    ${(i.prov || []).map((p) => `<div class="grupp"><b>📝 ${esc(p.titel)}</b> <span class="small muted">${esc(p.datum)}</span><div>${p.pluggat} av ${p.med} har börjat plugga, i snitt ${p.snitt} dagar · ${p.plan} har en pluggplan</div></div>`).join("")}</div>`;
+}
+function behorighet() {
+  const b = L.behorighet, s = L.skola, r = s?.rektor, R = b.rattigheter, N = b.nivaer;
+  const nivaRad = (ratt) => { const n = Math.max(0, ...ratt.map((k) => (R[k] || [0])[0])); return `<b>${esc(N[n][0])}</b> · ${esc(N[n][1])}`; };
+  const lista = (ratt) => Object.entries(R).map(([k, [n, t]]) => `<div class="small">${ratt.includes(k) ? "✅" : "🔒"} ${esc(t)} <span class="muted">(nivå ${n})</span></div>`).join("");
+  const val = (vem, ratt) => `<div class="beh-rad" data-beh="${esc(vem)}">
+      <div class="actions">${[0, 1, 2].map((n) => `<button class="m" data-beh-niva="${n}">${esc(N[n][0])}</button>`).join("")}</div>
+      <details><summary class="small">Anpassa</summary><div class="beh-grid">${Object.entries(R).map(([k, [n, t]]) => `<label class="chk small"><input type="checkbox" value="${k}" ${ratt.includes(k) ? "checked" : ""}> ${esc(t)} <span class="muted">(${n})</span></label>`).join("")}</div></details>
+      <button class="p" data-beh-spara>💾 Spara beslut</button></div>`;
+  const nivaer = `<div class="kort"><h3>Nivåerna</h3>${[0, 1, 2].map((n) => `<p><b>${esc(N[n][0])} · ${esc(N[n][1])}</b><br><span class="small muted">${esc(N[n][2])}</span></p>`).join("")}
+    <p class="small muted">Nivå 1 och 2 innebär att skolan behandlar personuppgifter om elever. Huvudmannen (kommunen eller friskolan) är personuppgiftsansvarig, så rektorn bör ha stöd av dataskyddsombudet innan någon får nivå 1 eller 2. Familjen bestämmer dessutom själv vad den delar.</p></div>`;
+  const itRad = b.it_max != null ? `<div class="msg ok">🏛️ Skolans IT har låst lärarappen på den här datorn till högst <b>nivå ${b.it_max}</b>. Det gäller oavsett vad rektorn beslutar.</div>` : "";
+  const min = `<div class="kort"><h2>🔐 Din behörighet</h2>${itRad}<p>${nivaRad(b.ratt)}${r ? ` · beslutad av rektorn <b>${esc(r.namn)}</b>` : " · standard utan rektor"}</p>${lista(b.ratt)}
+    <p class="small" style="margin-top:10px">${b.skyddad ? "🔒 Klassens data på datorn är krypterad med ditt Windows-konto." : b.kan_skydda ? "⚠️ Klassens data kunde inte krypteras på den här datorn." : "ℹ️ Klassens data krypteras när appen körs i Windows."} Synken med kollegorna är krypterad.</p>
+    ${b.dolda.summa ? `<div class="msg fel">Det finns ${b.dolda.summa} sparade uppgifter som din behörighet inte längre tillåter (${[b.dolda.anteckningar && `${b.dolda.anteckningar} anteckningar`, b.dolda.prov && `${b.dolda.prov} provresultat`, b.dolda.historik && `${b.dolda.historik} rader i historiken`].filter(Boolean).join(", ")}). De syns inte och skickas inte. <button class="m" id="beh-radera">🗑️ Radera dem</button></div>` : ""}</div>`;
+  const radera = `<div class="kort"><h3>🗑️ Gallring</h3><p class="small muted">Radera alla elevuppgifter på den här datorn, t.ex. när läsåret är slut: elever, provresultat, anteckningar, grupper, klassens insikt och historiken. Inställningarna, veckobreven och skolan finns kvar. Avinstallation tar inte bort datan, gör det här först.</p>
+    <button class="m" id="beh-gallra">🗑️ Radera klassens data</button> <a class="small" href="https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md" target="_blank" rel="noopener">📄 Information till skolor och dataskyddsombud</a></div>`;
+  if (!s) return min + radera + `<div class="kort"><h2>👩‍💼 Rektor</h2><p>Du är inte med i någon skola, så nivå 0 gäller. Under 🏫 Skolan kan du skapa en skola. Den som skapar skolan blir rektor i appen och bestämmer vad lärarna får göra.</p></div>` + nivaer;
+  if (!r) return min + radera + `<div class="kort"><h2>👩‍💼 Rektor</h2><p>${esc(s.namn)} har ingen rektor i appen än, så alla lärare har nivå 0.</p>
+    <button class="p" id="beh-bli">👩‍💼 Bli skolans rektor</button><p class="small muted">Rektorn bestämmer vad varje lärare får. Ta bara rollen om du ska ansvara för det på skolan (oftast rektorn eller den rektorn utser). Rollen kan lämnas över senare.</p></div>` + nivaer;
+  if (!r.jag) return min + radera + `<div class="kort"><h2>👩‍💼 Rektor: ${esc(r.namn)}</h2><p class="small muted">Bara rektorn kan ändra behörigheterna. Varje beslut signeras av rektorn, så ingen annan kan ändra det.</p>
+    ${r.beslut.length ? `<h3>Senaste besluten</h3>${r.beslut.slice(0, 10).map((x) => `<div class="small">${esc(x.tid)} · ${esc(x.text)}</div>`).join("")}` : ""}</div>` + nivaer;
+  const lar = [{ id: "_jag", namn: (L.larare || "Du") + " (du)", roll: L.roll, amne: L.amne, ratt: r.jag_ratt, eget: r.mina_eget }, ...s.medlemmar];
+  return min + radera + `<div class="kort"><h2>👩‍💼 Du är rektor för ${esc(s.namn)}</h2>
+      <p class="small muted">Välj vad varje lärare får, efter det som passar skolans system och rutiner. Besluten signeras av dig, skickas till lärarna vid nästa synk och sparas i beslutsloggen.</p>
+      <label>Grund för beslutet (krävs för nivå 1 och 2)</label><input id="beh-grund" placeholder="t.ex. DSO-bedömning 2026-12-01, dnr 2026/123">
+    </div>
+    <div class="kort"><h3>Alla lärare (standard)</h3><p class="small">Gäller alla lärare utan eget beslut: ${nivaRad(r.standard)}</p>${val("standard", r.standard)}</div>
+    <div class="kort"><h3>Varje lärare</h3>${lar.map((m) => `<div class="grupp"><b>${esc(m.namn)}</b> <span class="small muted">${m.roll === "amne" ? `ämneslärare${m.amne ? ` i ${esc(m.amne)}` : ""}` : "mentor"}</span>
+        <div class="small">${nivaRad(m.ratt || [])} ${m.eget ? `· eget beslut <button class="m" data-beh-std="${m.id === "_jag" ? "_jag" : m.id}">↩️ Följ standarden</button>` : "· följer standarden"}</div>
+        ${val(m.id, m.ratt || [])}</div>`).join("")}</div>
+    <div class="kort"><h3>Lämna över rektorsrollen</h3>${s.medlemmar.length ? `<div class="grid2"><div><select id="beh-ny">${s.medlemmar.map((m) => `<option value="${m.id}" ${m.kan_bli_rektor ? "" : "disabled"}>${esc(m.namn)}${m.kan_bli_rektor ? "" : " (behöver uppdatera appen)"}</option>`).join("")}</select></div>
+      <div><button class="m" id="beh-overlat">👩‍💼 Lämna över</button></div></div><p class="small muted">Den nya rektorn tar över direkt. Du blir vanlig lärare.</p>` : `<p class="small muted">Inga kollegor i skolan än.</p>`}</div>
+    <div class="kort"><h3>📜 Beslutslogg</h3><p class="small muted">Alla beslut om behörigheter, till exempel för dataskyddsombudet. <a href="/api/beslut.csv">⬇️ Ladda ner (Excel/CSV)</a></p>
+      ${r.beslut.slice(0, 50).map((x) => `<div class="small" style="padding:4px 0;border-bottom:1px solid var(--rand)">${esc(x.tid)} · <b>${esc(x.av)}</b> · ${esc(x.text)}</div>`).join("")}</div>` + nivaer;
 }
 function veckobrev() {
-  return `${av("veckobrev")}<div class="kort"><h2>Nytt veckobrev</h2>
+  return `${av("veckobrev")}<div class="kort"><h2>Nytt veckobrev</h2>${pamin(P.utskick)}
     <p class="small muted">Veckobrevet hamnar i föräldrarnas inkorg när eleven synkar. Föräldern godkänner innan läxorna läggs in.</p>
     <div class="grid2"><div><label>Rubrik</label><input id="vb-titel" placeholder="Veckobrev v.${L.boss?.vecka?.slice(-2) || ""}"></div>
       <div><label>Vecka</label><input id="vb-vecka" placeholder="t.ex. 2026-W48"></div></div>
@@ -227,7 +306,7 @@ function statistik() {
   L.elever.forEach((e) => { (e.studieteknik?.svaga_punkter || []).forEach((x) => { svaga[x.amne] = (svaga[x.amne] || 0) + x.antal; });
     (e.studieteknik?.svart || []).forEach((t) => { (svart[t] = svart[t] || []).push(e.namn); }); });
   const svagRader = Object.entries(svaga).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  return `<div class="kort"><h2>📈 Hur klassen pluggar</h2>
+  return `<div class="kort"><h2>📈 Hur klassen pluggar</h2>${pamin(P.betyg)}
       <p class="small muted">Från elevernas Läxspelet hemma, de senaste 8 veckorna. Bara elever vars förälder har slagit på statistik är med (${med.length} av ${L.elever.length}). Tryck på en elev för elevkortet.</p>
       <div class="rutor">${ruta("Pluggdagar per vecka", tal(snittDagar), "snitt senaste 4 veckorna")}${ruta("Rätt på förhör", snittP === null ? "–" : `${snittP} %`, "snitt per elev")}
         ${ruta("Pluggar sällan", `${laga.length}`, `elever under ${tal(S.LAG)} dagar/vecka`)}${ruta("Delar statistik", `${med.length} av ${L.elever.length}`, "elever")}</div></div>
@@ -259,7 +338,7 @@ function elev() {
   const delar = Object.entries(e.foralder || {}).filter(([k, v]) => v && L.funktioner[k]).map(([k]) => L.funktioner[k].split(" ")[0]).join(" ");
   const OMR = { tecken: "Tecken", stor: "Stor bokstav", mellanrum: "Mellanrum", stycken: "Stycken", struktur: "Början/slut", ordval: "Ordval", meningar: "Variation" };
   const lista = (rubrik, p2) => (p2?.length ? `<p><b>${rubrik}</b></p><ul>${p2.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
-  return `<div class="kort"><button class="m" id="elev-tillbaka">← Tillbaka</button>
+  return `<div class="kort"><button class="m" id="elev-tillbaka">← Tillbaka</button>${s || t ? pamin(P.betyg) : ""}
       <h2 style="margin-top:12px">👤 ${esc(e.namn)}</h2>
       <p class="small muted">Synkad ${esc(e.senast || "aldrig")}${e.fel ? ` · <span style="color:var(--fel)">⚠️ ${esc(e.fel)}</span>` : ""} · föräldern delar: ${delar || "inget än"}</p>
       <div class="rutor">${ruta("Pluggdagar per vecka", s ? tal(d) : "–", klassD !== null && s ? `klassen ${tal(klassD)}` : "statistik delas inte")}
@@ -286,7 +365,7 @@ function elev() {
     <div class="kort"><h3>📝 Anteckningar om ${esc(e.namn)}</h3>
       <p class="small muted">${L.skola ? "Delas med elevens andra lärare i skolan: mentorn får alla, en ämneslärare bara de som gäller sitt ämne. Aldrig med familjen." : "Bara för dig. Går du med i en skola delas de med elevens andra lärare (mentorn allt, ämneslärare sitt ämne)."}</p>
       <div class="grid2"><div><label>Ämne</label><input id="ant-amne" value="${esc(L.roll === "amne" ? (L.amne || "").split(",")[0].trim() : "")}" placeholder="Tomt = bara mentorn"></div></div>
-      <label>Anteckning</label><textarea id="ant-text" rows="2" maxlength="1000" placeholder="t.ex. Har kommit ikapp med bråk, behöver träna på textuppgifter"></textarea>
+      ${pamin(P.anteckning)}<label>Anteckning</label><textarea id="ant-text" rows="2" maxlength="1000" placeholder="t.ex. Har kommit ikapp med bråk, behöver träna på textuppgifter"></textarea>
       <button class="p" id="ant-ny">📝 Spara</button>
       ${(e.anteckningar || []).map((a) => `<div class="grupp"><b>${esc(a.egen ? "Du" : a.larare)}</b> <span class="small muted">${a.amne ? `${esc(a.amne)} · ` : ""}${esc(a.tid)}</span>
         ${a.egen ? ` <button class="m" data-ant-bort="${esc(a.id)}">🗑️</button>` : ""}<p style="white-space:pre-wrap;margin:4px 0">${esc(a.text)}</p></div>`).join("")}</div>
@@ -341,7 +420,7 @@ function skolan() {
       <div class="actions"><button class="m" id="sk-ny-kod">🔑 Ny kod</button><button class="m" id="sk-synka">🔄 Synka nu</button><button class="m" id="sk-lamna">🚪 Lämna skolan</button></div></div>
     <div class="kort"><h3>💬 Meddelanden${s.olasta ? ` <span class="badge">${s.olasta} nya</span>` : ""}</h3>
       <div class="grid2"><div><label>Till</label><select id="sk-till"><option value="">Alla på skolan</option>${s.medlemmar.map((m) => `<option value="${m.id}">${esc(m.namn)}</option>`).join("")}</select></div></div>
-      <label>Meddelande</label><textarea id="sk-text" rows="2" maxlength="1000" placeholder="t.ex. Kan vi flytta SO-provet så att 7A inte får tre prov samma vecka?"></textarea>
+      ${pamin(P.meddelande)}<label>Meddelande</label><textarea id="sk-text" rows="2" maxlength="1000" placeholder="t.ex. Kan vi flytta SO-provet så att 7A inte får tre prov samma vecka?"></textarea>
       <button class="p" id="sk-skicka">💬 Skicka</button>
       ${s.meddelanden.length ? `<div style="margin-top:10px">${s.meddelanden.slice(0, 30).map((m) => `<div class="grupp" style="${m.last ? "" : "border-left-color:var(--fel)"}"><b>${esc(m.egen ? "Du" : m.namn)}</b> <span class="small muted">→ ${m.till ? esc(m.egen ? m.till_namn || "?" : "dig") : "alla"} · ${esc(m.tid)}</span><p style="white-space:pre-wrap;margin:4px 0">${esc(m.text)}</p></div>`).join("")}</div>` : `<p class="small muted">Inga meddelanden än.</p>`}
       ${s.olasta ? `<button class="m" id="sk-last">✓ Markera som lästa</button>` : ""}</div>
@@ -367,7 +446,7 @@ function prov() {
           <td><input data-res-ko="${e.id}" value="${esc(r.kommentar || "")}" placeholder="t.ex. Bra jobbat med uppgift 3!"></td>
           <td><button class="m" data-res-spara="${e.id}">💾</button></td><td class="small">${p.fatt.includes(e.namn) ? "✅ framme" : r.ver !== undefined ? "⏳" : ""}</td></tr>`; }).join("")}</table></div>`;
   }
-  return `<div class="kort"><h2>Nytt prov</h2>
+  return `<div class="kort"><h2>Nytt prov</h2>${pamin(P.prov)}
     <p class="small muted">Lägg in provet, sedan resultatet för varje elev. Bifoga gärna provet eller facit som PDF/foto, så kan eleven titta på det hemma.</p>
     <div class="grid2"><div><label>Provets namn</label><input id="pr-titel" placeholder="t.ex. Vikingatiden"></div><div><label>Ämne</label><input id="pr-amne" placeholder="t.ex. SO"></div></div>
     <div id="pr-varning" class="small" style="color:var(--fel)"></div>
@@ -400,14 +479,14 @@ function studieteknik() {
       <details><summary class="small">Bara till vissa elever (annars hela klassen)</summary>${elevval || "<p class='muted'>Inga elever än.</p>"}</details>
       <button class="p" id="rl-ny">📝 Skicka riktlinjen</button>
       ${skickade.length ? `<table>${skickade.map((m) => `<tr><td><b>${esc(m.amne || "Alla ämnen")}</b>: ${esc(m.text)}<div class="small muted">${esc(m.skapad)}${m.till?.length ? ` · till ${m.till.length} elever` : " · hela klassen"}</div></td><td class="small">${fatt(m.fatt)}</td><td><button class="m" data-mat-bort="${m.id}">🗑️</button></td></tr>`).join("")}</table>` : ""}</div>` : ""}
-    ${L.inst.studieteknik ? `<div class="kort"><h2>🧠 Elevernas studieteknik</h2><p class="small muted">Bara elever vars förälder har slagit på det syns här. Uppdateras när eleverna synkar. Inga poäng eller jämförelser.</p></div>
+    ${L.inst.studieteknik ? `<div class="kort"><h2>🧠 Elevernas studieteknik</h2>${pamin(P.betyg)}<p class="small muted">Bara elever vars förälder har slagit på det syns här. Uppdateras när eleverna synkar. Inga poäng eller jämförelser.</p></div>
       ${med.length ? med.map(elev).join("") : `<p class="muted">Ingen elev delar sin studieteknik än.</p>`}` : ""}`;
 }
 function material() {
   if (!L.inst.material) return av("material");
   const lista = L.material.filter((m) => m.typ === "material" || m.typ === "schema");
   const elevval = L.elever.map((e) => `<label class="chk"><input type="checkbox" data-mt-till="${e.id}"> ${esc(e.namn)}</label>`).join("");
-  return `<div class="kort"><h2>Skicka studiematerial</h2>
+  return `<div class="kort"><h2>Skicka studiematerial</h2>${pamin(P.utskick)}
     <p class="small muted">T.ex. en sammanfattning, ett arbetsblad eller sidor ur boken. Föräldern godkänner, och sedan ligger det i ämnet i elevens Läxspelet.</p>
     <div class="grid2"><div><label>Rubrik</label><input id="mt-titel" placeholder="t.ex. Sammanfattning vikingatiden"></div><div><label>Ämne</label><input id="mt-amne" placeholder="t.ex. SO"></div></div>
     <label>Till eleverna (valfritt)</label><input id="mt-text" placeholder="t.ex. Läs inför provet på fredag">
@@ -424,7 +503,7 @@ function grupper() {
     <div>${esc(g.uppgift) || "<span class='muted'>Ingen uppgift</span>"}${g.datum ? ` <span class="small muted">· klar senast ${esc(g.datum)}</span>` : ""}</div>
     <div class="small muted">Skapad ${esc(g.skapad)}${g.avslutad ? ` · avslutad ${esc(g.avslutad)}` : ""} · klara: ${g.klara_namn.map(esc).join(", ") || "ingen än"}</div>
     ${aktiv ? `<button class="m" data-g-avsluta="${g.id}">✔️ Avsluta gruppen</button>` : ""}</div>`;
-  return `${av("grupper")}<div class="kort"><h2>Dela klassen i grupper</h2>
+  return `${av("grupper")}<div class="kort"><h2>Dela klassen i grupper</h2>${pamin(P.grupp)}
     <p class="small muted">Grupperna är tillfälliga. Eleverna ser sin grupp och uppgiften i Läxspelet när de synkar, och kan markera uppgiften som klar. Allt sparas i 📜 Historik.</p>
     <label>Gruppuppgift</label><textarea id="g-uppgift" placeholder="t.ex. Gör en affisch om vikingatiden"></textarea>
     <label>Klar senast</label><input id="g-datum" type="date">
@@ -454,7 +533,7 @@ function foraldrar() {
     ${Object.entries(s.amnen).map(([a, x]) => `<p><b>${esc(a)}</b></p><ul>${x.gjort.map((t) => `<li>${esc(t)}</li>`).join("")}${x.svart.map((t) => `<li style="color:#b23c17">⚠ ${esc(t)}</li>`).join("")}</ul>`).join("")}
     ${lista("Övrigt", s.ovrigt)}</details>`; };
   const med = L.elever.filter((e) => e.samtal);
-  return `${L.inst.lapp ? `<div class="kort"><h2>✉️ Lappar från föräldrarna</h2><p class="small muted">Föräldrarna skickar en kort lapp om vad eleven har tyckt varit svårt hemma. De läser och godkänner varje lapp själva.</p>
+  return `${L.inst.lapp ? `<div class="kort"><h2>✉️ Lappar från föräldrarna</h2>${pamin(P.lapp)}<p class="small muted">Föräldrarna skickar en kort lapp om vad eleven har tyckt varit svårt hemma. De läser och godkänner varje lapp själva.</p>
       ${lappar.length ? lappar.map((x) => `<div class="grupp"><a href="#" data-elev="${x.eid}"><b>${esc(x.elev)}</b></a> <span class="small muted">${esc(x.tid.replace("T", " "))}</span><p style="white-space:pre-wrap">${esc(x.text)}</p></div>`).join("") : `<p class="muted">Inga lappar än.</p>`}</div>` : ""}
     ${L.inst.samtal ? `<div class="kort"><h2>🗣️ Underlag till utvecklingssamtalet</h2><p class="small muted">Föräldern väljer när underlaget skickas. Det visar vad eleven har övat på hemma de senaste 8 veckorna. Inga poäng eller jämförelser.</p></div>
       ${med.length ? med.map(samtal).join("") : `<p class="muted">Inget underlag än.</p>`}` : ""}`;
@@ -463,7 +542,7 @@ function foraldrar() {
 function rapporter() {
   if (!L.inst.rapport) return av("rapport");
   const r = L.elever.filter((e) => e.rapport);
-  return `<div class="kort"><h2>Senaste rapporterna</h2><p class="small muted">Föräldern väljer om rapporten skickas. Alla rapporter sparas i 📜 Historik.</p>
+  return `<div class="kort"><h2>Senaste rapporterna</h2>${pamin(P.betyg)}<p class="small muted">Föräldern väljer om rapporten skickas. Alla rapporter sparas i 📜 Historik.</p>
     ${r.length ? r.map((e) => `<div class="grupp"><b>${esc(e.namn)}</b> <span class="small muted">${esc(e.rapport.fran)} – ${esc(e.rapport.till)}</span><ul>${e.rapport.rader.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`).join("") : `<p class="muted">Inga rapporter än.</p>`}</div>`;
 }
 function historik() {
@@ -477,8 +556,9 @@ function inst() {
   const u = L.uppdatering;
   const uppd = u ? `<div class="kort"><h2>🔄 Uppdateringar</h2>
     <p>Du har version <b>${esc(u.version)}</b>${u.ny ? ` · ny version: <b>${esc(u.senaste)}</b> 🆕` : u.senaste ? " · ✅ det är den senaste" : ""}</p>
+    ${u.it_last ? `<div class="msg ok">🏛️ Skolans IT har låst uppdateringarna: <b>${{ automatisk: "automatiska", manuell: "du trycker själv", av: "IT sköter uppdateringarna" }[u.lage]}</b>.</div>` : `
     <div class="chk"><input type="radio" name="u-lage" value="automatisk" ${u.lage === "automatisk" ? "checked" : ""}> <span><b>Automatiskt</b>: appen uppdaterar sig själv när den inte har använts på 15 minuter</span></div>
-    <div class="chk"><input type="radio" name="u-lage" value="manuell" ${u.lage === "manuell" ? "checked" : ""}> <span><b>Fråga mig</b>: du ser när en ny version finns och trycker själv</span></div>
+    <div class="chk"><input type="radio" name="u-lage" value="manuell" ${u.lage === "manuell" ? "checked" : ""}> <span><b>Fråga mig</b>: du ser när en ny version finns och trycker själv</span></div>`}
     <p class="small muted">Appen kollar var 6:e timme och installerar bara filer som stämmer med sitt fingeravtryck. Uppdateringen sker tyst, utan frågor från Windows, och appen startar om själv. Startar inte en ny version går appen tillbaka till den förra. Elevernas data finns kvar.${u.kollad ? ` Senast kollat ${new Date(u.kollad * 1000).toLocaleString("sv-SE")}.` : ""}</p>
     ${u.fel ? `<div class="msg fel">${esc(u.fel)}</div>` : ""}
     <div class="actions"><button class="m" id="u-kolla">🔍 Kolla nu</button>${u.ny && u.kan_installera ? `<button class="p" id="u-nu2" style="margin-top:0">⬇️ Uppdatera nu</button>` : ""}</div></div>` : "";
@@ -489,13 +569,31 @@ function inst() {
     <p class="small muted">En ämneslärare får bara sitt eget ämne i rapporter, statistik och studieteknik. Föräldern kan ändra vad varje lärare får.</p>
     <button class="p" id="i-spara">💾 Spara</button></div>
   <div class="kort"><h2>Vad ska vara på?</h2><p class="small muted">Varje funktion fungerar bara när både du och elevens förälder har slagit på den.</p>
-    ${Object.entries(L.funktioner).map(([k, t]) => `<div class="chk"><input type="checkbox" data-inst="${k}" ${L.inst[k] ? "checked" : ""}> <span>${esc(t)}</span></div>`).join("")}</div>`;
+    ${Object.entries(L.funktioner).map(([k, t]) => `<div class="chk"><input type="checkbox" data-inst="${k}" ${(L.inst_val || L.inst)[k] ? "checked" : ""} ${lasRatt(k) ? "disabled" : ""}> <span>${esc(t)}${lasRatt(k) ? `<br><span class="small muted">${lasText(k)}</span>` : ""}</span></div>`).join("")}</div>`;
 }
 function koppla() {
   const on = (s, fn) => { const el = $(s); if (el) el.onclick = fn; };
   document.querySelectorAll("[data-synka]").forEach((b) => b.onclick = () => andra({ op: "synka", id: b.dataset.synka }, "Synkat."));
   document.querySelectorAll("[data-bort]").forEach((b) => b.onclick = () => confirm("Ta bort eleven från listan?") && andra({ op: "elev_bort", id: b.dataset.bort }));
   on("#synka-alla", () => andra({ op: "synka_alla" }, "Alla är synkade."));
+  on("#regler-ok", () => andra({ op: "regler_ok" }, "Tack! Reglerna finns alltid under ☰ Meny → 📘 Så gör du rätt."));
+  on("#el-lank-ok", () => andra({ op: "elev_lank", lank: $("#el-lank").value }, "Familjen är tillagd och synkad."));
+  on("#beh-bli", () => confirm("Bli skolans rektor i appen? Du bestämmer då vad alla lärare får göra.") && andra({ op: "rektor_bli" }, "Du är skolans rektor."));
+  on("#beh-gallra", () => confirm("Radera ALLA elevuppgifter på den här datorn? Det går inte att ångra.") && confirm("Säker? Elever, provresultat, anteckningar och historik försvinner.") && andra({ op: "radera_klass" }, "Klassens data är raderad."));
+  on("#beh-radera", () => confirm("Radera uppgifterna för gott?") && andra({ op: "radera_dolda" }, "Raderat."));
+  on("#beh-overlat", () => confirm("Lämna över rektorsrollen? Du kan inte ta tillbaka den själv.") && andra({ op: "rektor_overlat", vem: $("#beh-ny").value }, "Rektorsrollen är överlämnad."));
+  const behVem = (v) => v === "_jag" ? (L.larar_id || "_jag") : v;
+  document.querySelectorAll("[data-beh-niva]").forEach((b) => b.onclick = () => {
+    const rad = b.closest("[data-beh]"), n = Number(b.dataset.behNiva);
+    rad.querySelectorAll("input[type=checkbox]").forEach((c) => (c.checked = (L.behorighet.rattigheter[c.value] || [9])[0] <= n));
+    rad.querySelectorAll("[data-beh-niva]").forEach((x) => x.classList.toggle("vald", x === b));
+    rad.querySelector("details").open = true;
+  });
+  document.querySelectorAll("[data-beh-spara]").forEach((b) => b.onclick = () => {
+    const rad = b.closest("[data-beh]");
+    andra({ op: "rektor_satt", vem: behVem(rad.dataset.beh), ratt: [...rad.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value), motivering: $("#beh-grund")?.value || "" }, "Beslutet är sparat och skickas till lärarna.");
+  });
+  document.querySelectorAll("[data-beh-std]").forEach((b) => b.onclick = () => andra({ op: "rektor_aterstall", vem: behVem(b.dataset.behStd), motivering: $("#beh-grund")?.value || "" }, "Läraren följer standarden igen."));
   document.querySelectorAll("[data-inst]").forEach((b) => b.onchange = () => andra({ op: "installningar", [b.dataset.inst]: b.checked }));
   document.querySelectorAll("[name=u-lage]").forEach((b) => b.onchange = () => uppdatera({ op: "lage", lage: b.value }, "Sparat."));
   on("#u-kolla", () => uppdatera({ op: "kolla" }));

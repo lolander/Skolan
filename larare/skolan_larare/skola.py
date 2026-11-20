@@ -26,6 +26,8 @@ import time
 
 from aiohttp import ClientSession, ClientTimeout
 
+from . import behorighet as beh
+
 _LOGGER = logging.getLogger(__name__)
 
 SYNK_VAR = 600  # sekunder mellan synkarna med kollegorna
@@ -88,7 +90,7 @@ class Skola:
     def min_info(self) -> dict:
         from .server import lan_ip
         return {"namn": self.d.get("larare") or "Läraren", "amne": self.d.get("amne", ""), "roll": self.d.get("roll", "mentor"),
-                "klass": self.d.get("klass", ""), "adress": f"{lan_ip()}:{self.k.port}"}
+                "klass": self.d.get("klass", ""), "adress": f"{lan_ip()}:{self.k.port}", "pub": beh.publik_nyckel(self.d["nyckel"])}
 
     # ---------- skapa, gå med, lämna ----------
     def skapa(self, namn: str) -> dict:
@@ -99,7 +101,9 @@ class Skola:
             raise ValueError("Skriv skolans namn.")
         self.d["skola"] = {"id": secrets.token_urlsafe(9), "namn": namn, "hemlighet": secrets.token_urlsafe(32),
                            "kod": ny_kod(), "kod_tid": time.time(), "medlemmar": {}, "prov": {}, "resultat": {}, "meddelanden": [], "anteckningar_in": {}}
-        self.k.logga("skola", f"Skolan {namn} skapades.")
+        self.s["policy"] = beh.ny_policy(self.s["id"], self.lid, self.d.get("larare") or "Rektorn", beh.publik_nyckel(self.d["nyckel"]), self.d["nyckel"])
+        self.k.logga("skola", f"Skolan {namn} skapades. Du är skolans rektor i appen och bestämmer lärarnas behörigheter.")
+        self.k.rensa_otillatet()
         self.k.spara()
         return self.s
 
@@ -114,6 +118,7 @@ class Skola:
         if self.s:
             self.k.logga("skola", f"Lämnade skolan {self.s['namn']}.")
         self.d["skola"] = None
+        self.k.rensa_otillatet()
         self.k.spara()
 
     def kod_ok(self, kod: str) -> bool:
@@ -135,8 +140,10 @@ class Skola:
         self._spara_medlem(lid, body.get("info") or {}, ip)
         self.k.logga("skola", f"{_t((body.get('info') or {}).get('namn'), 60)} gick med i skolan.")
         self.k.spara()
-        return {"id": self.s["id"], "namn": self.s["namn"], "hemlighet": self.s["hemlighet"],
+        svar = {"id": self.s["id"], "namn": self.s["namn"], "hemlighet": self.s["hemlighet"], "policy": self.s.get("policy"),
                 "medlemmar": {**self.s["medlemmar"], self.lid: {**self.min_info(), "sedd": time.strftime("%Y-%m-%d %H:%M")}}}
+        # skolans hemlighet skickas krypterad med koden kollegan skrev in, aldrig i klartext på nätverket
+        return {"krypt": beh._b64(beh.krypt(beh.kodnyckel(str(body.get("kod") or "")), json.dumps(svar, ensure_ascii=False).encode()))}
 
     async def ga_med(self, session: ClientSession, kod: str, adress: str | None = None) -> None:
         """Gå med i en kollegas skola: hitta kollegan på nätverket (eller via adress) och skicka koden."""
@@ -159,11 +166,18 @@ class Skola:
                     if r.status != 200:
                         senaste_fel = j.get("fel") or f"Kollegans app svarade {r.status}."
                         continue
+                    if "krypt" not in j:
+                        senaste_fel = "Kollegans app är för gammal. Be kollegan uppdatera lärarappen."
+                        continue
+                    j = json.loads(beh.dekrypt(beh.kodnyckel(kod), beh._ub64(j["krypt"])))
             except Exception as err:  # noqa: BLE001
                 senaste_fel = f"Kunde inte nå {a}: {err}"
                 continue
             self.d["skola"] = {"id": _t(j["id"], 40), "namn": _t(j["namn"], 60), "hemlighet": str(j["hemlighet"])[:100], "kod": "", "kod_tid": 0,
                                "medlemmar": {}, "prov": {}, "resultat": {}, "meddelanden": [], "anteckningar_in": {}}
+            if isinstance(j.get("policy"), dict) and beh.godta_policy(None, j["policy"], self.s["id"]):
+                self.s["policy"] = j["policy"]
+            self.k.rensa_otillatet()
             for mlid, info in (j.get("medlemmar") or {}).items():
                 if mlid != self.lid:
                     self._spara_medlem(_t(mlid, 40), info, None)
@@ -184,6 +198,8 @@ class Skola:
                   "klass": _t(info.get("klass"), 40), "sedd": time.strftime("%Y-%m-%d %H:%M")})
         if re.fullmatch(r"[\w.\-]+:\d{2,5}", adress or ""):
             m["adress"] = adress
+        if re.fullmatch(r"[A-Za-z0-9_\-]{40,50}", str(info.get("pub") or "")):
+            m["pub"] = info["pub"]
 
     # ---------- det som delas ----------
     def mina_prov(self) -> list[dict]:
@@ -193,6 +209,8 @@ class Skola:
     def till_mentor(self, mentor_lid: str) -> dict:
         """Mina provresultat för de elever där mentor_lid är mentor (bara dem)."""
         ut: dict[str, list] = {}
+        if not (self.k.har("mentor") and self.k.har("prov")):
+            return ut
         for e in self.d.get("elever", []):
             if not e.get("elev_id") or not any(x.get("id") == mentor_lid and x.get("roll") == "mentor" for x in e.get("lararna") or []):
                 continue
@@ -210,6 +228,8 @@ class Skola:
     def skriv_meddelande(self, text: str, till: str | None) -> None:
         if not self.s:
             raise ValueError("Du är inte med i någon skola.")
+        if not self.k.har("meddelanden"):
+            raise ValueError("Rektorn har inte gett dig behörighet att skicka meddelanden.")
         text = str(text or "").strip()[:1000]
         if not text:
             raise ValueError("Skriv ett meddelande.")
@@ -227,6 +247,8 @@ class Skola:
 
     def skriv_anteckning(self, elev: dict, amne: str, text: str) -> None:
         """En anteckning om en elev: mentorn får den, och ämnesläraren i ämnet (om ämnet är satt)."""
+        if not self.k.har("anteckningar"):
+            raise ValueError("Rektorn har inte gett dig behörighet att skriva anteckningar om elever.")
         text = str(text or "").strip()[:1000]
         if not text:
             raise ValueError("Skriv en anteckning.")
@@ -247,6 +269,8 @@ class Skola:
     def _anteckningar_till(self, lid: str) -> list[dict]:
         """Mina anteckningar som kollegan lid ska få: mentorn allt om sina elever, ämnesläraren sitt ämne."""
         ut = []
+        if not (self.k.har("mentor") and self.k.har("anteckningar")):
+            return ut
         elever = {e["id"]: e for e in self.d.get("elever", [])}
         for a in self.d.get("anteckningar", [])[-300:]:
             e = elever.get(a["elev"])
@@ -263,15 +287,20 @@ class Skola:
                 "medlemmar": {k: {x: v.get(x) for x in ("namn", "amne", "roll", "klass", "adress")} for k, v in self.s["medlemmar"].items()},
                 "till_mentor": self.till_mentor(till) if till else {},
                 "meddelanden": [{k: m[k] for k in ("id", "namn", "till", "text", "tid")} for m in mina],
-                "anteckningar": self._anteckningar_till(till) if till else []}
+                "anteckningar": self._anteckningar_till(till) if till else [], "policy": self.s.get("policy")}
 
     def _ta_emot_paket(self, p: dict, ip: str | None) -> None:
         lid = _t(p.get("fran"), 40)
         if not lid or lid == self.lid:
             return
         self._spara_medlem(lid, p.get("info") or {}, ip)
+        ny = p.get("policy")
+        if isinstance(ny, dict) and beh.godta_policy(self.s.get("policy"), ny, self.s["id"]):
+            self.s["policy"] = ny
+            self.k.logga("behorighet", f"Nytt beslut från rektorn ({ny.get('rektor_namn')}): {(ny.get('beslut') or [{}])[-1].get('text', '')}"[:500])
+            self.k.rensa_otillatet()
         self.s["prov"][lid] = [{k: _t(x.get(k), 80) for k in ("id", "titel", "amne", "datum", "klass")} for x in (p.get("prov") or [])[:60] if isinstance(x, dict)]
-        tm = p.get("till_mentor") or {}
+        tm = (p.get("till_mentor") or {}) if self.k.har("mentor") else {}
         self.s["resultat"][lid] = {_t(eid, 30): [{k: (x.get(k) if k in ("poang", "max") and isinstance(x.get(k), (int, float)) else _t(x.get(k), 200))
                                                   for k in ("titel", "amne", "datum", "max", "poang", "betyg", "kommentar", "larare") if k in x}
                                                  for x in rader[:30] if isinstance(x, dict)]
@@ -282,18 +311,28 @@ class Skola:
                 self.s["meddelanden"].append({"id": _t(m["id"], 20), "fran": lid, "namn": _t(m.get("namn"), 60), "till": m.get("till") or None,
                                               "text": _t(m.get("text"), 1000), "tid": _t(m.get("tid"), 16), "last": False})
         self.s["meddelanden"] = sorted(self.s["meddelanden"], key=lambda m: m.get("tid", ""))[-300:]
-        self.s.setdefault("anteckningar_in", {})[lid] = [{k: _t(a.get(k), 1000 if k == "text" else 60) for k in ("id", "elev_id", "elev_namn", "amne", "text", "larare", "tid")}
+        self.s.setdefault("anteckningar_in", {})[lid] = [] if not self.k.har("mentor") else [{k: _t(a.get(k), 1000 if k == "text" else 60) for k in ("id", "elev_id", "elev_namn", "amne", "text", "larare", "tid")}
                                                          for a in (p.get("anteckningar") or [])[:300] if isinstance(a, dict)]
         for mlid, info in (p.get("medlemmar") or {}).items():  # så hittar alla varandra
             if mlid not in self.s["medlemmar"] and mlid != self.lid and isinstance(info, dict):
                 self._spara_medlem(_t(mlid, 40), info, None)
 
+    def _las(self, kropp: bytes) -> bytes:
+        try:
+            return beh.dekrypt(beh.skolnyckel(self.s["hemlighet"]), kropp)
+        except Exception as err:  # noqa: BLE001
+            raise PermissionError("Kunde inte läsa (kollegans app kanske är för gammal).") from err
+
+    def _skriv(self, p: dict) -> bytes:
+        return beh.krypt(beh.skolnyckel(self.s["hemlighet"]), json.dumps(p, ensure_ascii=False).encode())
+
     def verifiera(self, kropp: bytes, signatur: str) -> dict:
+        """Signaturen gäller det krypterade innehållet. Allt mellan kollegor är krypterat med skolans nyckel."""
         if not self.s:
             raise PermissionError("Inte med i någon skola.")
         if not hmac.compare_digest(signera(self.s["hemlighet"], kropp), signatur or ""):
             raise PermissionError("Fel signatur.")
-        p = json.loads(kropp)
+        p = json.loads(self._las(kropp))
         if p.get("skola") != self.s["id"] or abs(time.time() - float(p.get("tid") or 0)) > MAX_SKEV:
             raise PermissionError("Fel skola eller för gammalt.")
         return p
@@ -303,7 +342,7 @@ class Skola:
         p = self.verifiera(kropp, signatur)
         self._ta_emot_paket(p, ip)
         self.k.spara()
-        svar = json.dumps(self._paket(_t(p.get("fran"), 40)), ensure_ascii=False).encode()
+        svar = self._skriv(self._paket(_t(p.get("fran"), 40)))
         return svar, signera(self.s["hemlighet"], svar)
 
     async def synka_alla(self, session: ClientSession) -> None:
@@ -312,10 +351,10 @@ class Skola:
         for lid, m in list(self.s["medlemmar"].items()):
             if not m.get("adress"):
                 continue
-            kropp = json.dumps(self._paket(lid), ensure_ascii=False).encode()
+            kropp = self._skriv(self._paket(lid))
             try:
                 async with session.post(f"http://{m['adress']}/api/skola/synk", data=kropp, timeout=ClientTimeout(total=15),
-                                        headers={"Content-Type": "application/json", "X-Laxspelet-Signatur": signera(self.s["hemlighet"], kropp)}) as r:
+                                        headers={"Content-Type": "application/octet-stream", "X-Laxspelet-Signatur": signera(self.s["hemlighet"], kropp)}) as r:
                     if r.status != 200:
                         m["fel"] = f"svarade {r.status}"
                         continue
@@ -328,6 +367,76 @@ class Skola:
                 _LOGGER.info("Skolan: kunde inte synka med %s: %s", m.get("namn"), err)
         self.k.spara()
 
+    # ---------- rektorn ----------
+    @property
+    def policy(self) -> dict | None:
+        return (self.s or {}).get("policy")
+
+    def ar_rektor(self) -> bool:
+        p = self.policy
+        return bool(p and p.get("rektor") == self.lid and p.get("rektor_pub") == beh.publik_nyckel(self.d["nyckel"]))
+
+    def _namn(self, lid: str) -> str:
+        return self.d.get("larare") or "Du" if lid == self.lid else (self.s["medlemmar"].get(lid) or {}).get("namn") or "?"
+
+    def bli_rektor(self) -> None:
+        """Skolan har ingen rektor i appen än (skapad med en äldre version): den första som tar rollen blir rektor."""
+        if not self.s:
+            raise ValueError("Du är inte med i någon skola.")
+        if self.policy:
+            raise ValueError(f"Skolan har redan en rektor: {self.policy.get('rektor_namn')}.")
+        self.s["policy"] = beh.ny_policy(self.s["id"], self.lid, self.d.get("larare") or "Rektorn", beh.publik_nyckel(self.d["nyckel"]), self.d["nyckel"])
+        self.k.logga("behorighet", "Du blev skolans rektor i appen.")
+        self.k.rensa_otillatet()
+
+    def _nytt_beslut(self, andra, text: str) -> None:
+        if not self.ar_rektor():
+            raise PermissionError("Bara skolans rektor kan ändra behörigheter.")
+        p = json.loads(json.dumps(self.policy))
+        andra(p)
+        p["ver"] += 1
+        p["tid"] = time.time()
+        p.setdefault("beslut", []).append({"tid": time.strftime("%Y-%m-%d %H:%M"), "av": self.d.get("larare") or "Rektorn", "text": text[:600]})
+        p["beslut"] = p["beslut"][-500:]
+        self.s["policy"] = beh.signera_policy(p, self.d["nyckel"])
+        self.k.logga("behorighet", text)
+        self.k.rensa_otillatet()
+
+    def satt_ratt(self, vem: str, ratt: list, motivering: str) -> None:
+        """vem = en lärares id, eller "standard" (alla lärare utan eget beslut)."""
+        ratt = beh.rensa_ratt(ratt)
+        motivering = _t(motivering, 300)
+        if vem != "standard" and vem != self.lid and vem not in self.s["medlemmar"]:
+            raise ValueError("Läraren finns inte i skolan.")
+        if beh.niva_for(ratt) >= 1 and not motivering:
+            raise ValueError("Skriv vad beslutet bygger på, t.ex. dataskyddsombudets bedömning eller ett diarienummer.")
+        namn = "Alla lärare (standard)" if vem == "standard" else self._namn(vem)
+        lista = ", ".join(beh.RATTIGHETER[k][1] for k in ratt) or "inget"
+        text = f"{namn}: nivå {beh.niva_for(ratt)} ({lista})." + (f" Grund: {motivering}" if motivering else "")
+
+        def andra(p):
+            if vem == "standard":
+                p["standard"] = ratt
+            else:
+                p.setdefault("larare", {})[vem] = ratt
+        self._nytt_beslut(andra, text)
+
+    def aterstall(self, vem: str, motivering: str) -> None:
+        """Ta bort lärarens egna beslut, så att standarden gäller."""
+        if vem not in (self.policy or {}).get("larare", {}):
+            return
+        self._nytt_beslut(lambda p: p["larare"].pop(vem, None), f"{self._namn(vem)}: följer standarden igen." + (f" Grund: {_t(motivering, 300)}" if motivering else ""))
+
+    def overlat(self, vem: str) -> None:
+        """Lämna över rektorsrollen till en kollega (signeras av nuvarande rektor)."""
+        m = self.s["medlemmar"].get(vem)
+        if not m or not m.get("pub"):
+            raise ValueError("Kollegan måste ha synkat med en ny version av lärarappen först.")
+
+        def andra(p):
+            p.update({"rektor": vem, "rektor_namn": m.get("namn") or "?", "rektor_pub": m["pub"]})
+        self._nytt_beslut(andra, f"{self.d.get('larare') or 'Rektorn'} lämnade över rektorsrollen till {m.get('namn')}.")
+
     # ---------- det läraren ser ----------
     def publik(self) -> dict | None:
         s = self.s
@@ -337,8 +446,14 @@ class Skola:
                 "meddelanden": [{**m, "egen": m.get("fran") == self.lid, "till_namn": (s["medlemmar"].get(m.get("till") or "") or {}).get("namn") if m.get("till") else None}
                                 for m in s.get("meddelanden", [])[-100:]][::-1],
                 "olasta": sum(1 for m in s.get("meddelanden", []) if not m.get("last")),
-                "medlemmar": [{"id": k, **{x: v.get(x) for x in ("namn", "amne", "roll", "klass", "sedd", "fel", "adress")}}
-                              for k, v in sorted(s["medlemmar"].items(), key=lambda kv: kv[1].get("namn", ""))]}
+                "medlemmar": [{"id": k, **{x: v.get(x) for x in ("namn", "amne", "roll", "klass", "sedd", "fel", "adress")}, "kan_bli_rektor": bool(v.get("pub")),
+                               **({"ratt": beh.rensa_ratt((s.get("policy") or {}).get("larare", {}).get(k, (s.get("policy") or {}).get("standard"))),
+                                   "eget": k in (s.get("policy") or {}).get("larare", {})} if s.get("policy") else {})}
+                              for k, v in sorted(s["medlemmar"].items(), key=lambda kv: kv[1].get("namn", ""))],
+                "rektor": {"namn": s["policy"].get("rektor_namn"), "jag": self.ar_rektor(), "standard": s["policy"].get("standard", []),
+                           "mina_eget": self.lid in s["policy"].get("larare", {}),
+                           "jag_ratt": beh.rensa_ratt(s["policy"].get("larare", {}).get(self.lid, s["policy"].get("standard"))),
+                           "beslut": s["policy"].get("beslut", [])[-100:][::-1], "ver": s["policy"].get("ver")} if s.get("policy") else None}
 
     def provkalender(self) -> list[dict]:
         if not self.s:

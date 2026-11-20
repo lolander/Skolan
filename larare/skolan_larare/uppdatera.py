@@ -75,10 +75,18 @@ class Uppdaterare:
 
     # ---------- inställning ----------
     @property
+    def it_lage(self) -> str | None:
+        from .windows import it_policy
+
+        return it_policy().get("uppdateringar")
+
+    @property
     def lage(self) -> str:
-        return "manuell" if self.inst.get("uppdatering") == "manuell" else "automatisk"
+        return self.it_lage or ("manuell" if self.inst.get("uppdatering") == "manuell" else "automatisk")
 
     def satt_lage(self, lage: str) -> None:
+        if self.it_lage:
+            raise ValueError("Skolans IT har låst inställningen för uppdateringar.")
         self.inst["uppdatering"] = "manuell" if lage == "manuell" else "automatisk"
         self.spara()
 
@@ -101,7 +109,7 @@ class Uppdaterare:
             "senaste": self.senaste["version"] if self.senaste else None,
             "sida": self.senaste["sida"] if self.senaste else SIDA,
             "kollad": int(self.kollad), "fel": self.fel, "steg": self.steg,
-            "kan_installera": os.name == "nt", "uppdaterad": self.inst.get("uppdaterad"),
+            "kan_installera": os.name == "nt" and self.lage != "av", "uppdaterad": self.inst.get("uppdaterad"), "it_last": bool(self.it_lage),
         }
 
     # ---------- kolla ----------
@@ -248,6 +256,9 @@ $null = $p.WaitForExit(600000)
     async def _slinga(self) -> None:
         await asyncio.sleep(60)
         while True:
+            if self.lage == "av":  # skolans IT sköter uppdateringarna
+                await asyncio.sleep(300)
+                continue
             if time.time() - self.kollad >= KOLLA_VAR:
                 await self.kolla()
             if self.lage == "automatisk" and self.ny and not self.steg and os.name == "nt" \
