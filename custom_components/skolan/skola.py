@@ -46,6 +46,10 @@ FUNKTIONER = {
     "insikt": ("🔎", "Klassens insikt (utan namn)", "Läraren ser bara hela klassens summa, t.ex. vilka glosor många missar och hur många som har pluggat inför ett prov. Inget går att koppla till ditt barn, och inget visas förrän minst 5 familjer är med."),
     "material": ("📎", "Prov och studiematerial från läraren", "Läraren kan skicka provresultat, studiematerial och klassens schema (PDF eller foto). Det hamnar i din inkorg och du godkänner innan något läggs in."),
 }
+# Lägsta behörighetsnivå (beslutad av rektorn i lärarappen) som krävs för att funktionen ska skicka något till läraren.
+# Lärarappar före 0.10.0 skickar ingen nivå och räknas som nivå 0, så de får inga uppgifter om barnet.
+FUNK_NIVA = {"veckobrev": 0, "klasslag": 0, "riktlinjer": 0, "material": 0, "insikt": 0,
+             "grupper": 1, "schema": 1, "rapport": 2, "statistik": 2, "studieteknik": 2, "lapp": 2, "samtal": 2}
 KLASSBOSS_BELONING = 30
 MAX_INKORG = 30
 MAX_FIL = 8 * 1024 * 1024  # en fil från läraren
@@ -126,7 +130,9 @@ def aktiv(s: dict, f: str, lid: str | None = None) -> bool:
     if f == "mejl":  # ingen lärarapp behövs: förälderns val räcker (om ingen lärare har sagt nej)
         return bool(s["foralder"].get("mejl")) and all((x.get("inst") or {}).get("mejl", True) for x in lararna.values())
     if lid is not None:
-        return delar(s, lid, f) and bool(((lararna.get(lid) or {}).get("inst") or {}).get(f))
+        lar = lararna.get(lid) or {}
+        niva = int((lar.get("behorighet") or {}).get("niva") or 0)
+        return delar(s, lid, f) and bool((lar.get("inst") or {}).get(f)) and niva >= FUNK_NIVA.get(f, 2)
     return any(aktiv(s, f, x) for x in lararna)
 
 
@@ -414,6 +420,9 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
                 "inst": {k: bool(inst.get(k)) for k in FUNKTIONER}, "synkad": dt_util.now().isoformat(timespec="minutes"),
                 "amne": _text(body.get("amne"), 60), "roll": "amne" if body.get("roll") == "amne" else "mentor",
                 "skola": {"id": _text(sk.get("id"), 40), "namn": _text(sk.get("namn"), 60)} if sk.get("id") else None})
+    beh = body.get("behorighet") if isinstance(body.get("behorighet"), dict) else None
+    niva = max(0, min(2, int(beh.get("niva") or 0))) if beh else 0  # lärarappar före 0.10.0: nivå 0, ingen data om barnet
+    lar["behorighet"] = {"niva": niva, "rektor": _text((beh or {}).get("rektor"), 60), "gammal": not beh}
     nya = 0
     filer: list[tuple[str, bytes]] = []
     budget = [MAX_FILER_PER_SYNK * 4 // 3]
@@ -482,9 +491,6 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
         s["grupper"] = ny  # avslutade grupper försvinner hos eleven (läraren har dem i sin historik)
     namn = s["foralder"].get("namn") or barn_namn
     vecka = "{}-W{:02d}".format(*dt_util.now().date().isocalendar()[:2])
-    beh = body.get("behorighet") if isinstance(body.get("behorighet"), dict) else None
-    niva = int(beh.get("niva") or 0) if beh else 2  # äldre lärarappar skickar ingen behörighet
-    lar["behorighet"] = {"niva": niva, "rektor": _text((beh or {}).get("rektor"), 60)} if beh else None
     return {"v": 2, "namn": namn if niva >= 1 else "", "insikt": insikt(s, data, lid, body.get("insikt_fraga")) if aktiv(s, "insikt", lid) else None,
             "foralder": {k: delar(s, lid, k) for k in FUNKTIONER}, "nya_veckobrev": nya,
             "rapport": rapport(data, namn, lar=lar) if aktiv(s, "rapport", lid) else None,
