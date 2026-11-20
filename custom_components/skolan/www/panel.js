@@ -4779,6 +4779,7 @@ class SkolanPanel extends HTMLElement {
         `Gör något i Läxspelet <b>varje dag</b>, även på helgen. Varje dag i rad blir en stjärna på förstasidan.`,
         `Dag 2 i rad: ${p(2)}, dag 3: ${p(3)} och så vidare upp till ${p(10)} per dag när du har 10 stjärnor.`,
         `Missar du en dag börjar sviten om från början, om du inte har ett 🛡️ svitskydd.`,
+        `🩹 <b>Jobba ikapp:</b> missade du igår kan du rädda sviten idag. Tjäna 30 ⭐ med läxor och övningar idag, så räknas igår också. Det går bara dagen efter.`,
       ])}
 
       ${kort("🐾", "Ditt husdjur", [
@@ -4973,6 +4974,14 @@ class SkolanPanel extends HTMLElement {
       : `Gör något i Läxspelet idag och starta en svit!`;
     const skydd = m.skydd ? ` <span class="skydd">${"🛡️".repeat(m.skydd)}</span>` : "";
     const radda = m.skydd_raddar ? `<div class="small"><b>🛡️ Svitskyddet räddar din svit på ${m.skydd_raddar} dagar om du gör något idag!</b></div>` : "";
+    const ik = m.ikapp;
+    if (ik) {
+      const pct = Math.round((100 * ik.p) / ik.mal);
+      return `<div class="svit"><div class="svit-stj">${stjarnor}${skydd}</div>
+        <div class="ikapp"><b>🩹 Jobba ikapp och rädda din 🔥 ${ik.svit}-dagars svit!</b>
+        <div class="small">Du missade igår. Men om du tjänar <b>${ik.mal} ⭐</b> med läxor och övningar idag räknas igår också, och sviten fortsätter som om du aldrig missat. Bonusar, kistor och köp räknas inte. Imorgon är det för sent.</div>
+        <div class="ikapp-bar"><span style="width:${pct}%"></span></div><div class="small"><b>${ik.p}/${ik.mal} ⭐</b> idag</div></div></div>`;
+    }
     return `<div class="svit"><div class="svit-stj">${stjarnor}${skydd}</div><div class="small">${text}</div>${radda}</div>`;
   }
 
@@ -5158,7 +5167,7 @@ class SkolanPanel extends HTMLElement {
         <div>🔥 Öva svåra ord: räknas för sviten (meriter får du när du övar hela läxan)</div>
         <div>🐦 Öva minst 2 dagar före förhöret: <b>+${p.tidigt}</b> extra</div>
         <div>📋 Förhör: <b>+${p.forhor_ratt}</b> per rätt ord, alla rätt <b>+${p.forhor_alla}</b></div>
-        <div>🔥 Gör något i Läxspelet varje dag, även helger: dag 2 i rad <b>+2</b>, dag 3 <b>+3</b> … upp till <b>+10</b> per dag. Missar du en dag börjar sviten om.</div>
+        <div>🔥 Gör något i Läxspelet varje dag, även helger: dag 2 i rad <b>+2</b>, dag 3 <b>+3</b> … upp till <b>+10</b> per dag. Missar du en dag kan du 🩹 jobba ikapp dagen efter: tjäna 30 ⭐ med läxor och övningar, så räddas sviten.</div>
         <div>🗣️ Högläsning som mamma eller pappa godkänner: <b>+6</b> per dag, alla dagar <b>+20</b> extra</div>
         <div>✍️ Läxboken klar i tid: <b>+25</b></div>
         <div>🏅 Varje ny medalj: <b>+${p.medalj}</b></div>
@@ -9826,6 +9835,9 @@ const CSS = `
   .info-rad { padding:5px 0; line-height:1.4; border-top:1px solid var(--divider-color, rgba(127,127,127,.2)); }
   .info-rad:first-of-type { border-top:none; }
   .svit { margin:8px 0 2px; }
+  .ikapp { margin-top:6px; padding:8px 10px; border-radius:10px; background:rgba(255,140,0,.12); border:1px solid rgba(255,140,0,.45); }
+  .ikapp-bar { height:8px; border-radius:4px; background:rgba(127,127,127,.25); margin:6px 0 2px; overflow:hidden; }
+  .ikapp-bar span { display:block; height:100%; background:#ff8c00; }
   .svit-stj { display:flex; justify-content:space-between; font-size:22px; line-height:1.2; }
   .svit-stj span { opacity:.35; } .svit-stj span.full { opacity:1; }
   .svit-stj span.nasta { opacity:.8; animation: svitpuls 1.4s ease-in-out infinite; }

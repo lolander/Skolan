@@ -184,6 +184,8 @@ def ge(data: dict, poang: int, orsak: str, nyckel: str | None = None, ikon: str 
             _djur_xp(data, int(poang))
             _karta_skada(data, int(poang))
             _kort_dela(data)
+        if ikon not in IKAPP_EJ and ikon not in EJ_SKADA:
+            _ikapp_rakna(data, int(poang))
     m["saldo"] = m.get("saldo", 0) + int(poang)
     return True
 
@@ -594,6 +596,51 @@ def _anvand_skydd(data: dict, idag: str) -> None:
     ge(data, 0, f"🛡️ Svitskyddet räddade din svit på {forra} dagar!", f"skyddat:{idag}", "🛡️")
 
 
+# ---------- jobba ikapp: rädda sviten dagen efter en missad dag ----------
+IKAPP_P = 30  # stjärnor från läxor och övningar som behövs dagen efter för att rädda sviten
+IKAPP_EJ = ("🔥", "🛡️", "🩹", "🐾", "💬", "🛍️")  # bonusar och småsaker räknas inte (plus EJ_SKADA)
+
+
+def ikapp(data: dict) -> dict | None:
+    """Missade barnet igår (men inte dagen innan)? Då kan sviten räddas genom att jobba ikapp idag."""
+    m = _m(data)
+    idag = dt_util.now().date()
+    igar, forrgar = idag - timedelta(days=1), idag - timedelta(days=2)
+    s = set(m["ovningsdagar"])
+    if igar.isoformat() in s or forrgar.isoformat() not in s or m.get("skydd", 0) >= 1:
+        return None  # ingen lucka, för gammal lucka, eller svitskyddet räddar den ändå
+    svit = _streak(m["ovningsdagar"], forrgar)
+    if svit < 2:
+        return None
+    i = m.get("ikapp") or {}
+    p = i.get("p", 0) if i.get("dag") == idag.isoformat() else 0
+    return {"svit": svit, "missad": igar.isoformat(), "p": min(p, IKAPP_P), "mal": IKAPP_P}
+
+
+def _ikapp_rakna(data: dict, poang: int) -> None:
+    st = ikapp(data)
+    if not st or poang <= 0:
+        return
+    m = _m(data)
+    idag = dt_util.now().date().isoformat()
+    i = m.get("ikapp")
+    if not i or i.get("dag") != idag:
+        i = m["ikapp"] = {"dag": idag, "p": 0}
+    i["p"] += poang
+    if i["p"] < IKAPP_P:
+        return
+    m["ovningsdagar"].append(st["missad"])
+    m["ovningsdagar"].sort()
+    m.setdefault("ikapp_raddade", []).append(st["missad"])
+    del m["ikapp_raddade"][:-60]
+    n = _streak(m["ovningsdagar"])
+    r = m["raknare"]
+    r["basta_streak"] = max(r.get("basta_streak", 0), n)
+    ge(data, 0, f"🩹 Du jobbade ikapp! Sviten är räddad: 🔥 {n} dagar i rad", f"ikapp:{idag}", "🩹")
+    if idag in m["ovningsdagar"] and n >= 2:  # svitbonusen för idag, nu med hela sviten
+        ge(data, min(P_STREAK_MAX, n), f"🔥 {n} dagar i rad!", f"streak:{idag}", "🔥")
+
+
 # ---------- dagens utmaning ----------
 
 
@@ -714,6 +761,7 @@ def sammanfattning(data: dict) -> dict:
         "skydd_max": SKYDD_MAX,
         "skydd_raddar": (_skydd_lucka(m, dt_util.now().date().isoformat())[1]
                          if dt_util.now().date().isoformat() not in m["ovningsdagar"] else 0),
+        "ikapp": ikapp(data),
         "utmaning": utmaning(data),
         "utmaning_p": P_UTMANING,
         "djur": djur(data),
@@ -931,7 +979,10 @@ def forslag(data: dict) -> list[str]:
         elif not ovat_idag:
             ut.append(f"Öva på {g['namn']} nu: +{P_OVNING + P_TIDIGT} ⭐ (bonus för att du är i god tid)")
     streak = _streak(m["ovningsdagar"])
-    if dag not in m["ovningsdagar"]:
+    ik = ikapp(data)
+    if ik:
+        ut.insert(0, f"🩹 Jobba ikapp! Du missade igår, men din 🔥 {ik['svit']}-dagars svit kan räddas: tjäna {ik['mal']} ⭐ med läxor och övningar idag ({ik['p']}/{ik['mal']}).")
+    elif dag not in m["ovningsdagar"]:
         if streak:
             ut.insert(0, f"Rädda din 🔥 {streak}-dagars svit: gör något i Skolan idag! +{min(P_STREAK_MAX, streak + 1)} ⭐")
         else:
