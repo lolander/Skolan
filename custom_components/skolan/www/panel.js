@@ -1492,11 +1492,50 @@ class SkolanPanel extends HTMLElement {
       this._msg = body.par.length
         ? { type: "ok", text: `${body.par.length} glosor hittades. Kolla att allt stämmer och spara.` }
         : { type: "error", text: body.note || "Inga glosor hittades." };
+      if (body.par.length) {
+        this._msg = { type: "info", text: `${body.par.length} glosor hittades. Kollar stavningen…` };
+        this._render();
+        this._msg = (await this._kollaStavning()) ? this._stavMsg(v) : { type: "ok", text: `${body.par.length} glosor hittades. Kolla att allt stämmer och spara.` };
+      }
     } catch (e) {
       this._msg = { type: "error", text: e.message || String(e) };
     }
     this._busy = false;
     this._render();
+  }
+
+  // Stavningskoll av glosor: AI:n föreslår, inget ändras utan att någon trycker Byt.
+  _stavSig(v) {
+    return JSON.stringify([v.sprak || [], v.par || []]);
+  }
+
+  async _kollaStavning() {
+    const v = this._view;
+    if ((v.typ || "glosor") !== "glosor") return false;
+    v.par = (v.par || []).filter((p) => String(p[0] || "").trim() || String(p[1] || "").trim());
+    const sig = this._stavSig(v);
+    if (v.stavSig === sig) return (v.stav || []).length > 0;
+    v.stav = [];
+    if (!v.par.length) return false;
+    try {
+      const res = await this._f("/api/skolan/glosor_stavning", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barn: this._s.barn, sprak: v.sprak, par: v.par }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || this._view !== v) return false;
+      const behall = v.stavBehall || [];
+      v.stav = (body.forslag || []).filter((f) => !behall.includes(f.fran) && v.par[f.i]?.[f.k] === f.fran);
+      v.stavSig = sig;
+    } catch (e) {
+      return false;  // ingen AI eller inget nät: spara som vanligt
+    }
+    return v.stav.length > 0;
+  }
+
+  _stavMsg(v) {
+    const n = (v.stav || []).length;
+    return n ? { type: "info", text: `🔤 AI:n tror att ${n === 1 ? "ett ord" : `${n} ord`} kan vara felstavat. Välj Byt eller Behåll${v.sparaEfter ? " och tryck Spara igen" : ""}.` } : null;
   }
 
   async _blob(fil) {
@@ -7598,13 +7637,20 @@ class SkolanPanel extends HTMLElement {
         ${typ === "formler" ? `<p class="small muted">Mellanslag och gångertecken spelar ingen roll när svaret rättas: <b>F = m · a</b> och <b>F=ma</b> räknas som samma. Skriv ² som ^2 om det är lättare.</p>` : ""}
         ${typ === "begrepp" ? `<p class="small muted">När du övar visas förklaringen och du skriver begreppet. Du kan också öva åt andra hållet och själv bedöma om du hade rätt.</p>` : ""}
       </div>
+      ${(v.stav || []).length ? `<div class="card stavkoll">
+        <p><b>🔤 Kolla stavningen</b> <span class="small muted">(förslag från AI:n, den kan ha fel)</span></p>
+        ${v.stav.map((f, j) => `<div class="stavrad">
+          <span><s>${esc(f.fran)}</s> → <b>${esc(f.till)}</b>${f.varfor ? ` <span class="small muted">${esc(f.varfor)}</span>` : ""}</span>
+          <span><button class="mini primary" data-stav-byt="${j}">Byt</button> <button class="mini" data-stav-behall="${j}">Behåll</button></span>
+        </div>`).join("")}
+      </div>` : ""}
       <div class="pairs">
         ${par
           .map(
             (p, i) => `
           <div class="pair">
-            <input data-p="${i}" data-k="0" value="${esc(p[0])}" placeholder="${esc(lt.plats[0])}">
-            <input data-p="${i}" data-k="1" value="${esc(p[1])}" placeholder="${esc(lt.plats[1])}">
+            <input data-p="${i}" data-k="0" value="${esc(p[0])}" placeholder="${esc(lt.plats[0])}"${(v.stav || []).some((f) => f.i === i && f.k === 0) ? ' class="stavfel"' : ""}>
+            <input data-p="${i}" data-k="1" value="${esc(p[1])}" placeholder="${esc(lt.plats[1])}"${(v.stav || []).some((f) => f.i === i && f.k === 1) ? ' class="stavfel"' : ""}>
             <button class="mini danger" data-del-par="${i}" title="Ta bort">✕</button>
           </div>`
           )
@@ -9663,13 +9709,41 @@ class SkolanPanel extends HTMLElement {
         this._render();
       })
     );
+    const stavKlar = (j, byt) => {
+      syncForm();
+      const f = v.stav[j];
+      if (!f) return;
+      if (byt && v.par[f.i]?.[f.k] === f.fran) v.par[f.i][f.k] = f.till;
+      if (!byt) (v.stavBehall = v.stavBehall || []).push(f.fran);
+      v.stav.splice(j, 1);
+      v.stavSig = this._stavSig(v);  // Byt/Behåll ska inte ge en ny koll
+      this._msg = this._stavMsg(v) || { type: "ok", text: "Klart! Tryck Spara när allt stämmer." };
+      this._render();
+    };
+    r.querySelectorAll("[data-stav-byt]").forEach((b) => b.addEventListener("click", () => stavKlar(Number(b.dataset.stavByt), true)));
+    r.querySelectorAll("[data-stav-behall]").forEach((b) => b.addEventListener("click", () => stavKlar(Number(b.dataset.stavBehall), false)));
     on("#save-glosor", async () => {
       syncForm();
-      const par = v.par.filter((p) => p[0].trim() || p[1].trim());
       if (!v.namn.trim()) {
         this._msg = { type: "error", text: "Ge listan ett namn." };
         return this._render();
       }
+      if ((v.typ || "glosor") === "glosor" && v.stavSig !== this._stavSig({ sprak: v.sprak, par: v.par.filter((p) => p[0].trim() || p[1].trim()) })) {
+        if (this._busy) return;
+        this._busy = true;
+        this._msg = { type: "info", text: "🔤 Kollar stavningen…" };
+        this._render();
+        const fel = await this._kollaStavning();
+        this._busy = false;
+        if (fel) {
+          v.sparaEfter = true;
+          this._msg = this._stavMsg(v);
+          return this._render();
+        }
+      } else if ((v.stav || []).length) {
+        v.stav = [];  // Spara igen = behåll resten
+      }
+      const par = v.par.filter((p) => p[0].trim() || p[1].trim());
       const ok = await this._act("save_glosor", { amne: v.amne, glosor: v.glosor || null, typ: v.typ || "glosor", namn: v.namn, sprak: v.sprak, par, forhor: v.forhor || null });
       if (ok) {
         const a = this._amne(v.amne);
@@ -10082,6 +10156,9 @@ const CSS = `
           background:var(--card-background-color); color:var(--primary-text-color); min-width:0; box-sizing:border-box; }
   .pairs { display:flex; flex-direction:column; gap:6px; }
   .pair { display:grid; grid-template-columns:1fr 1fr auto; gap:6px; align-items:center; }
+  .pair input.stavfel { border-color:#f5a623; background:rgba(245,166,35,.14); }
+  .stavkoll { border:1px solid #f5a623; }
+  .stavrad { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; padding:4px 0; }
   .progress { height:8px; background:var(--divider-color); border-radius:4px; overflow:hidden; margin-bottom:6px; }
   .progress div { height:100%; background:var(--primary-color); transition:width .3s; }
   .flash { background:var(--card-background-color); border-radius:16px; padding:28px 18px; margin-top:14px; text-align:center;

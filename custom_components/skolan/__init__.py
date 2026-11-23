@@ -165,7 +165,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, BackupView, HemkopplingView, HemView, FjarrView, BoendeView, SyskonView, PackaView, ExtraView, HjarnView, IntresseView, UtvecklingView, LarareView, SamtalView, KlockaView, PlanKalenderView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetBildView, WidgetBildHamtaView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, VanAdressView, VanAdressbokView, TillsammansView, VanTillsammansView, SkolaView, KlassView, ForalderInfoView, AiView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, BackupView, HemkopplingView, HemView, FjarrView, BoendeView, SyskonView, PackaView, ExtraView, HjarnView, IntresseView, UtvecklingView, LarareView, SamtalView, KlockaView, PlanKalenderView, UploadView, FileView, GlosorReadView, GlosorStavningView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetBildView, WidgetBildHamtaView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, VanAdressView, VanAdressbokView, TillsammansView, VanTillsammansView, SkolaView, KlassView, ForalderInfoView, AiView):
         hass.http.register_view(view())
 
     async def _starta_grind(_event: Event | None = None) -> None:
@@ -4137,6 +4137,75 @@ GLOS_PROMPT = (
     "Behåll stavningen exakt som i bilden, inklusive artiklar (t.ex. \"el perro\", \"to run\"). "
     "Hitta inte på ord som inte står där. Är bilden oläslig: tom lista och förklara i note."
 )
+
+
+STAV_PROMPT = (
+    "Du kontrollerar stavningen i en glosläxa som ett skolbarn har skrivit in eller fotat. Språk: {sprak}.\n"
+    "Ordpar (rad: kolumn 1 | kolumn 2):\n{rader}\n\n"
+    "Hitta ord som nästan säkert är FELSTAVADE (stavfel, saknade/extra bokstäver, fel accent, ihopskrivning). "
+    "Ändra INTE: artiklar som finns med eller saknas, brittisk/amerikansk stavning, versaler, synonymer, ordval eller översättningar du tycker är sämre. "
+    "Är du osäker: ta inte med ordet. Svara ENDAST med giltig JSON utan markdown: "
+    '{{"forslag": [{{"rad": radnummer, "kol": 1 eller 2, "fran": exakt texten i fältet, "till": hela fältet rättstavat, "varfor": max 6 ord på svenska}}]}} '
+    'och {{"forslag": []}} om allt ser rätt ut.'
+)
+STAV_MAX = 120
+
+
+def _ar_json(t: str) -> bool:
+    try:
+        json.loads(t)
+        return True
+    except ValueError:
+        return False
+
+
+class GlosorStavningView(HomeAssistantView):
+    """Kollar stavningen i glosor innan de sparas. Föreslår bara, barnet eller föräldern väljer Byt eller Behåll."""
+
+    url = "/api/skolan/glosor_stavning"
+    name = "api:skolan:glosor_stavning"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest
+        _barn_for(hass, request, body.get("barn"))
+        par = [[str(x or "")[:120] for x in (p or [])[:2]] + [""] * (2 - len((p or [])[:2])) for p in (body.get("par") or [])[:STAV_MAX] if isinstance(p, list)]
+        sprak = [str(x or "")[:30] for x in (body.get("sprak") or [])[:2]]
+        if not any(a.strip() or b.strip() for a, b in par):
+            return self.json({"forslag": []})
+        entity = _ai_entitet(hass)
+        if not entity:
+            return self.json({"forslag": [], "ingen_ai": True})
+        rader = "\n".join(f"{i + 1}: {a} | {b}" for i, (a, b) in enumerate(par))
+        instr = STAV_PROMPT.format(sprak=" / ".join(x for x in sprak if x) or "okänt", rader=rader)
+        try:
+            resp = await _ai_anrop(hass, "ai_task", "generate_data", {"task_name": "Läxspelet stavningskoll", "entity_id": entity, "instructions": instr},
+                                   blocking=True, return_response=True)
+            raw = (resp or {}).get("data")
+            raw = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Läxspelet: stavningskollen misslyckades: %s", err)
+            return self.json({"forslag": [], "fel": True})
+        try:
+            x = _parse_json(raw)
+        except (ValueError, json.JSONDecodeError):  # avklippt svar: ta de förslag som hann bli hela
+            x = {"forslag": [json.loads(m) for m in re.findall(r'\{[^{}]*"rad"[^{}]*\}', raw) if _ar_json(m)]}
+        ut, sett = [], set()
+        for f in (x.get("forslag") or [])[:40] if isinstance(x, dict) else []:
+            try:
+                i, k = int(f.get("rad")) - 1, int(f.get("kol")) - 1
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if not (0 <= i < len(par) and k in (0, 1)) or (i, k) in sett:
+                continue
+            fore, till = par[i][k], str(f.get("till") or "").strip()[:120]
+            if not till or till == fore.strip() or not fore.strip():
+                continue
+            sett.add((i, k))
+            ut.append({"i": i, "k": k, "fran": fore, "till": till, "varfor": str(f.get("varfor") or "")[:60]})
+        return self.json({"forslag": ut})
 
 
 class GlosorReadView(HomeAssistantView):

@@ -1,6 +1,6 @@
 # Läxspelet och regelverken i Sverige
 
-*Senast uppdaterad: 23 november 2026. Gäller Läxspelet 1.98.0 och Läxspelet Lärare 0.12.0.*
+*Senast uppdaterad: 23 november 2026. Gäller Läxspelet 1.98.1 och Läxspelet Lärare 0.12.0.*
 
 Det här är ett underlag för den som frågar om Läxspelet följer svenska och europeiska regler om dataskydd, informationssäkerhet och AI. Det är ingen juridisk rådgivning. En skola som använder lärarappen gör sin egen bedömning tillsammans med sitt dataskyddsombud. Mer om lärarappen finns i [Information till skolor](larare-skolor.md), och vad som händer med familjens data finns i [integritetspolicyn](integritet.md).
 
@@ -69,7 +69,7 @@ Gallring ska ske enligt huvudmannens gallringsbeslut. Appen har funktionen "Rade
 
 ### EU:s AI-förordning (2024/1689, ändrad genom förordning 2026/1744)
 - **Lärarappen** använder ingen AI.
-- **Familjens Läxspelet** använder en AI-tjänst som familjen själv väljer, för att läsa glosor från foton, förhöra, rätta övningar och låta husdjuret svara på frågor. Det är övning hemma och ingen bedömning i skolan. Det räknas därför inte som ett AI-system med hög risk inom utbildning (bilaga III punkt 3). Den delen av förordningen gäller dessutom först från 2 december 2027 efter ändringen 2026.
+- **Familjens Läxspelet** använder en AI-tjänst som familjen själv väljer, för att läsa glosor från foton, kolla stavningen i glosor, förhöra, rätta övningar och låta husdjuret svara på frågor. Det är övning hemma och ingen bedömning i skolan. Det räknas därför inte som ett AI-system med hög risk inom utbildning (bilaga III punkt 3). Den delen av förordningen gäller dessutom först från 2 december 2027 efter ändringen 2026.
 - **Öppenhet** (artikel 50, gäller redan): den som pratar med ett AI-system ska veta att det är en AI. Föräldrarna informeras i introduktionen, och varje vy där en AI svarar har en tydlig märkning ("🤖 … svarar med hjälp av en AI, ett datorprogram och inte en riktig person. Den kan ha fel.").
 - **Förbjudna metoder** (artikel 5): appen utnyttjar inte barns sårbarhet. Det finns inga köp, ingen reklam och inga pengar i spelet. Stjärnorna går bara att använda inne i appen.
 
