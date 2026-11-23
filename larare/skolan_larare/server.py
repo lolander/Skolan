@@ -55,7 +55,7 @@ MAX_FILER_PER_SYNK = 14 * 1024 * 1024  # base64, under elevens gräns
 KLASSBOSSAR = [("🐲", "Läxdraken"), ("🦖", "Glos-Rex"), ("🐙", "Kraken Glömska"), ("👹", "Jätten Slarv"),
                ("🤖", "Megaroboten"), ("🧊", "Isjätten"), ("🌋", "Lavamonstret"), ("👻", "Spökkungen")]
 KLASSBOSS_PER_ELEV = 120  # ⭐ per elev som är med (ungefär en vanlig veckas plugg)
-REGLER_VER = "1"  # höj när reglerna i "Så gör du rätt" ändras, så att lärarna läser dem igen
+REGLER_VER = "2"  # höj när reglerna i "Så gör du rätt" ändras, så att lärarna läser dem igen
 LANK_RE = re.compile(r"https://[A-Za-z0-9.\-]+(?::\d+)?/api/skolan/klass/[A-Za-z0-9_\-]{20,64}")
 
 
@@ -218,6 +218,7 @@ class Klass:
                 e["namn"] = self.pseudonym(e)
             if "mentor" not in r and "anteckningar" not in r:
                 e.pop("lararna", None)
+            if "namn" not in r:
                 e.pop("elev_id", None)
         s = self.d.get("skola")
         if s and "mentor" not in r:
@@ -347,6 +348,7 @@ class Klass:
                            "lararna": [x for x in (e.get("lararna") or []) if x.get("id") != self.d["larar_id"]],
                            "anteckningar": self.skola.anteckningar_for(e) if self.har("anteckningar") else [],
                            "mentor": any(x.get("id") == self.d["larar_id"] and x.get("roll") == "mentor" for x in e.get("lararna") or []),
+                           "elev_id": e.get("elev_id") if self.skola.mentor_for() else "",
                            "fran_kollegor": kollegor.get(e.get("elev_id") or "-", []) if any(x.get("id") == self.d["larar_id"] and x.get("roll") == "mentor" for x in e.get("lararna") or []) else []})
         mott = {e["id"]: set(e.get("mottagna") or []) for e in self.d["elever"]}
         material = []
@@ -360,7 +362,7 @@ class Klass:
                 "inst_val": self.d["inst"], "funktioner": FUNKTIONER,
                 "larar_id": self.d["larar_id"], "regler_last": self.d.get("regler_last") == REGLER_VER,
                 "behorighet": self.behorighet(), "insikt": self.insikt() if self.far("insikt") else None,
-                "amne": self.d.get("amne", ""), "roll": self.d.get("roll", "mentor"), "skola": self.skola.publik(), "provkalender": self.skola.provkalender(),
+                "amne": self.d.get("amne", ""), "roll": self.skola.min_roll()["roll"] or "", "skola": self.skola.publik(), "provkalender": self.skola.provkalender(),
                 "elever": sorted(elever, key=lambda x: x["namn"].lower()), "veckobrev": self.d["veckobrev"][-10:][::-1],
                 "boss": self.boss() if self.far("klasslag") else None, "adress": f"{lan_ip()}:{self.port}", "url": self.url,
                 "grupper": [self.grupp_publik(g) for g in self.d["grupper"] if g.get("aktiv")],
@@ -417,16 +419,23 @@ class Klass:
                 if m["typ"] == "riktlinje" and m["id"] not in har and (not m.get("till") or e["id"] in m["till"]):
                     riktlinjer.append({"id": m["id"], "amne": m.get("amne", ""), "text": m.get("text", "")})
         sk = self.d.get("skola")
-        body = {"v": 2, "larar_id": self.d["larar_id"], "klass": self.d["klass"], "larare": self.d["larare"], "url": self.url,
-                "amne": self.d.get("amne", ""), "roll": self.d.get("roll", "mentor"), "skola": {"id": sk["id"], "namn": sk["namn"]} if sk else None,
+        mr = self.skola.min_roll()
+        body = {"v": 3, "larar_id": self.d["larar_id"], "klass": self.d["klass"], "larare": self.d["larare"], "url": self.url,
+                # rollen bestäms av rektorn (mentor) och mentorn (ämneslärare); familjen kontrollerar signaturerna själv
+                "amne": ", ".join(a for g in mr.get("godk", []) for a in g["amnen"]) or self.d.get("amne", ""),
+                "roll": "amne" if mr["roll"] != "mentor" else "mentor", "skola": {"id": sk["id"], "namn": sk["namn"]} if sk else None,
+                "pub": beh.publik_nyckel(self.d["nyckel"]), "tid": int(time.time()), **self.skola.till_familjen(),
                 "inst": {k: self.far(k) for k in FUNKTIONER}, "veckobrev": brev,
                 "behorighet": {"niva": beh.niva_for(list(self.ratt())), "rektor": ((sk or {}).get("policy") or {}).get("rektor_namn")},
                 "insikt_fraga": {"amne": self.d.get("amne", ""), "prov": [{k: m[k] for k in ("id", "titel", "amne", "datum")} for m in self.d["material"]
                                                                           if m.get("typ") == "prov" and m.get("datum", "") >= date.today().isoformat()][-20:]}
                 if self.far("insikt") else None, "material": material, "riktlinjer": riktlinjer[-20:],
                 "klass_status": self.boss() if self.far("klasslag") else None, "grupper": grupper}
+        kropp = json.dumps(body, ensure_ascii=False).encode()
         try:
-            async with session.post(lank, json=body, timeout=ClientTimeout(total=120), allow_redirects=False) as r:
+            # signerat med lärarens nyckel: familjen vet att det är samma lärare varje gång, inte bara någon som har länken
+            async with session.post(lank, data=kropp, timeout=ClientTimeout(total=120), allow_redirects=False,
+                                    headers={"Content-Type": "application/json", "X-Laxspelet-Signatur": beh.signera_bytes(self.d["nyckel"], kropp)}) as r:
                 svar = json.loads(await r.content.read(524288) or b"{}")
                 if r.status == 404:
                     raise ValueError("Läxspelet hos eleven svarar inte på klasslänken (är skolfunktionerna på där?).")
@@ -445,10 +454,11 @@ class Klass:
                   "veckobrev_nya": int(svar.get("nya_veckobrev") or 0),
                   # elevens alla lärare (från familjens Läxspelet) och elev-id:t som är samma hos alla lärare
                   "lararna": [{"id": str(x.get("id") or "")[:40], "namn": str(x.get("namn") or "")[:60], "amne": str(x.get("amne") or "")[:60],
-                               "roll": "amne" if x.get("roll") == "amne" else "mentor"} for x in (svar.get("lararna") or [])[:20] if isinstance(x, dict)],
+                               "roll": x.get("roll") if x.get("roll") in ("mentor", "amne") else ""} for x in (svar.get("lararna") or [])[:20] if isinstance(x, dict)],
                   "elev_id": str(svar.get("elev_id") or "")[:30]})
         if not (self.har("mentor") or self.har("anteckningar")):
             e.pop("lararna", None)
+        if not self.har("namn"):  # elev-id:t behövs när mentorn godkänner ämneslärare för vissa elever
             e.pop("elev_id", None)
         if self.far("insikt"):
             self.ta_emot_insikt(svar.get("insikt"))
@@ -634,8 +644,6 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                 d["larare"] = str(body.get("larare") or d["larare"])[:60]
                 if "amne" in body:
                     d["amne"] = re.sub(r"\s+", " ", str(body.get("amne") or "")).strip()[:60]
-                if body.get("roll") in ("mentor", "amne"):
-                    d["roll"] = body["roll"]
                 for k in FUNKTIONER:
                     if k in body:
                         d["inst"][k] = bool(body[k])
@@ -760,6 +768,14 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                 asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
             elif op == "rektor_aterstall":
                 klass.skola.aterstall(str(body.get("vem") or ""), str(body.get("motivering") or ""))
+                asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
+            elif op == "rektor_mentor":
+                klass.skola.satt_mentor(str(body.get("vem") or ""), str(body.get("klasser") or ""), str(body.get("motivering") or ""))
+                asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
+            elif op == "mentor_godkann":  # mentorn godkänner en ämneslärare för sin klass (amnen tomt = ta bort)
+                el = body.get("elever")
+                klass.skola.godkann(str(body.get("vem") or ""), str(body.get("klass") or ""), str(body.get("amnen") or ""),
+                                    None if el is None else [str(x) for x in el if isinstance(x, str)])
                 asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
             elif op == "rektor_overlat":
                 klass.skola.overlat(str(body.get("vem") or ""))

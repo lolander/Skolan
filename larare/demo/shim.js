@@ -80,6 +80,22 @@ function demoAndra(b) {
       const text = b.op === "rektor_aterstall" ? `${namn}: följer standarden igen.` : `${namn}: nivå ${niva} (${ratt.map((k) => R[k][1]).join(", ") || "inget"}).${b.motivering ? " Grund: " + b.motivering : ""}`;
       r.beslut.unshift({ tid: DEMO_TID(), av: d.larare, text }); DEMO_LOGG("behorighet", text); break;
     }
+    case "rektor_mentor": {
+      const lista = [...new Set(String(b.klasser || "").split(/[,;/]/).map((x) => x.trim().toUpperCase()).filter(Boolean))];
+      const vem = b.vem === d.larar_id ? d.larar_id : b.vem, namn = vem === d.larar_id ? d.larare : (d.skola.medlemmar.find((m) => m.id === vem) || {}).namn;
+      if (lista.length) d.skola.mentorer[vem] = lista; else delete d.skola.mentorer[vem];
+      if (vem === d.larar_id) d.skola.min_roll = lista.length ? { ...d.skola.min_roll, roll: "mentor", klasser: lista, text: `Mentor för ${lista.join(", ")} (beslut av rektorn ${d.larare}).` }
+        : { roll: null, intyg: true, text: "Ingen roll än: rektorn kan göra dig till mentor, eller en mentor godkänna dig som ämneslärare för sin klass." };
+      const text = `${namn}: ${lista.length ? `mentor för ${lista.join(", ")}.` : "inte mentor för någon klass."}`;
+      d.skola.rektor.beslut.unshift({ tid: DEMO_TID(), av: d.larare, text }); DEMO_LOGG("behorighet", text); break;
+    }
+    case "mentor_godkann": {
+      const m = d.skola.medlemmar.find((x) => x.id === b.vem); if (!m) return { fel: "Kollegan finns inte." };
+      const amnen = String(b.amnen || "").split(/[,/]/).map((x) => x.trim()).filter(Boolean);
+      d.skola.godkanda = d.skola.godkanda.filter((g) => !(g.lid === b.vem && g.klass === b.klass));
+      if (amnen.length) d.skola.godkanda.push({ lid: b.vem, klass: b.klass, amnen, elever: b.elever, namn: m.namn });
+      DEMO_LOGG("behorighet", amnen.length ? `Godkände ${m.namn} som ämneslärare i ${amnen.join(", ")} för ${b.klass}.` : `Tog bort ${m.namn} som ämneslärare för ${b.klass}.`); break;
+    }
     case "rektor_overlat": return { fel: "I demon går det inte att lämna över rektorsrollen." };
     case "regler_ok": d.regler_last = true; break;
     case "radera_klass": return { fel: "I demon raderas inget." };

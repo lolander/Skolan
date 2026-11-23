@@ -1,6 +1,6 @@
 # Kom igång med Läxspelet Lärare på nivå 0
 
-*En sida för rektor, IT och dataskyddsombud. Gäller Läxspelet Lärare 0.11.0 och senare.*
+*En sida för rektor, IT och dataskyddsombud. Gäller Läxspelet Lärare 0.12.0 och senare.*
 
 **Nivå 0 betyder att lärarappen inte sparar några uppgifter om elever.** Därför kan en skola börja i liten skala, med ett litet beslut. Nivå 1 och 2 (elevnamn och uppgifter om enskilda elever) kan komma senare, efter en egen bedömning.
 
@@ -17,6 +17,7 @@
 - Familjens Läxspelet skickar inte barnets namn till en lärare på nivå 0.
 - Ingen server, inget moln, ingen AI i lärarappen. Utvecklaren får ingen data.
 - Lärare kan inte höja sin egen nivå. Bara rektorn i appen kan det, med ett signerat beslut, och IT kan låsa en högsta nivå.
+- Lärare kan inte heller ge sig själva en roll. Rektorn utser mentorer och mentorn godkänner ämneslärare. Utan roll får en lärare bara nivå 0 hos familjerna, och vårdnadshavaren godkänner skolan och rektorn i sin app.
 
 ## Det som ändå behandlas
 - Lärarnas namn, skolans namn och klassens namn, för att lärarna ska kunna samarbeta och familjerna ska veta vem som skickar.

@@ -1,8 +1,11 @@
-"""AI för fristående läge (ersätter Home Assistants ai_task).
+"""Läxspelets egen AI-koppling: används av Windowsappen och (valfritt) i Home Assistant i stället för ai_task.
 
-Familjen väljer själv leverantör: Google Gemini, Anthropic Claude, OpenAI, andra molntjänster med
+Familjen väljer själv leverantör: Mistral, Anthropic Claude, OpenAI, Google Gemini, andra molntjänster med
 OpenAI-kompatibelt API, eller en lokal AI på datorn (Ollama, LM Studio). Allt går genom generate_data(),
 som har samma form som Home Assistants ai_task.generate_data: {"data": text}.
+
+EN fil: custom_components/skolan/ai_lev.py. fristaende/skolan_app/ai.py är en exakt kopia (Windowsappen),
+så ändra här och kopiera dit. Inga Home Assistant-importer här.
 """
 from __future__ import annotations
 
@@ -22,18 +25,20 @@ MAX_BILAGA = 20 * 1024 * 1024
 # typ: gemini | anthropic | openai (OpenAI-kompatibelt chat/completions)
 # bild: kan läsa bilder (med rätt modell), pdf: kan läsa PDF direkt
 LEVERANTORER: dict[str, dict] = {
-    "gemini": {"namn": "Google Gemini", "grupp": "moln", "typ": "gemini", "url": "https://generativelanguage.googleapis.com/v1beta",
-               "modell": "gemini-flash-latest", "nyckel": True, "bild": True, "pdf": True, "rek": True,
-               "info": "Rekommenderas. Logga in med ett vanligt Google-konto och tryck ”Create API key”."},
+    "mistral": {"namn": "Mistral AI", "grupp": "moln", "typ": "openai", "url": "https://api.mistral.ai/v1",
+                "modell": "mistral-small-latest", "nyckel": True, "bild": True, "pdf": True, "ocr": True, "rek": True,
+                "info": "Rekommenderas. Europeiskt företag (Frankrike), så texter och foton stannar inom EU. Gratisplan finns. PDF läses av med Mistrals OCR."},
     "anthropic": {"namn": "Anthropic Claude", "grupp": "moln", "typ": "anthropic", "url": "https://api.anthropic.com/v1",
-                  "modell": "claude-haiku-5-5", "nyckel": True, "bild": True, "pdf": True,
-                  "info": "Mycket bra på svenska och på att förklara."},
+                  "modell": "claude-haiku-5-5", "nyckel": True, "bild": True, "pdf": True, "rek": True,
+                  "info": "Rekommenderas. Mycket bra på svenska och på att förklara. Anthropic tillåter appar som barn använder, med skyddsåtgärder och tydlig AI-märkning (det gör Läxspelet)."},
     "openai": {"namn": "OpenAI (ChatGPT)", "grupp": "moln", "typ": "openai", "url": "https://api.openai.com/v1",
                "modell": "", "nyckel": True, "bild": True, "pdf": True,
                "info": "Företaget bakom ChatGPT. Välj en modell som kan läsa bilder."},
-    "mistral": {"namn": "Mistral AI", "grupp": "moln", "typ": "openai", "url": "https://api.mistral.ai/v1",
-                "modell": "", "nyckel": True, "bild": True, "pdf": False,
-                "info": "Europeisk AI. För foton: välj en modell som kan läsa bilder (t.ex. pixtral eller medium)."},
+
+    "gemini": {"namn": "Google Gemini", "grupp": "moln", "typ": "gemini", "url": "https://generativelanguage.googleapis.com/v1beta",
+               "modell": "gemini-flash-latest", "nyckel": True, "bild": True, "pdf": True,
+               "info": "Bra på foton och PDF.",
+               "varning": "Googles villkor för Gemini API kräver att användaren är 18 år och tillåter inte appar som barn använder. Inom EU får sådana appar bara använda den betalda nivån. Välj hellre en annan tjänst."},
     "openrouter": {"namn": "OpenRouter (hundratals modeller)", "grupp": "moln", "typ": "openai", "url": "https://openrouter.ai/api/v1",
                    "modell": "", "nyckel": True, "bild": True, "pdf": False,
                    "info": "En nyckel till modeller från många företag."},
@@ -42,9 +47,6 @@ LEVERANTORER: dict[str, dict] = {
              "info": "Mycket snabb. Bara vissa modeller kan läsa bilder."},
     "xai": {"namn": "xAI Grok", "grupp": "moln", "typ": "openai", "url": "https://api.x.ai/v1",
             "modell": "", "nyckel": True, "bild": True, "pdf": False, "info": "Grok från xAI."},
-    "deepseek": {"namn": "DeepSeek", "grupp": "moln", "typ": "openai", "url": "https://api.deepseek.com/v1",
-                 "modell": "", "nyckel": True, "bild": False, "pdf": False,
-                 "info": "Billig, men kan inte läsa bilder: foton av glosor, veckobrev och schema fungerar inte."},
     "together": {"namn": "Together AI", "grupp": "moln", "typ": "openai", "url": "https://api.together.xyz/v1",
                  "modell": "", "nyckel": True, "bild": True, "pdf": False, "info": "Öppna modeller i molnet."},
     "ollama": {"namn": "Ollama (lokalt på datorn)", "grupp": "lokal", "typ": "openai", "url": "http://localhost:11434/v1",
@@ -63,19 +65,25 @@ LEVERANTORER: dict[str, dict] = {
 # Hjälp till familjerna: var man skaffar nyckeln, vad det kostar och om ett vanligt abonnemang räcker (det gör det aldrig för API:t).
 HJALP = {
     "gemini": {"lank": "https://aistudio.google.com/apikey", "lank_text": "Skapa nyckel i Google AI Studio",
-               "kostnad": "gratis", "kostnad_text": "Gratis att börja, inget betalkort behövs. Gratisnivån har en gräns per dag som brukar räcka för en familj.",
-               "abonnemang": "Ett Gemini- eller Google One-abonnemang behövs inte och ingår inte. Nyckeln är något annat och fungerar med ett vanligt Google-konto.",
-               "data": "På gratisnivån kan Google använda texterna för att förbättra sina tjänster. Vill ni undvika det kan ni lägga till betalning i AI Studio (då kostar det lite per användning) eller välja lokal AI."},
+               "kostnad": "betala", "kostnad_text": "Inom EU kräver Googles villkor den betalda nivån för appar som barn använder: lägg till betalning i AI Studio.",
+               "abonnemang": "Ett Gemini- eller Google One-abonnemang ingår inte.",
+               "data": "Med betald nivå använder Google inte texterna för att förbättra sina tjänster.",
+               "barn": "Googles villkor: användaren måste vara 18 år, och API:t får inte användas i appar som barn använder."},
     "anthropic": {"lank": "https://console.anthropic.com/settings/keys", "lank_text": "Skapa nyckel hos Anthropic",
                   "kostnad": "betala", "kostnad_text": "Ni sätter in en summa i förväg (t.ex. 5 dollar) som dras av lite i taget. Ingen månadsavgift.",
-                  "abonnemang": "Claude Pro eller Max ingår inte. API:t betalas separat, även om ni redan har ett abonnemang."},
+                  "abonnemang": "Claude Pro eller Max ingår inte. API:t betalas separat, även om ni redan har ett abonnemang.",
+                  "data": "Anthropic tränar inte sina modeller på det ni skickar via API:t.",
+                  "barn": "Anthropic tillåter appar som barn använder, med skyddsåtgärder och tydlig AI-märkning. Läxspelet märker AI-svaren och föräldern styr vad barnet gör."},
     "openai": {"lank": "https://platform.openai.com/api-keys", "lank_text": "Skapa nyckel hos OpenAI",
                "kostnad": "betala", "kostnad_text": "Ni sätter in en summa i förväg som dras av lite i taget. Ingen månadsavgift.",
-               "abonnemang": "ChatGPT Plus eller Pro ingår inte. API:t har en egen betalning, även om ni redan har ChatGPT."},
+               "abonnemang": "ChatGPT Plus eller Pro ingår inte. API:t har en egen betalning, även om ni redan har ChatGPT.",
+               "data": "OpenAI använder inte det ni skickar via API:t för att förbättra tjänsten (om ni inte själva väljer det).",
+               "barn": "OpenAI kräver att en förälder har gett sitt samtycke när barn använder tjänsten. Det gör du när du kopplar in den här."},
     "mistral": {"lank": "https://console.mistral.ai/api-keys", "lank_text": "Skapa nyckel hos Mistral",
-                "kostnad": "gratis", "kostnad_text": "Gratis testplan (Experiment) när man har verifierat sitt mobilnummer. Det finns också en betalplan.",
+                "kostnad": "gratis", "kostnad_text": "Gratis plan (Experiment) när man har verifierat sitt mobilnummer. Den har gränser per minut och månad. Det finns också en betalplan.",
                 "abonnemang": "Le Chat Pro ingår inte.",
-                "data": "På gratisplanen kan Mistral använda texterna för att träna sina modeller."},
+                "data": "På gratisplanen får Mistral använda texterna för att träna sina modeller, om ni inte stänger av det: Admin → Privacy i Mistrals konsol (gör det!).",
+                "barn": "Mistral kräver att en förälder har gett sitt samtycke när barn använder tjänsten. Det gör du när du kopplar in den här."},
     "openrouter": {"lank": "https://openrouter.ai/keys", "lank_text": "Skapa nyckel hos OpenRouter",
                    "kostnad": "betala", "kostnad_text": "Ni sätter in en summa i förväg. Vissa modeller är gratis (märkta ”free”) men har låga gränser.",
                    "abonnemang": "Inga abonnemang från andra AI-företag ingår."},
@@ -85,8 +93,6 @@ HJALP = {
     "xai": {"lank": "https://console.x.ai", "lank_text": "Skapa nyckel hos xAI",
             "kostnad": "betala", "kostnad_text": "Ni sätter in en summa i förväg som dras av lite i taget.",
             "abonnemang": "X Premium eller SuperGrok ingår inte."},
-    "deepseek": {"lank": "https://platform.deepseek.com/api_keys", "lank_text": "Skapa nyckel hos DeepSeek",
-                 "kostnad": "betala", "kostnad_text": "Mycket billigt. Ni sätter in en summa i förväg.", "abonnemang": "Inget abonnemang behövs."},
     "together": {"lank": "https://api.together.ai/settings/api-keys", "lank_text": "Skapa nyckel hos Together",
                  "kostnad": "betala", "kostnad_text": "Ni sätter in en summa i förväg som dras av lite i taget.", "abonnemang": "Inget abonnemang behövs."},
     "ollama": {"lank": "https://ollama.com/download", "lank_text": "Ladda ner Ollama",
@@ -157,6 +163,8 @@ class AI:
         if self.info["nyckel"] and not self.nyckel:
             raise RuntimeError("AI-nyckel saknas. En förälder kan lägga in den under Inställningar.")
         bilagor = bilagor or []
+        if self.info.get("ocr") and any(m == "application/pdf" for m, _ in bilagor):
+            instruktion, bilagor = await self._ocr(instruktion, bilagor)
         if any(m == "application/pdf" for m, _ in bilagor) and not self.info["pdf"]:
             raise RuntimeError(f"{self.info['namn']} kan inte läsa PDF. Fota sidorna i stället, eller byt till Gemini, Claude eller OpenAI.")
         if bilagor and not self.info["bild"]:
@@ -203,6 +211,24 @@ class AI:
         if not text:
             raise RuntimeError(f"{self.info['namn']} gav inget svar ({val.get('finish_reason') or 'okänt skäl'}).")
         return text
+
+    async def _ocr(self, instruktion: str, bilagor: list[tuple[str, bytes]]) -> tuple[str, list[tuple[str, bytes]]]:
+        """Mistral: chatten läser inte PDF, så PDF-filer läses först av med Mistrals OCR och skickas som text."""
+        texter, kvar = [], []
+        for m, d in bilagor:
+            if m != "application/pdf":
+                kvar.append((m, d))
+                continue
+            svar = await self._post(f"{self.url}/ocr", {"model": "mistral-ocr-latest", "document": {
+                "type": "document_url", "document_url": "data:application/pdf;base64," + base64.b64encode(d).decode()}},
+                {"Authorization": f"Bearer {self.nyckel}"})
+            sidor = [str(s.get("markdown") or "") for s in svar.get("pages") or []]
+            if not any(x.strip() for x in sidor):
+                raise RuntimeError("Mistral kunde inte läsa PDF-filen. Fota sidorna i stället.")
+            texter.append("\n\n".join(f"[Sida {i + 1}]\n{x}" for i, x in enumerate(sidor)))
+        if texter:
+            instruktion += "\n\nTexten i den bifogade PDF-filen (avläst ord för ord):\n\n" + "\n\n---\n\n".join(texter)
+        return instruktion, kvar
 
     async def modeller(self) -> list[str]:
         """Modeller som leverantören erbjuder (för listan i inställningarna)."""
@@ -263,9 +289,13 @@ def fran_inst(inst: dict, session_fn) -> AI | None:
         ai = {"leverantor": "gemini", "nyckel": inst["gemini"]["nyckel"], "modell": inst["gemini"].get("modell", "")}
     if not ai:
         return None
+    if ai.get("leverantor") not in LEVERANTORER:  # t.ex. DeepSeek, som har tagits bort (data till Kina): ingen AI tills föräldern väljer en ny
+        _LOGGER.warning("AI-tjänsten %s finns inte längre i Läxspelet. Välj en ny under Inställningar.", ai.get("leverantor"))
+        return None
     return AI(ai, session_fn)
 
 
 def publik_lista() -> list[dict]:
     return [{"id": k, **{x: v[x] for x in ("namn", "grupp", "url", "modell", "nyckel", "bild", "pdf", "info")}, "rek": bool(v.get("rek")), "lokal": bool(v.get("lokal")),
+             "varning": v.get("varning", ""), "barn": "Läs tjänstens villkor om barn innan ni väljer den." if v.get("grupp") == "moln" else "",
              **HJALP.get(k, {})} for k, v in LEVERANTORER.items()]

@@ -115,6 +115,9 @@ sk["policy"]["beslut"][0]["tid"] = dag(-20) + " 08:30"
 k.skola.satt_ratt(k.d["larar_id"], beh.niva_ratt(2), "Dataskyddsombudets bedömning 2026-11-02, dnr BUN 2026/412")
 k.skola.satt_ratt("LB", beh.niva_ratt(2), "Dataskyddsombudets bedömning 2026-11-02, dnr BUN 2026/412")
 k.skola.satt_ratt("LC", beh.niva_ratt(1), "Ämneslärare: bara namn och grupper behövs")
+k.skola.satt_mentor(k.d["larar_id"], "4B", "Klassens mentor läsåret 2026/27")
+k.skola.godkann("LB", "4B", "Engelska", None)
+k.skola.godkann("LC", "4B", "Matte", None)
 for i, b_ in enumerate(sk["policy"]["beslut"][1:]):
     b_["tid"] = dag(-18 + i) + " 09:1" + str(i)
 sk["policy"] = beh.signera_policy(sk["policy"], k.d["nyckel"])

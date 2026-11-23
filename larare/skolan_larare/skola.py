@@ -89,7 +89,7 @@ class Skola:
 
     def min_info(self) -> dict:
         from .server import lan_ip
-        return {"namn": self.d.get("larare") or "Läraren", "amne": self.d.get("amne", ""), "roll": self.d.get("roll", "mentor"),
+        return {"namn": self.d.get("larare") or "Läraren", "amne": self.d.get("amne", ""), "roll": "mentor" if self.mentor_for() else "amne",
                 "klass": self.d.get("klass", ""), "adress": f"{lan_ip()}:{self.k.port}", "pub": beh.publik_nyckel(self.d["nyckel"])}
 
     # ---------- skapa, gå med, lämna ----------
@@ -104,6 +104,7 @@ class Skola:
         self.s["policy"] = beh.ny_policy(self.s["id"], self.lid, self.d.get("larare") or "Rektorn", beh.publik_nyckel(self.d["nyckel"]), self.d["nyckel"])
         self.k.logga("skola", f"Skolan {namn} skapades. Du är skolans rektor i appen och bestämmer lärarnas behörigheter.")
         self.k.rensa_otillatet()
+        self.utfarda()
         self.k.spara()
         return self.s
 
@@ -139,6 +140,7 @@ class Skola:
             raise ValueError("Saknar lärare.")
         self._spara_medlem(lid, body.get("info") or {}, ip)
         self.k.logga("skola", f"{_t((body.get('info') or {}).get('namn'), 60)} gick med i skolan.")
+        self.utfarda()
         self.k.spara()
         svar = {"id": self.s["id"], "namn": self.s["namn"], "hemlighet": self.s["hemlighet"], "policy": self.s.get("policy"),
                 "medlemmar": {**self.s["medlemmar"], self.lid: {**self.min_info(), "sedd": time.strftime("%Y-%m-%d %H:%M")}}}
@@ -194,7 +196,7 @@ class Skola:
         adress = _t(info.get("adress"), 60)
         if ip and adress:  # lita på avsändarens ip, porten från meddelandet
             adress = f"{ip}:{adress.rsplit(':', 1)[-1]}"
-        m.update({"namn": _t(info.get("namn"), 60) or m.get("namn") or "?", "amne": _t(info.get("amne"), 60), "roll": "amne" if info.get("roll") == "amne" else "mentor",
+        m.update({"namn": _t(info.get("namn"), 60) or m.get("namn") or "?", "amne": _t(info.get("amne"), 60), "roll": info.get("roll") if info.get("roll") in ("mentor", "amne") else "",
                   "klass": _t(info.get("klass"), 40), "sedd": time.strftime("%Y-%m-%d %H:%M")})
         if re.fullmatch(r"[\w.\-]+:\d{2,5}", adress or ""):
             m["adress"] = adress
@@ -264,7 +266,7 @@ class Skola:
         if not x:
             return None, ""
         amne = x.get("amne") or (self.s["medlemmar"].get(lid) or {}).get("amne") or ""
-        return x.get("roll") or "mentor", amne
+        return x.get("roll") or None, amne
 
     def _anteckningar_till(self, lid: str) -> list[dict]:
         """Mina anteckningar som kollegan lid ska få: mentorn allt om sina elever, ämnesläraren sitt ämne."""
@@ -287,7 +289,8 @@ class Skola:
                 "medlemmar": {k: {x: v.get(x) for x in ("namn", "amne", "roll", "klass", "adress")} for k, v in self.s["medlemmar"].items()},
                 "till_mentor": self.till_mentor(till) if till else {},
                 "meddelanden": [{k: m[k] for k in ("id", "namn", "till", "text", "tid")} for m in mina],
-                "anteckningar": self._anteckningar_till(till) if till else [], "policy": self.s.get("policy")}
+                "anteckningar": self._anteckningar_till(till) if till else [], "policy": self.s.get("policy"),
+                "intyg": list(self.s.get("intyg", {}).values()), "godk": list(self.s.get("godk", {}).values())}
 
     def _ta_emot_paket(self, p: dict, ip: str | None) -> None:
         lid = _t(p.get("fran"), 40)
@@ -316,6 +319,7 @@ class Skola:
         for mlid, info in (p.get("medlemmar") or {}).items():  # så hittar alla varandra
             if mlid not in self.s["medlemmar"] and mlid != self.lid and isinstance(info, dict):
                 self._spara_medlem(_t(mlid, 40), info, None)
+        self.ta_emot_intyg(p.get("intyg"), p.get("godk"))
 
     def _las(self, kropp: bytes) -> bytes:
         try:
@@ -348,6 +352,7 @@ class Skola:
     async def synka_alla(self, session: ClientSession) -> None:
         if not self.s:
             return
+        self.utfarda()
         for lid, m in list(self.s["medlemmar"].items()):
             if not m.get("adress"):
                 continue
@@ -388,6 +393,7 @@ class Skola:
         self.s["policy"] = beh.ny_policy(self.s["id"], self.lid, self.d.get("larare") or "Rektorn", beh.publik_nyckel(self.d["nyckel"]), self.d["nyckel"])
         self.k.logga("behorighet", "Du blev skolans rektor i appen.")
         self.k.rensa_otillatet()
+        self.utfarda()
 
     def _nytt_beslut(self, andra, text: str) -> None:
         if not self.ar_rektor():
@@ -401,6 +407,7 @@ class Skola:
         self.s["policy"] = beh.signera_policy(p, self.d["nyckel"])
         self.k.logga("behorighet", text)
         self.k.rensa_otillatet()
+        self.utfarda()
 
     def satt_ratt(self, vem: str, ratt: list, motivering: str) -> None:
         """vem = en lärares id, eller "standard" (alla lärare utan eget beslut)."""
@@ -434,8 +441,135 @@ class Skola:
             raise ValueError("Kollegan måste ha synkat med en ny version av lärarappen först.")
 
         def andra(p):
+            # den gamla rektorn signerar överlämningen, så att familjerna kan följa den (föräldern godkänner den nya rektorn)
+            p["kedja"] = (p.get("kedja") or [])[-19:] + [beh.kedjelank(self.s["id"], p["rektor_pub"], m["pub"], m.get("namn") or "?", self.d["nyckel"])]
             p.update({"rektor": vem, "rektor_namn": m.get("namn") or "?", "rektor_pub": m["pub"]})
         self._nytt_beslut(andra, f"{self.d.get('larare') or 'Rektorn'} lämnade över rektorsrollen till {m.get('namn')}.")
+
+    def satt_mentor(self, vem: str, klasser: str, motivering: str) -> None:
+        """Rektorn bestämmer vem som är mentor för vilka klasser. Bara mentorn kan godkänna ämneslärare för klassen."""
+        if vem != self.lid and vem not in self.s["medlemmar"]:
+            raise ValueError("Läraren finns inte i skolan.")
+        lista = sorted({_t(k, 20).upper() for k in re.split(r"[,;/]", klasser or "") if _t(k, 20)})[:10]
+        text = f"{self._namn(vem)}: " + (f"mentor för {', '.join(lista)}." if lista else "inte mentor för någon klass.") + (f" Grund: {_t(motivering, 300)}" if motivering else "")
+
+        def andra(p):
+            mentorer = p.setdefault("mentorer", {})
+            if lista:
+                mentorer[vem] = lista
+            else:
+                mentorer.pop(vem, None)
+        self._nytt_beslut(andra, text)
+
+    def mentor_for(self, lid: str | None = None) -> list[str]:
+        return list(((self.policy or {}).get("mentorer") or {}).get(lid or self.lid) or [])
+
+    # ---------- intyg och godkännanden (till familjerna) ----------
+    def utfarda(self) -> None:
+        """Rektorns app: håll intygen aktuella för alla lärare (nya lärare, nya beslut, snart utgångna)."""
+        if not self.s or not self.ar_rektor():
+            return
+        p = self.policy
+        intyg = self.s.setdefault("intyg", {})
+        lararna = {self.lid: (self.d.get("larare") or "Rektorn", beh.publik_nyckel(self.d["nyckel"]))}
+        lararna.update({k: (m.get("namn") or "?", m["pub"]) for k, m in self.s["medlemmar"].items() if m.get("pub")})
+        for lid, (namn, pub) in lararna.items():
+            ny = beh.intyg(p, self.s["namn"], lid, namn, pub, self.d["nyckel"])
+            gammal = intyg.get(lid)
+            if (not gammal or time.time() - gammal.get("tid", 0) > beh.FORNYA
+                    or any(gammal.get(k) != ny[k] for k in ("skola_namn", "rektor_namn", "rektor_pub", "namn", "pub", "ratt", "mentor"))):
+                intyg[lid] = ny
+        for lid in [k for k in intyg if k not in lararna]:
+            intyg.pop(lid)
+        self.godkann_alla()
+
+    def godkann(self, lid: str, klass: str, amnen: str, elever: list | None) -> None:
+        """Mentorn godkänner (eller tar bort, amnen tomt) en ämneslärare för sin klass."""
+        klass = _t(klass, 20).upper()
+        if klass not in self.mentor_for():
+            raise PermissionError("Bara klassens mentor (utsedd av rektorn) kan godkänna ämneslärare.")
+        if lid not in self.s["medlemmar"] or not self.s["medlemmar"][lid].get("pub"):
+            raise ValueError("Kollegan måste ha synkat med en ny version av lärarappen först.")
+        lista = [x for x in dict.fromkeys(_t(a, 40) for a in re.split(r"[,/]", amnen or "")) if x][:8]
+        el = None if elever is None else [_t(x, 30) for x in elever if re.fullmatch(r"[0-9a-f]{20}", str(x))][:200]
+        g = self.d.setdefault("godkanda", {})
+        namn = self._namn(lid)
+        if lista:
+            g[f"{lid}|{klass}"] = {"lid": lid, "klass": klass, "amnen": lista, "elever": el}
+            text = f"Godkände {namn} som ämneslärare i {', '.join(lista)} för {klass}" + (" (hela klassen)." if el is None else f" ({len(el)} elever).")
+        else:
+            g[f"{lid}|{klass}"] = {"lid": lid, "klass": klass, "amnen": [], "elever": None, "bort": True}
+            text = f"Tog bort {namn} som ämneslärare för {klass}."
+        self.k.logga("behorighet", text)
+        self.godkann_alla(tvinga=f"{lid}|{klass}")
+
+    def godkann_alla(self, tvinga: str | None = None) -> None:
+        """Signera mina godkännanden (som mentor) och förnya dem i tid. Borttagna skickas som tomma, så att de gamla slutar gälla."""
+        if not self.s:
+            return
+        godk = self.s.setdefault("godk", {})
+        for nyckel, x in (self.d.get("godkanda") or {}).items():
+            m = self.s["medlemmar"].get(x["lid"]) or {}
+            if x["klass"] not in self.mentor_for() or not m.get("pub"):
+                continue
+            k = f"{self.lid}:{nyckel}"
+            gammal = godk.get(k)
+            if nyckel == tvinga or not gammal or time.time() - gammal.get("tid", 0) > beh.FORNYA or gammal.get("pub") != m["pub"] or gammal.get("namn") != m.get("namn"):
+                godk[k] = beh.godkannande(self.s["id"], x["klass"], self.lid, x["lid"], m["pub"], m.get("namn") or "?", x["amnen"], x["elever"], self.d["nyckel"])
+        for k in [k for k, g in godk.items() if time.time() - g.get("tid", 0) > beh.GILTIG]:
+            godk.pop(k)
+
+    def ta_emot_intyg(self, intyg, godk) -> None:
+        """Intyg och godkännanden från kollegorna. Bara det som är signerat av rektorn (intyg) eller av en mentor
+        som rektorn har utsett för klassen (godkännanden) sparas, och bara nyare än det vi har."""
+        p = self.policy
+        if not self.s or not p:
+            return
+        mina = self.s.setdefault("intyg", {})
+        for lid in [k for k, c in mina.items() if c.get("rektor_pub") != p["rektor_pub"]]:
+            mina.pop(lid)  # ny rektor: de gamla intygen gäller inte längre här
+        for c in (intyg or [])[:200]:
+            if (isinstance(c, dict) and c.get("typ") == "intyg" and c.get("skola") == self.s["id"] and c.get("rektor_pub") == p["rektor_pub"]
+                    and beh.sig_ok(c, p["rektor_pub"]) and c.get("tid", 0) > (mina.get(c.get("lid")) or {}).get("tid", 0)):
+                mina[c["lid"]] = c
+        alla = self.s.setdefault("godk", {})
+        for g in (godk or [])[:400]:
+            if not isinstance(g, dict) or g.get("typ") != "amneslarare" or g.get("skola") != self.s["id"]:
+                continue
+            mi = mina.get(g.get("mentor")) or {}
+            k = f"{g.get('mentor')}:{g.get('lid')}|{g.get('klass')}"
+            if (g.get("klass") in (mi.get("mentor") or []) and beh.sig_ok(g, mi.get("pub") or "")
+                    and g.get("tid", 0) > (alla.get(k) or {}).get("tid", 0) and time.time() - g.get("tid", 0) < beh.GILTIG):
+                alla[k] = g
+
+    def min_roll(self) -> dict:
+        """Min roll enligt rektorns intyg och mentorernas godkännanden (det familjerna litar på)."""
+        c = (self.s or {}).get("intyg", {}).get(self.lid)
+        if not c or time.time() - c.get("tid", 0) > beh.GILTIG:
+            return {"roll": None, "intyg": bool(c), "text": "Inget giltigt intyg från rektorn än." if self.s else "Du är inte med i någon skola."}
+        if c.get("mentor"):
+            return {"roll": "mentor", "klasser": c["mentor"], "intyg": True, "giltigt_till": c["tid"] + beh.GILTIG,
+                    "text": f"Mentor för {', '.join(c['mentor'])} (beslut av rektorn {c.get('rektor_namn')})."}
+        g = [x for x in self.mina_godk() if x.get("amnen")]
+        if g:
+            return {"roll": "amne", "intyg": True, "giltigt_till": c["tid"] + beh.GILTIG, "godk": [{k: x[k] for k in ("klass", "amnen")} | {
+                "mentor": self._namn(x["mentor"]), "elever": None if x.get("elever") is None else len(x["elever"])} for x in g],
+                "text": "Ämneslärare: " + "; ".join(f"{', '.join(x['amnen'])} i {x['klass']} (godkänd av {self._namn(x['mentor'])})" for x in g) + "."}
+        return {"roll": None, "intyg": True, "giltigt_till": c["tid"] + beh.GILTIG,
+                "text": "Ingen roll än: rektorn kan göra dig till mentor, eller en mentor godkänna dig som ämneslärare för sin klass."}
+
+    def mina_godk(self) -> list[dict]:
+        return [g for k, g in (self.s or {}).get("godk", {}).items() if g.get("lid") == self.lid and time.time() - g.get("tid", 0) < beh.GILTIG]
+
+    def till_familjen(self) -> dict:
+        """Det som följer med varje synk till familjerna: hela skolans intyg, godkännanden och rektorskedjan.
+        Familjen sparar det senaste av varje sort, så att borttagna godkännanden och sänkta behörigheter slår igenom."""
+        if not self.s or not self.policy:
+            return {}
+        nu = time.time()
+        return {"intyg": [c for c in self.s.get("intyg", {}).values() if nu - c.get("tid", 0) < beh.GILTIG][:200],
+                "godk": [g for g in self.s.get("godk", {}).values() if nu - g.get("tid", 0) < beh.GILTIG][:400],
+                "kedja": (self.policy.get("kedja") or [])[-20:]}
 
     # ---------- det läraren ser ----------
     def publik(self) -> dict | None:
@@ -450,6 +584,9 @@ class Skola:
                                **({"ratt": beh.rensa_ratt((s.get("policy") or {}).get("larare", {}).get(k, (s.get("policy") or {}).get("standard"))),
                                    "eget": k in (s.get("policy") or {}).get("larare", {})} if s.get("policy") else {})}
                               for k, v in sorted(s["medlemmar"].items(), key=lambda kv: kv[1].get("namn", ""))],
+                "min_roll": self.min_roll(),
+                "mentorer": {k: v for k, v in ((s.get("policy") or {}).get("mentorer") or {}).items()},
+                "godkanda": [{**x, "namn": self._namn(x["lid"])} for x in (self.d.get("godkanda") or {}).values() if x["klass"] in self.mentor_for() and not x.get("bort")],
                 "rektor": {"namn": s["policy"].get("rektor_namn"), "jag": self.ar_rektor(), "standard": s["policy"].get("standard", []),
                            "mina_eget": self.lid in s["policy"].get("larare", {}),
                            "jag_ratt": beh.rensa_ratt(s["policy"].get("larare", {}).get(self.lid, s["policy"].get("standard"))),

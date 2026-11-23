@@ -1562,6 +1562,14 @@ class SkolanPanel extends HTMLElement {
     } else if (v.name === "hem") {
       title = `${esc(s.namn)}s skola`;
       body = this._hem();
+    } else if (v.name === "aival") {
+      title = "🤖 AI-tjänst";
+      back = { name: "foralder" };
+      body = this._aiValView();
+    } else if (v.name === "foralderinfo") {
+      title = "📘 Kom igång";
+      back = v.fran || { name: "hem" };
+      body = this._foralderInfo(false);
     } else if (v.name === "uppdrag_ny") {
       title = v.typ === "prov" ? "📝 Nytt prov" : "📖 Ny läsläxa";
       back = v.guide ? { name: "laxa", steg: "typ", amne: v.amne } : { name: "hem" };
@@ -1863,6 +1871,20 @@ class SkolanPanel extends HTMLElement {
     }
     // Låst medan barnet gör ett förhör: ingen tillbaka-pil eller meny.
     const fl = v.name === "forhor" && s && !s.kan_valja && (s.data.forhor || []).find((x) => x.id === v.forhor);
+    // AI-märkning (AI-förordningen art. 50 och AI-leverantörernas villkor): den som får svar från en AI ska veta det.
+    const aiVy = { fraga: "helt", hjalp: "helt", skriva: "helt", penna: "helt", handstil: "helt", plan: "helt", ovningsprov: "helt", coach: "helt", svaga: "delvis", matte: "delvis", lasflyt: "delvis" }[v.name];
+    if (aiVy && body) {
+      const djur = s?.meriter?.djur?.namn;
+      const vem = (v.name === "fraga" || v.name === "hjalp") && djur ? `${esc(djur)} svarar med hjälp av en AI, ett datorprogram och inte en riktig person.` : aiVy === "delvis" ? "Vissa delar här använder en AI, ett datorprogram." : "Svaren här kommer från en AI, ett datorprogram och inte en riktig person.";
+      body = `<div class="small ai-markning" style="background:var(--secondary-background-color,#f3f3f3);border-radius:8px;padding:6px 10px;margin-bottom:10px">🤖 ${vem} ${s?.kan_valja ? "Den kan ha fel. Kontrollera det viktiga." : "Den kan ha fel. Fråga en vuxen om något verkar konstigt."}</div>` + body;
+    }
+    // Introduktion för föräldrar: "Till dig som förälder" läses och kvitteras innan föräldrasidorna går att använda
+    // (en gång per förälder, och igen när texten ändras). Barnets egna vyer påverkas inte.
+    if (s?.kan_valja && s.foralder_info === false && v.name !== "foralderinfo" && v.name !== "aival") {
+      title = "👋 Välkommen till Läxspelet";
+      back = null;
+      body = this._foralderInfo(true);
+    }
     this._last = !!(fl && fl.status !== "klart" && (v.startad || fl.svar.length));
     if (this._last) back = null;
     this._back = back;
@@ -3528,6 +3550,8 @@ class SkolanPanel extends HTMLElement {
         `<button id="lattlast-vaxla">🔤 Läsa-lätt-läge: ${s.lattlast ? "på ✅" : "av"}</button>`])}
       ${s.kan_valja ? grupp("Föräldrar", [
         l({ name: "foralder" }, "⚙️", "Föräldrasidan"),
+        l({ name: "foralderinfo" }, "📘", "Kom igång"),
+        !f && l({ name: "aival" }, "🤖", "AI-tjänst"),
         l({ name: "rapport" }, "📊", "Veckorapport"),
         l({ name: "coach" }, "🧠", "Studiecoach"),
         l({ name: "veckobrev" }, "📸", "Meddelande eller veckobrev"),
@@ -3776,7 +3800,7 @@ class SkolanPanel extends HTMLElement {
     const k = this._s.skola;
     if (!k || !k.lank) return "";
     const kl = k.klass, kvar = kl ? Math.max(0, kl.hp - kl.skada) : 0;
-    const lararna = k.lararna || [], skolaNamn = lararna.find((x) => x.skola?.namn)?.skola.namn, mentor = lararna.find((x) => x.roll !== "amne");
+    const lararna = k.lararna || [], skolaNamn = lararna.find((x) => x.skola?.namn)?.skola.namn, mentor = lararna.find((x) => x.roll === "mentor");
     const amnesl = lararna.filter((x) => x.roll === "amne");
     return `<div class="card"><b>🏫 ${skolaNamn ? esc(skolaNamn) : "Klassen"}${k.larare?.klass ? ` · ${esc(k.larare.klass)}` : ""}</b>
       ${mentor || amnesl.length ? `<div class="small">${mentor ? `Mentor: <b>${esc(mentor.namn || "")}</b>` : ""}${amnesl.length ? `${mentor ? " · " : ""}${amnesl.map((x) => `${esc(x.amne || "Ämne")}: ${esc(x.namn || "")}`).join(" · ")}` : ""}</div>` : ""}
@@ -3799,11 +3823,23 @@ class SkolanPanel extends HTMLElement {
     const lararna = k.lararna || [];
     const larText = (id) => id === "mejl" ? (lararna.length ? (lararna.every((x) => x.inst?.mejl !== false) ? "✅ på" : "❌ av") : "inte kopplad (ditt val räcker)")
       : !lararna.length ? "inte kopplad än" : lararna.map((x) => `${esc(x.namn || "Läraren")} ${x.inst?.[id] ? "✅" : "❌"}`).join(" · ");
-    const roll = (x) => (x.roll === "amne" ? `ämneslärare${x.amne ? ` i ${esc(x.amne)}` : ""}` : `mentor${x.amne ? ` (${esc(x.amne)})` : ""}`);
-    const larKort = lararna.length ? `<div class="card"><b>🏫 ${esc(s.namn)}s lärare</b>
-        ${lararna.some((x) => x.behorighet) ? `<div class="small">${lararna.filter((x) => x.behorighet).map((x) => (x.behorighet.gammal ? `⚠️ ${esc(x.namn || "Läraren")} har en gammal lärarapp och får inget om ditt barn förrän den är uppdaterad` : `🔐 ${esc(x.namn || "Läraren")}: nivå ${x.behorighet.niva}${x.behorighet.rektor ? ` (beslutad av rektor ${esc(x.behorighet.rektor)})` : ""}`)).join(" · ")}. Nivå 0 = läraren får inga uppgifter om ditt barn, bara klassens summor.</div>` : ""}
-        <div class="small muted">Alla lärare synkar med samma klasslänk. Mentorn får allt du delar. En ämneslärare får bara sitt eget ämne i rapporter, statistik och studieteknik. Du kan ändra vad varje lärare får.</div>
-        ${lararna.map((x) => `<details class="sk-larare"><summary><b>${esc(x.namn || "Läraren")}</b> · ${roll(x)}${x.klass ? ` · ${esc(x.klass)}` : ""}${x.skola?.namn ? ` · ${esc(x.skola.namn)}` : ""}
+    // rollen har Läxspelet själv kontrollerat: mentor = rektorns beslut, ämneslärare = godkänd av mentorn
+    const orsak = { gammal: "har en gammal lärarapp", ingen_skola: "ingen skola godkänd än", skola_vantar: "väntar på att du godkänner skolan",
+      inget_intyg: "inget intyg från rektorn", ingen_roll: "väntar på rektorn eller mentorn" };
+    const roll = (x) => x.roll === "mentor" ? `mentor${x.verifierad?.klass ? ` för ${esc(x.verifierad.klass)}` : ""} <span class="muted">(rektorns beslut)</span>`
+      : x.roll === "amne" ? `ämneslärare i ${esc(x.amne)} <span class="muted">(godkänd av mentorn${x.verifierad?.mentor ? ` ${esc(x.verifierad.mentor)}` : ""})</span>`
+      : `<span class="muted">ingen roll: ${esc(orsak[x.verifierad?.orsak] || "nivå 0")}</span>`;
+    const sk = k.skolan || {}, fs = sk.forslag;
+    const skolKort = fs ? `<div class="card" style="border:2px solid var(--primary-color)"><b>🏫 ${fs.typ === "rektor" ? `Ny rektor på ${esc(fs.namn || "skolan")}` : `${esc(fs.namn || "En skola")} vill kopplas till ${esc(s.namn)}`}</b>
+        <div>Rektor: <b>${esc(fs.rektor_namn || "?")}</b>${fs.larare ? ` <span class="small muted">(via ${esc(fs.larare)})</span>` : ""}</div>
+        <div class="small muted">${fs.typ === "rektor" ? "Den rektor du godkände har lämnat över rollen (signerat). Godkänner du, är det den nya rektorn som bestämmer vad lärarna får göra." : fs.byte ? `⚠️ Du har redan godkänt ${esc(sk.namn || "en annan skola")}. Godkänner du den här byts skolan, och lärarna på den gamla får bara nivå 0.` : "Rektorn bestämmer vilka som är mentorer och vad lärarna får. Mentorn godkänner ämneslärarna. Du bestämmer ändå själv vad som delas med varje lärare."}
+          Kontrollera att det är barnets skola och rektor. Är du osäker, fråga skolan.</div>
+        <button class="primary" id="sk-skola-ok">✅ Godkänn</button> <button class="mini" id="sk-skola-nej">Neka</button></div>`
+      : sk.godkand ? `<div class="small">🏫 Godkänd skola: <b>${esc(sk.namn)}</b> · rektor ${esc(sk.rektor || "?")} <button class="mini" id="sk-skola-bort">Ta bort skolan</button></div>` : "";
+    const larKort = lararna.length || fs ? `<div class="card"><b>🏫 ${esc(s.namn)}s lärare</b>
+        ${skolKort}
+        <div class="small muted">Läxspelet kontrollerar själv varje lärare: rektorn utser mentorn, och mentorn godkänner ämneslärarna. Mentorn får det du delar. En ämneslärare får bara sina godkända ämnen i rapporter, statistik och studieteknik. Lärare utan roll får bara det som är nivå 0 (veckobrev, material och klassens summor). Du kan ändra vad varje lärare får.</div>
+        ${lararna.map((x) => `<details class="sk-larare"><summary><b>${esc(x.namn || "Läraren")}</b> · ${roll(x)}${x.skola?.namn ? ` · ${esc(x.skola.namn)}` : ""} · <span class="small">🔐 nivå ${x.behorighet?.niva ?? 0}</span>
             <span class="small muted"> · synkad ${esc((x.synkad || "").replace("T", " "))}</span></summary>
           ${k.funktioner.filter((fn) => fn.id !== "mejl").map((fn) => `<label class="kap-rad small"><input type="checkbox" data-sk-lf="${x.id}|${fn.id}" ${x.dela?.[fn.id] ? "checked" : ""} ${this._busy ? "disabled" : ""}> ${fn.ikon} ${esc(fn.namn)} ${x.inst?.[fn.id] ? "" : `<span class="muted">(läraren har den av)</span>`}</label>`).join("")}
           <button class="mini" data-sk-bort="${x.id}">Koppla bort ${esc(x.namn || "läraren")}</button></details>`).join("")}</div>` : "";
@@ -4721,6 +4757,102 @@ class SkolanPanel extends HTMLElement {
   }
 
   // Regler och meriter förklarade för barnen. Håll siffrorna i synk med meriter.py.
+  // Introduktion för föräldrar i fyra steg: 1) komplement, inte ersättning (kvitteras), 2) lägg till barnen, 3) lägg in läxor, 4) AI.
+  // Visas tills föräldern har gått igenom den (och igen när texten ändras), och finns sedan under ☰ Meny.
+  _foralderSteg() {
+    const s = this._s, n = esc(s.namn || "barnet"), f = this._hass?.fristaende, admin = this._hass?.user?.is_admin;
+    const rad = (ikon, text) => `<div class="info-rad">${ikon} ${text}</div>`;
+    const haInst = admin ? ` <a href="/config/integrations/integration/skolan" target="_top">Öppna Skolan i Inställningar ›</a>` : " (be den som är administratör i Home Assistant)";
+    return [
+      { ikon: "📘", rubrik: "Till dig som förälder", text: `
+        <p><b>Läxspelet är ett komplement. Det ersätter inte dig.</b> Det viktigaste i läxarbetet är fortfarande att du finns där: att du frågar hur det går, sitter med ibland, förhör och pratar om det ${n} läser och skriver.</p>
+        ${rad("🧑‍🧒", `<b>Var med.</b> Läxspelet kan påminna, förhöra och hålla koll, men det kan inte ersätta ett samtal med dig. Titta gärna tillsammans på veckorapporten och prata om den.`)}
+        ${rad("🤖", `<b>AI:n kan ha fel.</b> Husdjuret, hjälpläraren och rättningen använder AI. Den kan missförstå, förklara fel eller vara för snäll. Kontrollera det som är viktigt, särskilt inför prov.`)}
+        ${rad("⭐", `<b>Stjärnorna är ett medel, inte målet.</b> Spelet ska göra det roligare att plugga. Märker du att ${n} jagar stjärnor i stället för att lära sig, prata om det, eller stäng av delar under Föräldrasidan.`)}
+        ${rad("👩‍🏫", `<b>Skolan ansvarar för undervisningen.</b> Läxspelet ersätter inte kontakten med läraren, skolans lärplattform eller utvecklingssamtalet. Hör av dig till skolan som vanligt när något är svårt.`)}
+        ${rad("💛", `<b>Må bra går före.</b> Är ${n} trött, ledsen eller stressad är det okej att hoppa över en dag. En svit som bryts är inte farlig.`)}
+        ${rad("🔒", `<b>Du bestämmer vad som delas.</b> Inget delas med läraren förrän du har godkänt skolan, rektorn och varje funktion.`)}` },
+      { ikon: "🧒", rubrik: "Lägg till barnen", text: `
+        <p>${s.alla_barn?.length ? `Barn i Läxspelet nu: <b>${s.alla_barn.map((b) => esc(b.namn)).join(", ")}</b>.` : "Inga barn är tillagda än."}</p>
+        ${f ? rad("⚙️", `<b>☰ Meny → ⚙️ Inställningar</b>: lägg till barnet som en person med en egen PIN-kod (4–8 siffror).${f.installningar ? ` <button class="mini" id="ob-inst">⚙️ Öppna Inställningar</button>` : ""}`)
+            + rad("📱", `Barnet kan använda Läxspelet på sin egen telefon: <b>☰ Meny → 📱 Koppla en telefon</b> och skanna koden med telefonens kamera.`)
+          : rad("👤", `Varje barn behöver en egen <b>användare i Home Assistant</b> (inte administratör): Inställningar → Personer → Lägg till person, med inloggning.`)
+            + rad("⚙️", `Lägg sedan till barnet i Läxspelet: <b>Inställningar → Enheter och tjänster → Skolan → Konfigurera → Lägg till ett barn</b>. Välj barnets användare och gärna telefonen för notiser. Starta om Home Assistant efteråt.${haInst}`)
+            + rad("📱", `Barnet loggar in i Home Assistant-appen på sin telefon och hittar <b>Skolan</b> i sidomenyn.`)}` },
+      { ikon: "📥", rubrik: "Lägg in läxor", text: `
+        ${rad("🗓️", `<b>Börja med schemat:</b> ☰ Meny → 🗓️ Schema → fota schemat. Då skapas ämnena och lektionerna, och barnet ser vilken lärare som har ämnet.`)}
+        ${rad("📸", `<b>Meddelande eller veckobrev från skolan:</b> ☰ Meny → 📸 Meddelande eller veckobrev. Ta en skärmdump eller fota brevet, så föreslår AI:n läxorna. Du granskar innan något läggs in.`)}
+        ${rad("📥", `<b>En enskild läxa:</b> tryck <b>📥 Lägg in läxa</b> på startsidan, välj ämne och vad som ska göras (glosor, läsläxa, prov eller uppgift). Barnet kan också göra det själv.`)}
+        ${rad("📝", `<b>Glosor:</b> öppna ämnet och fota glosorna, så skapas en övning och ett förhör.`)}
+        ${rad("🏫", `<b>Lärare med Läxspelet Lärare</b> kan skicka veckobrev och material direkt. Det hamnar i din inkorg under ⚙️ Föräldrasidan → Skolan, och du godkänner först.`)}` },
+      { ikon: "🤖", rubrik: "Koppla på AI", text: `
+        <p>${s.har_ai ? "✅ <b>AI är påkopplad.</b>" : "❌ <b>Ingen AI är påkopplad än.</b> Utan AI fungerar inte glosor från foton, veckobrev, e-böcker, rättning av skrivuppgifter och husdjurets hjälp. Resten fungerar."}</p>
+        ${f ? rad("⚙️", `<b>☰ Meny → ⚙️ Inställningar → 🤖 AI</b>: välj AI-tjänst och klistra in en nyckel. Läs tjänstens villkor: flera tjänster kräver 18 år eller betald nivå för appar som barn använder (t.ex. Googles Gemini). En lokal AI på datorn skickar ingenting.${f.installningar ? ` <button class="mini" id="ob-inst2">⚙️ Öppna Inställningar</button>` : ""}`)
+          : rad("🤖", `<b>Enklast: ☰ Meny → 🤖 AI-tjänst.</b> Koppla in t.ex. Mistral (gratisplan, europeiskt företag) direkt i Läxspelet: skapa en nyckel, klistra in, testa och tryck Använd. <button class="mini" id="ob-aival">🤖 Öppna AI-tjänst</button>`)
+            + rad("🧩", `Eller använd en AI-integration i Home Assistant som kan göra <b>AI-uppgifter</b> (t.ex. Anthropic eller OpenAI) och välj den under Inställningar → Enheter och tjänster → Skolan → Konfigurera → AI-tjänst.${haInst} Googles Gemini får enligt Googles villkor inte användas i appar som barn använder.`)}
+        ${rad("🔐", `Det barnet skickar till AI-funktionerna (t.ex. ett foto av glosor) går till den AI-tjänst ni väljer, med er egen nyckel. Vissa gratisnivåer kan använda data för att förbättra tjänsten. <a href="https://github.com/lolander/Skolan/blob/main/docs/integritet.md" target="_blank" rel="noopener">Läs mer</a>`)}` },
+    ];
+  }
+
+  // Läxspelets egen AI-koppling (Home Assistant): t.ex. Mistral. Home Assistants AI används tills föräldern trycker "Använd".
+  _aiValView() {
+    const v = this._view;
+    if (!v.d && !v.hamtar) {
+      v.hamtar = true;
+      this._f("/api/skolan/ai").then((r) => r.json()).then((d) => { v.d = d; v.lev = v.lev || d.direkt?.leverantor || (d.leverantorer.find((x) => x.rek) || d.leverantorer[0]).id; v.hamtar = false; this._render(); })
+        .catch(() => { v.hamtar = false; });
+    }
+    const d = v.d;
+    if (!d) return `<p class="muted">Hämtar…</p>`;
+    const L = d.leverantorer, cur = L.find((x) => x.id === v.lev) || L[0], dir = d.direkt, sparad = dir?.leverantor === cur.id;
+    const nu = d.anvander === "direkt" ? `<b>${esc(dir.beskrivning)}</b> (Läxspelets egen koppling)` : d.anvander === "ha" ? `<b>${esc(d.ha.namn)}</b> (Home Assistants AI)` : "<b>ingen AI</b>";
+    return `<div class="card"><b>Läxspelet använder nu:</b> ${nu}
+        <div class="small muted">Här kan du koppla in en AI direkt i Läxspelet, t.ex. Mistral, som Home Assistant saknar. Den du använder nu fortsätter att fungera tills du trycker på <b>Använd</b>, och du kan alltid byta tillbaka.</div>
+        ${dir?.testad ? `<div class="actions">${dir.aktiv ? `<button class="ghost" data-ai-anvand="0" ${d.ha ? "" : "disabled"}>↩️ Använd Home Assistants AI igen</button>` : `<button class="primary" data-ai-anvand="1">✅ Använd ${esc(dir.beskrivning)}</button>`}</div>
+          <div class="small muted">${esc(dir.beskrivning)} testades ${esc((dir.testad || "").replace("T", " "))}.</div>` : ""}</div>
+      <div class="card"><b>Koppla in en AI</b>
+        <label class="small">AI-tjänst <select id="ai-lev">${L.map((x) => `<option value="${x.id}" ${x.id === cur.id ? "selected" : ""}>${esc(x.namn)}${x.rek ? " (rekommenderas)" : ""}</option>`).join("")}</select></label>
+        <div class="small">${esc(cur.info)}${cur.bild ? "" : " ⚠️ Kan inte läsa bilder."}</div>
+        ${cur.varning ? `<div class="small" style="color:var(--error-color,#c00)">⚠️ ${esc(cur.varning)}</div>` : ""}
+        ${cur.barn ? `<div class="small">🧒 ${esc(cur.barn)}</div>` : ""}
+        ${cur.kostnad_text ? `<div class="small">💰 ${esc(cur.kostnad_text)}</div>` : ""}
+        ${cur.data ? `<div class="small">🔒 ${esc(cur.data)}</div>` : ""}
+        ${cur.lank ? `<div class="small"><a href="${esc(cur.lank)}" target="_blank" rel="noopener">🔗 ${esc(cur.lank_text || "Öppna")} ↗</a></div>` : ""}
+        ${cur.nyckel || cur.grupp === "egen" ? `<label class="small">API-nyckel <input id="ai-nyckel" type="password" autocomplete="off" placeholder="${sparad && dir.har_nyckel ? "Nyckeln är sparad (lämna tomt för att behålla)" : "Klistra in nyckeln"}"></label>` : ""}
+        ${cur.lokal || cur.grupp === "egen" ? `<label class="small">Adress <input id="ai-url" value="${esc(cur.url)}"></label>` : ""}
+        <label class="small">Modell <input id="ai-modell" value="${esc(v.modell || (sparad ? dir.modell : "") || cur.modell)}"></label>
+        ${v.modeller?.length ? `<select id="ai-modell-val"><option value="">Välj bland ${v.modeller.length} modeller…</option>${v.modeller.map((m) => `<option>${esc(m)}</option>`).join("")}</select>` : ""}
+        <div class="actions"><button class="ghost" id="ai-hamta" ${this._busy ? "disabled" : ""}>🔍 Hämta modeller</button><button class="primary" id="ai-spara" ${this._busy ? "disabled" : ""}>Testa och spara</button></div>
+        <div class="small muted">Testet kollar att AI:n svarar och kan läsa bilder. Nyckeln sparas bara i er Home Assistant och visas aldrig igen.</div></div>`;
+  }
+
+  async _aiAct(body, ok) {
+    const v = this._view;
+    if (this._busy) return;
+    this._busy = true; this._render();
+    try {
+      const res = await this._f("/api/skolan/ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const svar = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(svar.message || res.statusText);
+      if (svar.modeller) v.modeller = svar.modeller; else { v.d = svar; this._s.har_ai = svar.anvander !== "ingen"; }
+      this._msg = { type: svar.varning ? "info" : "ok", text: svar.varning || ok };
+    } catch (e) { this._msg = { type: "error", text: String(e.message || e) }; }
+    this._busy = false; this._render();
+  }
+
+  _foralderInfo(guide) {
+    const steg = this._foralderSteg();
+    if (!guide) return steg.map((x) => `<div class="card"><b>${x.ikon} ${x.rubrik}</b>${x.text}</div>`).join("")
+      + (this._s.foralder_info === false ? `<div class="actions"><button class="primary" id="ob-borja">👋 Gå igenom introduktionen</button></div>` : `<p class="small muted">✅ Du har gått igenom introduktionen.</p>`);
+    const i = Math.min(this._obSteg || 0, steg.length - 1), x = steg[i];
+    return `<div class="small muted">Steg ${i + 1} av ${steg.length} · ${steg.map((y, j) => `<span style="${j === i ? "font-weight:bold;color:var(--primary-color)" : ""}">${y.ikon}</span>`).join(" ")}</div>
+      <div class="card" style="border:2px solid var(--primary-color)"><b>${x.ikon} ${x.rubrik}</b>${x.text}
+      ${i === 0 ? `<label class="kap-rad"><input type="checkbox" id="fi-forstar" ${this._obForstar ? "checked" : ""}> Jag förstår att Läxspelet är ett komplement och att jag som förälder fortfarande är viktigast i läxarbetet.</label>` : ""}</div>
+      <div class="actions">${i > 0 ? `<button class="ghost" id="ob-bak">‹ Tillbaka</button>` : ""}
+        ${i < steg.length - 1 ? `<button class="primary" id="ob-nasta">Nästa ›</button>` : `<button class="primary" id="fi-ok">✅ Klart, nu börjar vi</button>`}</div>
+      <p class="small muted">Allt det här finns sedan under ☰ Meny → 📘 Kom igång.</p>`;
+  }
+
   _infoView() {
     const kort = (ikon, rubrik, rader) => `<div class="info-kort"><h3>${ikon} ${rubrik}</h3>${rader.map((r) => `<div class="info-rad">${r}</div>`).join("")}</div>`;
     const p = (n) => `<b class="plus">+${n} ⭐</b>`;
@@ -6792,6 +6924,7 @@ class SkolanPanel extends HTMLElement {
             (a) => `
           <button class="card amne" style="--c:${a.farg}" data-open-amne="${a.id}">
             <div class="amne-namn">${esc(a.namn)}</div>
+            ${this._s.amnes_larare?.[a.id] ? `<div class="small">👩‍🏫 ${esc(this._s.amnes_larare[a.id].namn)}</div>` : ""}
             <div class="muted small">${esc(amneRad(a))}</div>
           </button>`
           )
@@ -6883,6 +7016,11 @@ class SkolanPanel extends HTMLElement {
       </div>`;
   }
 
+  _amneLarare(a) {
+    const l = this._s.amnes_larare?.[a.id];
+    return l ? `<div class="small" style="margin:-4px 0 8px">👩‍🏫 Lärare: <b>${esc(l.namn)}</b> <span class="muted">${l.kalla === "skolan" ? "(från skolan)" : "(från schemat)"}</span></div>` : "";
+  }
+
   _amneView(a) {
     const d = delarFor(a);
     const del = {
@@ -6912,6 +7050,7 @@ class SkolanPanel extends HTMLElement {
     // Listor i delar som är avslagna syns ändå om det finns något i dem, så inget försvinner.
     const gomda = Object.keys(LISTTYP).filter((typ) => !d.includes(typ) && a.glosor.some((g) => gTyp(g) === typ));
     return `
+      ${this._amneLarare(a)}
       ${d.map((id) => del[id]()).join("")}
       ${gomda.map((typ) => this._listSektion(a, typ)).join("")}
       <div class="actions">
@@ -8205,6 +8344,36 @@ class SkolanPanel extends HTMLElement {
       mejl_dagar: [...r.querySelectorAll("[data-sk-dag]")].filter((x) => x.checked).map((x) => Number(x.dataset.skDag)) }, "Sparat ✅"));
     on("#sk-smtp", () => this._skolaAct({ op: "smtp", server: $("#smtp-server")?.value, port: $("#smtp-port")?.value, anvandare: $("#smtp-anv")?.value, fran: $("#smtp-fran")?.value, losen: $("#smtp-losen")?.value }, "E-posten är inställd ✅"));
     on("#sk-test", () => this._skolaAct({ op: "mejl_test", till: $("#sk-test-till")?.value || "" }, "Testmejlet är skickat 📧"));
+    $("#ai-lev")?.addEventListener("change", (e) => { this._view.lev = e.target.value; this._view.modell = ""; this._view.modeller = []; this._render(); });
+    $("#ai-modell-val")?.addEventListener("change", (e) => { if (e.target.value) { this._view.modell = e.target.value; $("#ai-modell").value = e.target.value; } });
+    const aiBody = () => ({ leverantor: this._view.lev, nyckel: $("#ai-nyckel")?.value || "", modell: $("#ai-modell")?.value || "", url: $("#ai-url")?.value || "" });
+    on("#ai-hamta", () => this._aiAct({ op: "modeller", ...aiBody() }, "Modellerna är hämtade."));
+    on("#ai-spara", () => this._aiAct({ op: "spara", ...aiBody() }, "Det fungerar! Tryck på Använd när ni vill byta."));
+    r.querySelectorAll("[data-ai-anvand]").forEach((b) => b.addEventListener("click", () => this._aiAct({ op: "anvand", pa: b.dataset.aiAnvand === "1" },
+      b.dataset.aiAnvand === "1" ? "Nu använder Läxspelet den nya AI:n." : "Nu använder Läxspelet Home Assistants AI igen.")));
+    on("#ob-nasta", () => {
+      if ($("#fi-forstar")) {
+        this._obForstar = $("#fi-forstar").checked;
+        if (!this._obForstar) { this._msg = { type: "error", text: "Bocka i rutan först." }; return this._render(); }
+      }
+      this._obSteg = (this._obSteg || 0) + 1; this._render();
+    });
+    on("#ob-aival", () => this._go({ name: "aival" }));
+    on("#ob-bak", () => { this._obSteg = Math.max(0, (this._obSteg || 0) - 1); this._render(); });
+    on("#ob-borja", () => { this._obSteg = 0; this._go({ name: "hem" }); });
+    ["#ob-inst", "#ob-inst2"].forEach((id) => on(id, () => this._hass?.fristaende?.installningar?.()));
+    on("#fi-ok", async () => {
+      try {
+        const res = await this._f("/api/skolan/foralder_info", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        if (!res.ok) throw new Error(res.statusText);
+        this._s.foralder_info = true;
+        this._msg = { type: "ok", text: "Välkommen! Introduktionen finns alltid under ☰ Meny → 📘 Kom igång." };
+      } catch (e) { this._msg = { type: "error", text: String(e.message || e) }; }
+      this._render();
+    });
+    on("#sk-skola-ok", () => this._skolaAct({ op: "skolan_godkann" }, "Skolan är godkänd."));
+    on("#sk-skola-nej", () => { if (confirm("Neka? Lärarna från den skolan får bara nivå 0, och du blir inte tillfrågad igen om samma rektor.")) this._skolaAct({ op: "skolan_neka" }, "Nekad."); });
+    on("#sk-skola-bort", () => { if (confirm("Ta bort skolan? Alla lärare får bara nivå 0 tills du godkänner en skola igen.")) this._skolaAct({ op: "skolan_bort" }, "Skolan är borttagen."); });
     on("#sk-koppla-bort", () => { if (confirm("Koppla bort alla lärare? Klasslänken byts ut och lärarna behöver koppla in eleven igen.")) this._skolaAct({ op: "koppla_bort" }, "Lärarna är bortkopplade."); });
     r.querySelectorAll("[data-sk-bort]").forEach((b) => b.addEventListener("click", () => { if (confirm("Koppla bort den här läraren? Hen kan inte synka med eleven längre. De andra lärarna påverkas inte.")) this._skolaAct({ op: "koppla_bort", larare: b.dataset.skBort }, "Läraren är bortkopplad."); }));
     r.querySelectorAll("[data-sk-lf]").forEach((b) => b.addEventListener("change", () => { const [lid, fn] = b.dataset.skLf.split("|"); this._skolaAct({ op: "installningar", larare: lid, [fn]: b.checked }); }));

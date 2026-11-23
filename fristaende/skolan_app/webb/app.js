@@ -124,12 +124,10 @@ function forstaStart() {
         <div class="rad"><input id="namn" placeholder="Namn" maxlength="30"><select id="roll"><option value="barn">Barn</option><option value="foralder">Förälder</option></select></div>
         <div class="rad"><input id="pin1" placeholder="PIN-kod" inputmode="numeric" maxlength="8"><button id="lagg">Lägg till</button></div>
       </div>
-      <div class="kort"><h2 style="margin-top:0">🤖 AI-nyckel (rekommenderas)</h2>
-        <p class="liten">Läxspelet använder Googles AI Gemini för att läsa glosor från foton, göra förhör och e-böcker. Nyckeln är gratis:
-        <a class="knapp-lank" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">🔗 Skapa gratis nyckel i Google AI Studio ↗</a><br>
-        Logga in med ett vanligt Google-konto och tryck ”Create API key”. Inget betalkort behövs, och ett AI-abonnemang behövs inte. Du kan lägga in nyckeln senare också.
-        Vill ni hellre använda en annan AI (Claude, ChatGPT, Mistral, en lokal AI på datorn m.fl.) väljer ni det under Inställningar.</p>
-        <input id="gemini" placeholder="Klistra in nyckeln (valfritt)"></div>
+      <div class="kort"><h2 style="margin-top:0">🤖 AI (väljs efter installationen)</h2>
+        <p class="liten">Läxspelet använder en AI för att läsa glosor från foton, göra förhör och e-böcker. Ni väljer den under <b>☰ Meny → ⚙️ Inställningar → 🤖 AI</b> när Läxspelet har startat.
+        Vi rekommenderar <b>Anthropic Claude</b>, som tillåter appar som barn använder, eller en <b>lokal AI</b> på datorn, där ingenting lämnar hemmet.
+        Googles Gemini får enligt Googles villkor inte användas i appar som barn använder.</p></div>
       <div class="fel">${esc(fel)}</div>
       <button class="primar" id="klar">Klart, starta Läxspelet</button></div>`;
     $("#lagg").addEventListener("click", () => {
@@ -142,7 +140,7 @@ function forstaStart() {
     rot.querySelectorAll("[data-bort]").forEach((b) => b.addEventListener("click", () => { personer.splice(+b.dataset.bort, 1); rita(); }));
     $("#klar").addEventListener("click", async () => {
       try {
-        await api("/app/installera", { personer, gemini: $("#gemini").value.trim() });
+        await api("/app/installera", { personer });
         rot.innerHTML = `<div class="mitt"><h1>🎉 Klart!</h1><p>Läxspelet startar…</p></div>`;
         setTimeout(() => location.reload(), 2500);
       } catch (e) { rita(e.message); }
@@ -171,7 +169,7 @@ async function installning(info) {
   let s, up, aiv = null;
   const aiKort = () => {
     const L = s.leverantorer || [];
-    aiv = aiv || { lev: s.ai_val?.leverantor || "gemini", modell: s.ai_val?.modell || "", url: s.ai_val?.url || "", nyckel: "", modeller: [] };
+    aiv = aiv || { lev: s.ai_val?.leverantor || (L.find((x) => x.rek) || L[0] || {}).id, modell: s.ai_val?.modell || "", url: s.ai_val?.url || "", nyckel: "", modeller: [] };
     const cur = L.find((x) => x.id === aiv.lev) || L[0];
     const sparad = s.ai_val?.leverantor === cur.id;
     const GRUPP = { moln: "☁️ I molnet", lokal: "🏠 Lokalt på datorn (inget lämnar hemmet)", egen: "🔧 Egen" };
@@ -182,12 +180,14 @@ async function installning(info) {
       <details class="liten ai-forklaring"><summary><b>Vad är en API-nyckel, och räcker vårt AI-abonnemang?</b></summary>
         <p>Läxspelet pratar med AI:n åt er. För det behövs en <b>API-nyckel</b>: en lång kod som visar att det är ni. Den skapar ni själva hos AI-företaget på någon minut och klistrar in här.</p>
         <p><b>Ett vanligt abonnemang räcker inte</b>, varken ChatGPT Plus, Claude Pro eller ett Gemini-abonnemang. API:t är en egen tjänst med egen betalning.</p>
-        <p><b>Enklast och gratis:</b> välj Google Gemini, tryck på knappen, logga in med ett vanligt Google-konto och tryck ”Create API key”. Inget betalkort behövs.</p>
+        <p><b>Barn och villkor:</b> AI-företagen har egna regler för appar som barn använder. Anthropic, OpenAI och Mistral tillåter det med förälderns samtycke och skyddsåtgärder. Googles Gemini tillåter det inte. En lokal AI skickar ingenting från datorn. Läs mer i <a href="https://github.com/lolander/Skolan/blob/main/docs/efterlevnad.md" target="_blank" rel="noopener">regelverken</a>.</p>
         <p>De som kostar betalar man per användning, i förväg och utan månadsavgift. För en familj brukar det bli några kronor i månaden, beroende på modell. Välj en liten, snabb modell så blir det billigast.</p>
         <p>Nyckeln sparas bara på den här datorn och skickas bara till AI-företaget ni väljer.</p></details>
       <div class="rad"><select id="ai-lev">${Object.entries(GRUPP).map(([g, t]) => `<optgroup label="${t}">${L.filter((x) => x.grupp === g).map((x) => `<option value="${x.id}" ${x.id === cur.id ? "selected" : ""}>${(KOST[x.kostnad] || KOST.egen)[0]} ${esc(x.namn)}${x.rek ? " (rekommenderas)" : ""}</option>`).join("")}</optgroup>`).join("")}</select></div>
       <div class="ai-hjalp">
         <p class="liten">${esc(cur.info)}${cur.bild ? "" : " ⚠️ Kan inte läsa bilder."}${cur.pdf ? "" : " PDF-filer behöver fotas av."}</p>
+        ${cur.varning ? `<p class="liten fel">⚠️ ${esc(cur.varning)}</p>` : ""}
+        ${cur.barn ? `<p class="liten">🧒 ${esc(cur.barn)}</p>` : ""}
         <p class="liten"><b>${k[0]} ${k[1]}.</b> ${esc(cur.kostnad_text || "")}</p>
         ${cur.abonnemang ? `<p class="liten">💳 ${esc(cur.abonnemang)}</p>` : ""}
         ${cur.data ? `<p class="liten">🔒 ${esc(cur.data)}</p>` : ""}

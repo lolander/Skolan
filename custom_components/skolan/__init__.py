@@ -42,7 +42,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from . import backup, boende, dagens, extra, hjarngympa, intressen, larare, packa, fraga, meriter, penna, plugg, schemavy, skola, skriv, skrivkrav, tillsammans, utveckling, vanner
+from . import ai_lev, backup, boende, dagens, extra, hjarngympa, intressen, larare, packa, fraga, meriter, penna, plugg, schemavy, skola, skriv, skrivkrav, tillsammans, utveckling, vanner
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -152,6 +152,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
 
     await hass.async_add_executor_job(_mk)
     hass.data[DOMAIN] = {
+        "ai_inst": await hass.async_add_executor_job(_load_fil, base / AI_FIL),  # Läxspelets egen AI-koppling (t.ex. Mistral)
         "conf": conf,
         "base": base,
         "tmp": tmp,
@@ -164,7 +165,7 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "www"), False)]
     )
-    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, BackupView, HemkopplingView, HemView, FjarrView, BoendeView, SyskonView, PackaView, ExtraView, HjarnView, IntresseView, UtvecklingView, LarareView, SamtalView, KlockaView, PlanKalenderView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetBildView, WidgetBildHamtaView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, VanAdressView, VanAdressbokView, TillsammansView, VanTillsammansView, SkolaView, KlassView):
+    for view in (StateView, ActionView, GlosstridView, LarView, FragaView, HjalpView, PlanView, HandstilView, SkrivView, PennaView, BackupView, HemkopplingView, HemView, FjarrView, BoendeView, SyskonView, PackaView, ExtraView, HjarnView, IntresseView, UtvecklingView, LarareView, SamtalView, KlockaView, PlanKalenderView, UploadView, FileView, GlosorReadView, EbokView, UtskriftView, ForhorView, UppdragView, VeckobrevView, LektionView, SchemaSidaView, KalenderView, UttalView, InspelningView, WidgetView, WidgetBildView, WidgetBildHamtaView, WidgetNyckelView, WidgetInstallView, ExempelView, VannerView, VanPublikView, VanForfraganView, VanAdressView, VanAdressbokView, TillsammansView, VanTillsammansView, SkolaView, KlassView, ForalderInfoView, AiView):
         hass.http.register_view(view())
 
     async def _starta_grind(_event: Event | None = None) -> None:
@@ -302,8 +303,46 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
 
     senast_klocka: dict[str, str] = {}
 
+    async def _topplista_sensor() -> None:
+        """Veckans topplista som sensor (för t.ex. en knapp på hemmets skärmar)."""
+
+        def _rakna() -> list[dict]:
+            ut = []
+            for b in hass.data[DOMAIN]["conf"]["barn"]:
+                d = _load(_dir(hass, b["id"]))
+                v, s = meriter.veckoresultat(d), meriter.sammanfattning(d)
+                djur = s.get("djur") or {}
+                ut.append({
+                    "namn": b["namn"], "poang": v["poang"], "andel": v["andel"], "klara": v["klara"], "antal": v["antal"],
+                    "forbattring": v["forbattring"], "bonus": v["bonus"], "stjarnor_veckan": s["veckan"],
+                    "svit": s["streak"], "gjort_idag": s["streak_idag"], "niva": s["niva"]["niva"], "niva_namn": s["niva"]["namn"],
+                    "titel": meriter.titel(d), "karta_niva": meriter.karta_kort(d)["niva"],
+                    "husdjur": (djur.get("art") or "") + " " + (djur.get("namn") or ""), "_nyckel": meriter.topp_nyckel(v),
+                })
+            return sorted(ut, key=lambda x: x["_nyckel"], reverse=True)
+
+        try:
+            lista = await hass.async_add_executor_job(_rakna)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Skolan: topplista: %s", err)
+            return
+        if not lista:
+            return
+        etta = lista[0]
+        lika = len(lista) > 1 and lista[1]["_nyckel"] == etta["_nyckel"]
+        for i, x in enumerate(lista):
+            x["plats"] = i + 1
+            x.pop("_nyckel")
+        state = "Ingen än" if etta["poang"] == 0 else ("Lika" if lika else etta["namn"])
+        hass.states.async_set("sensor.skolan_topplista", state, {
+            "friendly_name": "Läxspelet topplista", "icon": "mdi:trophy",
+            "ledare": None if state in ("Ingen än", "Lika") else etta["namn"],
+            "poang": etta["poang"], "lista": lista, "vecka": dt_util.now().isocalendar()[1],
+        })
+
     async def _klockor(_now=None) -> None:
         """Svit, stjärnor, dagens utmaning och husdjuret som sensorer, och till barnets Awtrix-klocka."""
+        await _topplista_sensor()
         for b in hass.data[DOMAIN]["conf"]["barn"]:
             try:
                 data = await hass.async_add_executor_job(_load, _dir(hass, b["id"]))
@@ -1308,6 +1347,7 @@ class StateView(HomeAssistantView):
                 "kalender": {"antal": len(data.get("skolkalender", []))} if data.get("skolkalender") else None,
                 "lag": lag_st, "lagstrid": meriter.lagstrid_status(data), "lag_marken": meriter.LAG_MARKEN,
                 "skola": await _skola_status(hass, barn, parent) if skola.PA else None,
+                "amnes_larare": skola.amnes_larare(await hass.async_add_executor_job(skola.las, _dir(hass, barn)), data),
                 "lag_lista": (await hass.async_add_executor_job(_load_fil, _lag_fil(hass))).get("lag", []) if parent else None,
                 "barn_lista": [{"id": b["id"], "namn": b["namn"]} for b in conf["barn"]] if parent else None,
                 "lag_van_val": await hass.async_add_executor_job(_lag_van_val, hass) if parent and vanner.pa() else None,
@@ -1331,6 +1371,8 @@ class StateView(HomeAssistantView):
                 "barn": barn,
                 "namn": next(b["namn"] for b in conf["barn"] if b["id"] == barn),
                 "kan_valja": parent,
+                "har_ai": bool(_ai_entitet(hass)) and getattr(hass, "ai", True) is not None if parent else None,  # Windowsappen: hass.ai är None utan vald AI
+                "foralder_info": (await hass.async_add_executor_job(_load_fil, hass.data[DOMAIN]["base"] / "foralder_info.json")).get(user.id) == FORALDER_INFO_VER if parent else None,
                 "user_id": user.id,
                 "alla_barn": [{"id": b["id"], "namn": b["namn"]} for b in conf["barn"] if not request.get("skolan_bara_barn") or b["id"] == barn] if parent else [],
                 "data": _ut(data, parent),
@@ -1394,13 +1436,13 @@ class LarView(HomeAssistantView):
         vad = {"begrepp": "begreppet", "formler": "formeln"}.get(typ, "ordet")
         hist = "\n".join(f"{'Barnet' if x.get('vem') == 'barn' else 'Du'}: {str(x.get('text') or '')[:400]}" for x in historik)
         hist += f"\nBarnet: {text}"
-        entity = hass.data[DOMAIN]["conf"].get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+        entity = _ai_entitet(hass)
         if not entity:
             return self.json_message("Ingen AI finns i Home Assistant.", 503)
         instr = LAR_PROMPT.format(djur=d.get("namn") or "Husdjuret", art=d.get("art") or "🐾", vad=vad, term=term, facit=facit, historik=hist,
                                   sista="Det här är sista rundan: om förklaringen fortfarande inte stämmer, berätta snällt vad det betyder. " if runda >= LAR_RUNDOR else "")
         try:
-            resp = await hass.services.async_call("ai_task", "generate_data", {"task_name": "Läxspelet lär husdjuret", "entity_id": entity, "instructions": instr},
+            resp = await _ai_anrop(hass,"ai_task", "generate_data", {"task_name": "Läxspelet lär husdjuret", "entity_id": entity, "instructions": instr},
                                                   blocking=True, return_response=True)
             raw = (resp or {}).get("data")
             x = _parse_json(raw if isinstance(raw, str) else json.dumps(raw))
@@ -1473,13 +1515,13 @@ class FragaView(HomeAssistantView):
         historik = [x for x in (body.get("historik") or []) if isinstance(x, dict)][-8:]
         hist = "\n".join(f"{'Barnet' if x.get('vem') == 'barn' else 'Du'}: {str(x.get('text') or '')[:400]}" for x in historik)
         hist += f"\nBarnet: {text}"
-        entity = hass.data[DOMAIN]["conf"].get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+        entity = _ai_entitet(hass)
         if not entity:
             return self.json_message("Ingen AI finns i Home Assistant.", 503)
         namn = next((b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn), "")
         instr = FRAGA_PROMPT.format(djur=d.get("namn") or "Husdjuret", art=d.get("art") or "🐾", namn=namn, guide=fraga.SPELGUIDE, lage=lage, historik=hist) + intressen.prompt_rad(data)
         try:
-            resp = await hass.services.async_call("ai_task", "generate_data", {"task_name": "Läxspelet fråga husdjuret", "entity_id": entity, "instructions": instr},
+            resp = await _ai_anrop(hass,"ai_task", "generate_data", {"task_name": "Läxspelet fråga husdjuret", "entity_id": entity, "instructions": instr},
                                                   blocking=True, return_response=True)
             raw = (resp or {}).get("data")
             x = _parse_json(raw if isinstance(raw, str) else json.dumps(raw))
@@ -3715,7 +3757,7 @@ class ExempelView(HomeAssistantView):
         if rakna.get(barn, 0) >= EXEMPEL_PER_DAG:
             return self.json_message("Nu har AI:n gjort många meningar idag. Försök igen imorgon!", 429)
         conf = hass.data[DOMAIN]["conf"]
-        entity = conf.get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+        entity = _ai_entitet(hass)
         if not entity:
             return self.json_message("Ingen AI-uppgift finns i Home Assistant.", 500)
         svensk = sprak.lower() in SVENSKA
@@ -3727,7 +3769,7 @@ class ExempelView(HomeAssistantView):
         )
         rakna[barn] = rakna.get(barn, 0) + 1
         try:
-            resp = await hass.services.async_call(
+            resp = await _ai_anrop(hass,
                 "ai_task", "generate_data", {"task_name": "Läxspelet exempelmening", "entity_id": entity, "instructions": instr},
                 blocking=True, return_response=True,
             )
@@ -4122,11 +4164,11 @@ class GlosorReadView(HomeAssistantView):
         await hass.async_add_executor_job(tmp.write_bytes, content)
 
         conf = hass.data[DOMAIN]["conf"]
-        entity = conf.get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+        entity = _ai_entitet(hass)
         if not entity:
             return self.json_message("Ingen AI-uppgift finns i Home Assistant.", 500)
         try:
-            resp = await hass.services.async_call(
+            resp = await _ai_anrop(hass,
                 "ai_task",
                 "generate_data",
                 {
@@ -4190,7 +4232,7 @@ async def _ai_las(hass: HomeAssistant, src: Path | list[Path], prompt: str, task
     """Kopiera filen (eller filerna, t.ex. flera skärmdumpar av samma brev) till tillfälliga mediafiler,
     låt AI:n läsa dem i samma fråga och radera kopiorna."""
     conf = hass.data[DOMAIN]["conf"]
-    entity = conf.get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+    entity = _ai_entitet(hass)
     if not entity:
         raise RuntimeError("Ingen AI-uppgift finns i Home Assistant.")
     kallor = src if isinstance(src, list) else [src]
@@ -4205,7 +4247,7 @@ async def _ai_las(hass: HomeAssistant, src: Path | list[Path], prompt: str, task
     if len(kallor) > 1:
         prompt = f"Du får {len(kallor)} bilder/filer som hör ihop (t.ex. flera skärmdumpar eller sidor av samma dokument). Läs dem tillsammans som ETT dokument. " + prompt
     try:
-        resp = await hass.services.async_call(
+        resp = await _ai_anrop(hass,
             "ai_task",
             "generate_data",
             {"task_name": task_name, "entity_id": entity, "instructions": prompt, "attachments": bilagor},
@@ -5669,11 +5711,11 @@ class UppdragView(HomeAssistantView):
         try:
             b = _find(_find(data["amnen"], u["amne"])["bocker"], u["bok"])
             conf = hass.data[DOMAIN]["conf"]
-            entity = conf.get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+            entity = _ai_entitet(hass)
             n = 3 if len(u["sidor"]) < 15 else 4
             for forsok in range(3):
                 try:
-                    resp = await hass.services.async_call(
+                    resp = await _ai_anrop(hass,
                         "ai_task", "generate_data",
                         {"task_name": "Skolan kontrollfrågor", "entity_id": entity,
                          "instructions": FRAGE_PROMPT.format(bok=b["namn"], amne=u["amne_namn"], n=n, text=text[:12000])},
@@ -6019,11 +6061,115 @@ def _kal_fil(hass: HomeAssistant) -> Path:
     return hass.data[DOMAIN]["base"] / "kalendrar.json"
 
 
+# ---------- AI: Home Assistants ai_task eller Läxspelets egen koppling ----------
+# Föräldern kan koppla in en AI direkt i Läxspelet (t.ex. Mistral, som Home Assistant saknar). Den används först när
+# föräldern har testat den och tryckt på "Använd"; annars används Home Assistants AI-uppgift som förut.
+AI_FIL = "ai.json"  # {leverantor, nyckel, modell, url, aktiv}. Nyckeln visas aldrig i appen.
+AI_DIREKT = "skolan.direkt"
+
+
+def _ai_direkt(hass: HomeAssistant, inst: dict | None = None) -> ai_lev.AI | None:
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    d = inst if inst is not None else (hass.data[DOMAIN].get("ai_inst") or {})
+    if (inst is None and not d.get("aktiv")) or d.get("leverantor") not in ai_lev.LEVERANTORER:
+        return None
+    return ai_lev.AI(d, lambda: async_get_clientsession(hass))
+
+
+def _ai_entitet(hass: HomeAssistant) -> str | None:
+    if _ai_direkt(hass):
+        return AI_DIREKT
+    return hass.data[DOMAIN]["conf"].get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+
+
+async def _ai_anrop(hass: HomeAssistant, domain: str, service: str, data: dict, blocking: bool = True, return_response: bool = True) -> dict:
+    """Som hass.services.async_call("ai_task", "generate_data", ...), men går till Läxspelets egen AI när den är vald."""
+    ai = _ai_direkt(hass)
+    if ai:
+        return await ai.generate_data(data, str(hass.data[DOMAIN]["tmp"].parent))
+    return await hass.services.async_call(domain, service, {**data, "entity_id": data.get("entity_id") if data.get("entity_id") != AI_DIREKT else None},
+                                          blocking=blocking, return_response=return_response)
+
+
+class AiView(HomeAssistantView):
+    """Föräldern kopplar in Läxspelets egen AI (t.ex. Mistral), testar den och väljer när den ska användas."""
+
+    url = "/api/skolan/ai"
+    name = "api:skolan:ai"
+
+    def _foralder(self, request: web.Request) -> HomeAssistant:
+        hass: HomeAssistant = request.app["hass"]
+        if request["hass_user"].id not in hass.data[DOMAIN]["conf"]["foraldrar"]:
+            raise web.HTTPForbidden
+        return hass
+
+    def _status(self, hass: HomeAssistant) -> dict:
+        d = hass.data[DOMAIN].get("ai_inst") or {}
+        ent = hass.data[DOMAIN]["conf"].get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+        st = hass.states.get(ent) if ent else None
+        ai = _ai_direkt(hass, d) if d.get("leverantor") else None
+        return {"anvander": "direkt" if d.get("aktiv") and ai else "ha" if ent else "ingen",
+                "ha": {"entitet": ent, "namn": (st.attributes.get("friendly_name") if st else None) or ent} if ent else None,
+                "direkt": {"leverantor": d.get("leverantor"), "modell": ai.modell if ai else "", "beskrivning": ai.beskrivning if ai else "",
+                           "har_nyckel": bool(d.get("nyckel")), "testad": d.get("testad"), "aktiv": bool(d.get("aktiv"))} if d.get("leverantor") else None,
+                "leverantorer": ai_lev.publik_lista()}
+
+    async def get(self, request: web.Request) -> web.Response:
+        return self.json(self._status(self._foralder(request)))
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass = self._foralder(request)
+        body = await request.json()
+        op = body.get("op")
+        fil = hass.data[DOMAIN]["base"] / AI_FIL
+        gammal = dict(hass.data[DOMAIN].get("ai_inst") or {})
+        try:
+            if op in ("spara", "modeller"):
+                lev = body.get("leverantor")
+                if lev not in ai_lev.LEVERANTORER:
+                    raise ValueError("Välj en AI-tjänst.")
+                nyckel = str(body.get("nyckel") or "").strip() or (gammal.get("nyckel", "") if gammal.get("leverantor") == lev else "")
+                url = str(body.get("url") or "").strip()
+                if url and not url.startswith(("http://", "https://")):
+                    raise ValueError("Adressen ska börja med http:// eller https://")
+                ny = {"leverantor": lev, "nyckel": nyckel, "modell": str(body.get("modell") or "").strip()[:120], "url": url[:300]}
+                test = _ai_direkt(hass, ny)
+                if op == "modeller":
+                    try:
+                        return self.json({"modeller": await test.modeller()})
+                    except Exception as err:  # noqa: BLE001
+                        raise ValueError(f"Kunde inte hämta modeller: {err}") from err
+                try:
+                    res = await test.testa()
+                except Exception as err:  # noqa: BLE001
+                    raise ValueError(f"AI:n fungerade inte: {err}") from err
+                ny.update({"aktiv": bool(gammal.get("aktiv")) and gammal.get("leverantor") == lev, "testad": dt_util.now().isoformat(timespec="minutes")})
+                hass.data[DOMAIN]["ai_inst"] = ny
+                await hass.async_add_executor_job(_save_fil, fil, ny)
+                return self.json({**self._status(hass), "varning": res.get("varning")})
+            if op == "anvand":  # byt mellan Home Assistants AI och Läxspelets egen
+                pa = bool(body.get("pa"))
+                if pa and not (gammal.get("leverantor") and gammal.get("testad")):
+                    raise ValueError("Testa och spara AI:n först.")
+                gammal["aktiv"] = pa
+                hass.data[DOMAIN]["ai_inst"] = gammal
+                await hass.async_add_executor_job(_save_fil, fil, gammal)
+            elif op == "ta_bort":
+                hass.data[DOMAIN]["ai_inst"] = {}
+                await hass.async_add_executor_job(lambda: fil.unlink(missing_ok=True))
+            else:
+                raise ValueError("Okänd åtgärd.")
+        except ValueError as err:
+            return self.json_message(str(err), 400)
+        return self.json(self._status(hass))
+
+
 async def _ai_text(hass: HomeAssistant, prompt: str, task_name: str) -> str:
-    entity = hass.data[DOMAIN]["conf"].get("ai_task_entity") or next((s.entity_id for s in hass.states.async_all("ai_task")), None)
+    entity = _ai_entitet(hass)
     if not entity:
         raise RuntimeError("Ingen AI-uppgift finns i Home Assistant.")
-    resp = await hass.services.async_call("ai_task", "generate_data", {"task_name": task_name, "entity_id": entity, "instructions": prompt},
+    resp = await _ai_anrop(hass,"ai_task", "generate_data", {"task_name": task_name, "entity_id": entity, "instructions": prompt},
                                           blocking=True, return_response=True)
     text = (resp or {}).get("data")
     return text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
@@ -6842,6 +6988,28 @@ async def _skola_status(hass: HomeAssistant, barn: str, foralder: bool) -> dict:
     return st
 
 
+FORALDER_INFO_VER = "1"  # höj när "Till dig som förälder" ändras, så att föräldrarna läser den igen
+
+
+class ForalderInfoView(HomeAssistantView):
+    """Föräldern kvitterar "Till dig som förälder": Läxspelet är ett komplement och ersätter inte föräldern."""
+
+    url = "/api/skolan/foralder_info"
+    name = "api:skolan:foralder_info"
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        user = request["hass_user"]
+        if user.id not in hass.data[DOMAIN]["conf"]["foraldrar"]:
+            raise web.HTTPForbidden
+        fil = hass.data[DOMAIN]["base"] / "foralder_info.json"
+        async with _vlock(hass, "foralder_info"):
+            d = await hass.async_add_executor_job(_load_fil, fil)
+            d[user.id] = FORALDER_INFO_VER
+            await hass.async_add_executor_job(_save_fil, fil, d)
+        return self.json({"ok": True})
+
+
 class SkolaView(HomeAssistantView):
     """Inställningar för skolan (förälder): vad som är på, lärarens e-post, inkorgen med veckobrev."""
 
@@ -6953,6 +7121,10 @@ class SkolaView(HomeAssistantView):
                         skola.satt_installningar(s, body)
                     elif op == "koppla_bort":
                         skola.koppla_bort(s, str(body.get("larare") or "") or None)
+                    elif op in ("skolan_godkann", "skolan_neka"):  # föräldern godkänner skolan och rektorn (eller en ny rektor)
+                        skola.skolan_beslut(s, op == "skolan_godkann")
+                    elif op == "skolan_bort":
+                        skola.skolan_bort(s)
                     elif op in ("inkorg_klar", "inkorg_avvisa"):
                         b = next((x for x in s["inkorg"] if x["id"] == body.get("id")), None)
                         if b:
@@ -7030,7 +7202,8 @@ class KlassView(HomeAssistantView):
         if not hitta:
             raise web.HTTPNotFound
         try:
-            body = json.loads(await request.content.read(skola.MAX_FILER_PER_SYNK * 2))  # veckobrev, material och prov kan ha filer
+            raw = await request.content.read(skola.MAX_FILER_PER_SYNK * 2)  # veckobrev, material och prov kan ha filer
+            body = json.loads(raw)
             if not isinstance(body, dict):
                 raise ValueError
         except ValueError:
@@ -7043,7 +7216,8 @@ class KlassView(HomeAssistantView):
                     return self.json({"fel": "Föräldern har inte slagit på något för läraren än."}, status_code=403)
                 data = await hass.async_add_executor_job(_load, mapp)
                 try:
-                    svar = skola.ta_emot(s, data, hitta["namn"], body, plugg.studieteknik(data, fraga.alder(data)))
+                    svar = skola.ta_emot(s, data, hitta["namn"], body, plugg.studieteknik(data, fraga.alder(data)),
+                                         raw, request.headers.get("X-Laxspelet-Signatur", ""))
                 except PermissionError as err:
                     return self.json({"fel": str(err)}, status_code=409)
                 except ValueError as err:
@@ -7054,6 +7228,19 @@ class KlassView(HomeAssistantView):
                     await hass.async_add_executor_job((mapp / "filer" / namn).write_bytes, innehall)
                 await hass.async_add_executor_job(skola.spara, mapp, s)
                 vantar = [x for x in s["inkorg"] if x.get("status") == "ny"]
+                forslag = svar.pop("_forslag", None)
+                sk_f = (s.get("skolan") or {}).get("forslag") or {}
+                lar_namn = (s["lararna"].get(str(body.get("larar_id") or "")[:40]) or {}).get("namn") or "En lärare"
+        if forslag:  # skolan, en ny rektor eller en ny lärare: föräldern ska veta (och godkänna skola och rektor)
+            rubrik, text = {
+                "skola": (f"🏫 {sk_f.get('namn') or 'En skola'} vill kopplas till {hitta['namn']}",
+                          f"Rektor: {sk_f.get('rektor_namn') or '?'} (via {lar_namn}). Lärarna får inget om {hitta['namn']} förrän du har godkänt skolan i Läxspelet → Föräldrar → Skolan."),
+                "rektor": (f"🏫 Ny rektor på {sk_f.get('namn') or 'skolan'}",
+                           f"{sk_f.get('rektor_namn') or '?'} har tagit över efter den rektor du godkände. Godkänn i Läxspelet → Föräldrar → Skolan."),
+                "larare": (f"👩‍🏫 Ny lärare för {hitta['namn']}", f"{lar_namn} har kopplat sig till {hitta['namn']}. Du ser lärarens roll och kan koppla bort i Läxspelet → Föräldrar → Skolan."),
+            }.get(forslag, ("", ""))
+            for tjanst in hass.data[DOMAIN]["conf"].get("foralder_notify", {}).values():
+                await _notis(hass, tjanst, rubrik, text, f"/skolan?barn={hitta['id']}")
         if svar.get("nya_veckobrev"):  # något nytt från läraren väntar på förälderns godkännande
             typer = {"veckobrev": "veckobrev", "material": "studiematerial", "prov": "provresultat", "schema": "schema", "riktlinje": "riktlinje till AI:n"}
             vad = ", ".join(sorted({typer.get(x.get("typ", "veckobrev"), "meddelande") for x in vantar[-svar["nya_veckobrev"]:]}))

@@ -122,6 +122,50 @@ def godta_policy(nu: dict | None, ny: dict, skola_id: str) -> bool:
     return ny["ver"] == 1 and _sig_ok(ny, str(ny.get("rektor_pub") or ""))
 
 
+# ---------- intyg till familjerna (från 0.12.0) ----------
+# Familjens Läxspelet litar inte på det lärarappen säger om sig själv. Den kräver:
+# - ett INTYG från rektorn: vem läraren är (id + publik nyckel), behörigheterna och vilka klasser läraren är mentor för,
+# - för en ämneslärare ett GODKÄNNANDE från elevens mentor: ämnen, klass och vilka elever (alla eller några),
+# - att varje synk är signerad med lärarens nyckel.
+# Föräldern godkänner skolan och rektorn en gång. Byter skolan rektor följer en signerad KEDJA med (gammal → ny),
+# och föräldern godkänner den nya rektorn. Intyg och godkännanden gäller GILTIG sekunder och förnyas automatiskt.
+GILTIG = 45 * 24 * 3600
+FORNYA = 7 * 24 * 3600
+
+
+def signera(d: dict, priv: str) -> dict:
+    return signera_policy(d, priv)
+
+
+def sig_ok(d: dict, pub: str) -> bool:
+    return isinstance(d, dict) and _sig_ok(d, pub)
+
+
+def signera_bytes(priv: str, data: bytes) -> str:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    return _b64(Ed25519PrivateKey.from_private_bytes(_ub64(priv)).sign(data))
+
+
+def intyg(policy: dict, skola_namn: str, lid: str, namn: str, pub: str, priv: str) -> dict:
+    """Rektorns intyg för en lärare (priv = rektorns nyckel)."""
+    return signera({"typ": "intyg", "skola": policy["skola"], "skola_namn": skola_namn, "rektor_namn": policy.get("rektor_namn") or "",
+                    "rektor_pub": policy["rektor_pub"], "lid": lid, "namn": namn, "pub": pub,
+                    "ratt": rensa_ratt(policy.get("larare", {}).get(lid, policy.get("standard"))),
+                    "mentor": list((policy.get("mentorer") or {}).get(lid) or []), "tid": round(time.time(), 3)}, priv)
+
+
+def godkannande(skola_id: str, klass: str, mentor_lid: str, lid: str, pub: str, namn: str, amnen: list[str], elever: list[str] | None, priv: str) -> dict:
+    """Mentorns godkännande av en ämneslärare (priv = mentorns nyckel). elever = None betyder hela klassen."""
+    return signera({"typ": "amneslarare", "skola": skola_id, "klass": klass, "mentor": mentor_lid, "lid": lid, "pub": pub, "namn": namn,
+                    "amnen": amnen, "elever": elever, "tid": round(time.time(), 3)}, priv)
+
+
+def kedjelank(skola_id: str, fran_pub: str, till_pub: str, till_namn: str, priv: str) -> dict:
+    """Rektorn lämnar över: signerat av den gamla rektorn."""
+    return signera({"typ": "rektor", "skola": skola_id, "fran": fran_pub, "till": till_pub, "namn": till_namn, "tid": round(time.time(), 3)}, priv)
+
+
 def ny_policy(skola_id: str, rektor_lid: str, rektor_namn: str, rektor_pub: str, priv: str) -> dict:
     p = {"skola": skola_id, "ver": 1, "rektor": rektor_lid, "rektor_namn": rektor_namn, "rektor_pub": rektor_pub,
          "standard": niva_ratt(0), "larare": {}, "beslut": [{"tid": time.strftime("%Y-%m-%d %H:%M"), "av": rektor_namn,

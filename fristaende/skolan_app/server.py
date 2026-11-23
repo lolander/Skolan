@@ -299,7 +299,9 @@ class App:
                 self.konto.ta_bort(str(body.get("id")))
                 omstart = True
             elif op in ("ai", "ai_modeller"):
-                lev = body.get("leverantor") if body.get("leverantor") in ai_mod.LEVERANTORER else "gemini"
+                lev = body.get("leverantor")
+                if lev not in ai_mod.LEVERANTORER:
+                    raise ValueError("Välj en AI-tjänst.")
                 nyckel = str(body.get("nyckel") or "").strip()
                 gammal = inst.get("ai") or {}
                 if not nyckel and gammal.get("leverantor") == lev:  # samma leverantör: behåll sparad nyckel

@@ -19,4 +19,5 @@ säkerhetsmeddelandet om hen vill.
 - Ingen server och ingen insamling: data finns bara hos familjen och på lärarens dator. Se [integritetspolicyn](docs/integritet.md).
 - Installationsfilerna byggs av GitHub Actions från den här koden, har ett SHA-256-fingeravtryck och signeras (se [kodsignering](docs/kodsignering.md)).
 - Komponentlista (SBOM, CycloneDX) för lärarappen finns bland filerna på varje release.
-- Lärarappen: krypterad synk (AES-256-GCM), signerade rektorsbeslut (Ed25519), data krypterad med Windows-kontot (DPAPI). Mer i [information till skolor](docs/larare-skolor.md).
+- Lärarappen: krypterad synk (AES-256-GCM), signerade rektorsbeslut (Ed25519), data krypterad med Windows-kontot (DPAPI).
+- Lärare ↔ familj: varje synk signeras av lärarappen (Ed25519). Familjens app kontrollerar själv rektorns intyg och mentorns godkännande och kräver att vårdnadshavaren har godkänt skolan och rektorn. Mer i [information till skolor](docs/larare-skolor.md) och [regelverken i Sverige](docs/efterlevnad.md).

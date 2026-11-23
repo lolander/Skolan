@@ -1,8 +1,8 @@
 # Läxspelet Lärare: information till skolor, IT och dataskyddsombud
 
-*Gäller Läxspelet Lärare 0.11.0 och senare. Senast uppdaterad: 20 november 2026.*
+*Gäller Läxspelet Lärare 0.12.0 och Läxspelet 1.98.0 och senare. Senast uppdaterad: 23 november 2026.*
 
-**Snabbt:** [Kom igång på nivå 0 (en sida)](larare-niva0.md) · [Prova appen utan att installera](https://lolander.github.io/Skolan/demo/) · [Mallar i Word](mallar/) · [IT-paket](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-IT.zip) · [Säkerhet](../SECURITY.md)
+**Snabbt:** [Kom igång på nivå 0 (en sida)](larare-niva0.md) · [Regelverken i Sverige](efterlevnad.md) · [Prova appen utan att installera](https://lolander.github.io/Skolan/demo/) · [Mallar i Word](mallar/) · [IT-paket](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-IT.zip) · [Säkerhet](../SECURITY.md)
 
 Det här dokumentet är till för rektorer, IT-avdelningar och dataskyddsombud. Läs det **innan** appen installeras på skolans datorer. Det beskriver vad appen gör, vilka uppgifter den hanterar, hur spärrarna fungerar och hur skolan själv bestämmer nivån. Dokumentet är ett underlag för skolans egen bedömning och ersätter inte den. Huvudmannen (kommunen eller friskolan) är alltid personuppgiftsansvarig för skolans behandling av elevuppgifter.
 
@@ -18,6 +18,7 @@ Källkoden är öppen (MIT-licens): https://github.com/lolander/Skolan (mappen `
 | **Var finns data** | Bara på lärarens dator. Ingen server, inget moln, inget konto hos utvecklaren. Utvecklaren får aldrig någon data. |
 | **AI** | Lärarappen använder ingen AI och skickar inget till någon AI-tjänst. |
 | **Personuppgifter** | Som standard **inga** (nivå 0). Nivå 1 och 2 måste beslutas av skolans rektor i appen, och skolans IT kan låsa en högsta nivå per dator. |
+| **Roller** | Rektorn utser mentorer per klass. Mentorn godkänner ämneslärarna (ämnen, och hela klassen eller vissa elever). Familjens app kontrollerar själv de signerade besluten. En lärare utan roll får bara nivå 0 hos familjerna. |
 | **Familjen bestämmer också** | Varje funktion fungerar bara när både läraren och vårdnadshavaren har slagit på den. Vårdnadshavaren kan när som helst stänga av eller koppla bort läraren. |
 | **Mobiler i skolan** | Behövs inte. Vårdnadshavaren skickar en länk till läraren, till exempel med e-post. |
 | **Installation** | Per användare utan administratör, eller för alla användare av IT. Grupprincipmall (ADMX) och Intune-instruktioner finns. |
@@ -64,6 +65,14 @@ Rektorn kan också välja enskilda funktioner i stället för en hel nivå. Ett 
 - Alla beslut sparas i en **beslutslogg** (tid, vem, vad och grund) som kan laddas ner som Excel/CSV, till exempel till dataskyddsombudet eller för diarieföring.
 - **När en nivå sänks** tar lärarens app genast bort kopior av elevuppgifter som inte längre är tillåtna, och namnen ersätts med "Familj N". Lärarens egna anteckningar och provresultat döljs och skickas inte längre. Läraren ser hur många de är och kan radera dem.
 
+### Mentorer och ämneslärare
+Från lärarappen 0.12.0 bestämmer lärarna inte själva vilken roll de har hos familjerna.
+- **Rektorn utser mentorn** för varje klass (🔐 Behörighet → Varje lärare → Mentor för klass). Beslutet signeras och hamnar i beslutsloggen.
+- **Mentorn godkänner ämneslärarna** för sin klass (🔐 Behörighet → Ämneslärare för klassen): vilka ämnen, och hela klassen eller bara vissa elever (till exempel språkval). Godkännandet signeras med mentorns nyckel. Mentorn tar bort det när läraren slutar undervisa klassen.
+- **Familjens Läxspelet kontrollerar själv** rektorns intyg och mentorns godkännande. En ämneslärare får uppgifter bara i de godkända ämnena och bara om de godkända eleverna. Den som inte har någon roll får bara det som är nivå 0, oavsett vilken nivå rektorn har gett.
+- **Vårdnadshavaren godkänner skolan och rektorn** första gången, och igen om rektorn byts. Rektorsbytet är signerat av den förra rektorn.
+- Intyg och godkännanden gäller i högst **45 dagar** och förnyas automatiskt när rektorns och mentorns appar är igång.
+
 ### Skolans IT kan låsa en högsta nivå
 IT kan sätta en högsta nivå per dator med grupprinciper eller Intune. Den gäller **oavsett vad rektorn beslutar** (se avsnitt 7). Kommunen kan alltså till exempel bestämma att alla datorer har högst nivå 0 tills en konsekvensbedömning är gjord.
 
@@ -74,6 +83,8 @@ IT kan sätta en högsta nivå per dator med grupprinciper eller Intune. Den gä
 Familjens Läxspelet körs hemma hos familjen och ingår inte i skolans system.
 - Varje funktion är **av** tills vårdnadshavaren slår på den. Den fungerar bara när både vårdnadshavaren och läraren har den på.
 - Vårdnadshavaren kan välja olika för olika lärare och kan koppla bort en lärare eller alla lärare. Klasslänken byts då och den gamla slutar fungera.
+- Vårdnadshavaren godkänner skolan och rektorn innan någon lärare får mer än nivå 0, och igen om skolan byter rektor.
+- Läxspelet visar för varje lärare vilken roll skolan har gett: mentor (rektorns beslut), ämneslärare i vissa ämnen (mentorns godkännande) eller ingen roll.
 - Allt läraren skickar (veckobrev, material, provresultat, riktlinjer) hamnar i vårdnadshavarens inkorg och läggs in först när vårdnadshavaren har godkänt det.
 - Lappar och underlag till utvecklingssamtal skickas bara när vårdnadshavaren själv väljer det. Vårdnadshavaren ser exakt vad som skickas.
 - Om läraren har nivå 0 skickar familjens Läxspelet inte barnets namn, elev-id eller lista över lärare alls.
@@ -91,6 +102,8 @@ Familjens Läxspelet körs hemma hos familjen och ingår inte i skolans system.
 | Synk med kollegor | Krypterad med AES-256-GCM och signerad med HMAC-SHA256, med en nyckel som bara skolans lärare har. Meddelanden äldre än 15 minuter godtas inte. |
 | Gå med i skolan | Kräver en kod som gäller i 7 dagar. Högst 10 felaktiga försök per timme och adress. Skolans nyckel skickas krypterad med koden och aldrig i klartext. |
 | Rektorsbeslut | Signerade med Ed25519 (se avsnitt 3). |
+| Synk till familjen | Signerad med lärarappens egen nyckel (Ed25519) och högst 15 minuter gammal. Familjens app knyter nyckeln till läraren vid första synken och godtar sedan bara den. |
+| Roller | Rektorns intyg (behörighet, mentor för klasser) och mentorns godkännande av ämneslärare är signerade (Ed25519) och gäller högst 45 dagar. Familjens app sparar det senaste, så att sänkta behörigheter och borttagna godkännanden slår igenom. |
 | Familjens Läxspelet | Nås bara via HTTPS med en hemlig nyckel i länken. Länkar till privata adresser godtas inte. |
 | Uppdateringar | Hämtas från projektets GitHub-sida. Appen installerar bara filer vars SHA-256-fingeravtryck stämmer. IT kan stänga av automatiska uppdateringar (se avsnitt 7). |
 | Ingen insamling | Ingen telemetri, ingen analys, ingen reklam, inga konton. |
@@ -100,6 +113,9 @@ Familjens Läxspelet körs hemma hos familjen och ingår inte i skolans system.
 - **Komponentlista:** varje version har en SBOM (CycloneDX) med alla bibliotek som följer med. Säkerhetsbrister rapporteras enligt [SECURITY.md](../SECURITY.md).
 - Mappen `%APPDATA%\SkolanLarare\filer` (PDF och foton som läraren laddar upp) och loggfilen `larare.log` är **inte** krypterade. Lägg inte känsliga dokument där.
 - DPAPI skyddar mot att någon läser filen från en stulen dator eller ett annat konto. Det skyddar inte mot den som är inloggad som läraren. Använd skolans vanliga skydd: skärmlås och diskkryptering (BitLocker).
+- **Fördröjning när något dras in:** sänker rektorn en behörighet eller tar mentorn bort ett godkännande, slår det igenom hos en familj nästa gång någon av skolans lärare synkar med familjen. Synkar ingen annan lärare kan ett gammalt intyg gälla i högst 45 dagar.
+- **Rektorns app behöver startas** minst var femte vecka (till exempel efter sommarlovet). Annars går intygen ut och lärarna får nivå 0 hos familjerna tills rektorns app har varit igång.
+- **Familjer utan Nabu Casa** når lärarappen via en Cloudflare-tunnel. Trafiken är krypterad men passerar Cloudflare, som tekniskt kan läsa den. Det är ytterligare ett skäl att inte skriva personuppgifter i veckobrev och material.
 - Appen sänder en kort signal på det lokala nätverket (UDP 8770) med skolans id, lärarens id och port, så att kollegornas appar hittar varandra. Signalen innehåller inga elevuppgifter.
 
 ---
@@ -178,7 +194,8 @@ Första gången appen startas, och när reglerna ändras, måste läraren läsa 
 1. **Börja med nivå 0.** Inga personuppgifter om elever behandlas. Se [Kom igång på nivå 0](larare-niva0.md). Sätt gärna `MaxNiva = 0` centralt med grupprincipmallen.
 2. **Låt en lärare prova** under en termin, frivilligt för familjerna och parallellt med skolans lärplattform.
 3. **Vill skolan använda nivå 1 eller 2:** gör en bedömning med dataskyddsombudet (bilaga B och [exemplet i Word](mallar/Konsekvensbedomning-exempel.docx)), för in behandlingen i registerförteckningen (bilaga A), informera vårdnadshavarna (bilaga D) och fatta ett rektorsbeslut (bilaga C). Alla finns som [Word-mallar](mallar/). Rektorn ger sedan behörigheten i appen och skriver beslutets diarienummer som grund. IT höjer `MaxNiva` på de datorer det gäller.
-4. **Underlag från appen:** 🔐 Behörighet → 🧾 Skapa underlag ger en utskrivbar sida med skolans faktiska inställningar, lärarnas nivåer, registerförteckningen och beslutsloggen, utan elevuppgifter. Bifoga den till beslutet.
+4. **Utse mentorer:** rektorn anger vilka klasser varje mentor har. Mentorerna godkänner sedan ämneslärarna för sina klasser.
+5. **Underlag från appen:** 🔐 Behörighet → 🧾 Skapa underlag ger en utskrivbar sida med skolans faktiska inställningar, lärarnas nivåer, registerförteckningen och beslutsloggen, utan elevuppgifter. Bifoga den till beslutet.
 
 ---
 
@@ -191,7 +208,7 @@ Första gången appen startas, och när reglerna ändras, måste läraren läsa 
 | Kategorier av registrerade | Elever, lärare | Elever, vårdnadshavare (det de skriver), lärare |
 | Kategorier av uppgifter | Namn, grupptillhörighet, schema | Som nivå 1, och studievanor, provresultat, lärarens anteckningar och vårdnadshavarens lappar |
 | Mottagare | Elevens vårdnadshavare (via familjens app) | Som nivå 1, och elevens mentor på skolan |
-| Överföring till tredje land | Nej. Lärarappen skickar inget till molntjänster. | Nej |
+| Överföring till tredje land | Lärarappen skickar inget till molntjänster. Familjer som använder Läxspelets gratistunnel tar emot synken via Cloudflare (USA, EU–US Data Privacy Framework), som tekniskt kan läsa trafiken. Med Nabu Casa är den krypterad hela vägen. Se [regelverken](efterlevnad.md#överföring-till-tredje-land-dataskyddsförordningen-kapitel-v). | Som nivå 1 |
 | Lagring | Lärarens dator, krypterad (DPAPI) | Som nivå 1 |
 | Gallring | Enligt skolans dokumenthanteringsplan, med funktionen "Radera klassens data" | Som nivå 1 |
 | Säkerhetsåtgärder | Se avsnitt 5 | Se avsnitt 5 |
@@ -200,6 +217,7 @@ Första gången appen startas, och när reglerna ändras, måste läraren läsa 
 
 - Behövs nivå 1 eller 2 för ändamålet, eller räcker nivå 0 (klassens insikt utan namn)?
 - Vilka lärare behöver vilken nivå? (Ämneslärare behöver ofta bara nivå 1.)
+- Vem är mentor för vilka klasser, och hur ser mentorerna till att bara rätt ämneslärare godkänns, för rätt elever (till exempel språkval)? Hur tas godkännanden bort när en lärare slutar?
 - Elever är barn och därför särskilt skyddsvärda. Det är vårdnadshavaren som väljer vad som delas, och delningen är frivillig. Hur informeras vårdnadshavarna (bilaga D)?
 - Finns risk att uppgifter omfattas av sekretess, till exempel anteckningar om hälsa eller stöd? Ge i så fall inte rätten "Anteckningar om elever", eller ge tydliga instruktioner.
 - Är lärarnas datorer krypterade (BitLocker) och har de skärmlås?
@@ -225,7 +243,11 @@ Första gången appen startas, och när reglerna ändras, måste läraren läsa 
 > **Läxspelet och skolan**
 > Vissa lärare på skolan använder Läxspelet Lärare för att skicka veckobrev, glosor och studiematerial direkt till familjer som använder Läxspelet hemma. Det är frivilligt och ersätter inte [skolans lärplattform], där all information också finns.
 >
+> Första gången en lärare från skolan kopplar sig frågar Läxspelet om du godkänner [skolans namn] och rektor [namn]. Rektorn utser ditt barns mentor, och mentorn godkänner ämneslärarna. Läxspelet visar vilken roll varje lärare har.
+>
 > Du bestämmer själv i Läxspelet vad som delas med läraren. Allt är avstängt tills du slår på det, och du kan stänga av eller koppla bort läraren när du vill. Det läraren skickar läggs in först när du har godkänt det.
+>
+> Läxspelet är ett komplement. Det ersätter varken ditt stöd i läxarbetet eller skolans undervisning och kontakten med läraren.
 >
 > [Om skolan använder nivå 0:] Läraren får inga uppgifter om ditt barn, bara hela klassens summor (till exempel vilka glosor många missar), och först när minst fem familjer är med.
 >

@@ -4,6 +4,8 @@
 
 **En läxapp för barn, inbyggd i Home Assistant.** Barnen övar glosor, gör förhör, läser högt och samlar meriter. Föräldrarna följer allt och godkänner det som görs utanför appen. Allt sparas lokalt hemma hos dig.
 
+> 💛 **Ett komplement, inte en ersättning.** Läxspelet hjälper barnet att plugga, men ersätter inte föräldern i läxarbetet och inte skolan. Föräldrar läser och kvitterar [Till dig som förälder](docs/integritet.md#ett-komplement-inte-en-ersättning) innan de börjar.
+
 *A homework app for kids, built into Home Assistant. The app is in Swedish.*
 
 ## Det här kan Skolan
