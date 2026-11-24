@@ -363,6 +363,7 @@ class Klass:
                 "inst_val": self.d["inst"], "funktioner": FUNKTIONER,
                 "larar_id": self.d["larar_id"], "regler_last": self.d.get("regler_last") == REGLER_VER, "regler_tid": self.d.get("regler_tid"),
                 "intro_klar": bool(self.d.get("intro_klar")), "ar_rektor": self.skola.ar_rektor(),
+                "anmalningar_sjalv": (self.d.get("anmalningar_sjalv") or [])[::-1],
                 "rektor_kvitterat": (self.d.get("rektor_kvittens") or {}).get("ver") == REKTOR_VER, "rektor_kvittens_tid": (self.d.get("rektor_kvittens") or {}).get("tid"),
                 "behorighet": self.behorighet(), "insikt": self.insikt() if self.far("insikt") else None,
                 "amne": self.d.get("amne", ""), "roll": self.skola.min_roll()["roll"] or "", "skola": self.skola.publik(), "provkalender": self.skola.provkalender(),
@@ -484,6 +485,13 @@ class Klass:
         kanda_lappar = {x["id"] for x in e.get("lappar", [])}
         for x in (svar.get("fran_foraldern") or [])[:20]:  # lappar och samtalsunderlag, godkända av föräldern
             if not isinstance(x, dict) or not str(x.get("id") or "").isalnum():
+                continue
+            if x.get("typ") == "anmalan":  # 🚩 till rektorn; den här läraren lämnar den bara vidare
+                hur = self.skola.anmalan_in(x)
+                if hur == "rektor":
+                    self.logga("anmalan", "🚩 En vårdnadshavare har anmält en misstanke om en lärare. Se 🏫 Skolan.")
+                elif hur == "sjalv":
+                    self.logga("anmalan", "🚩 En vårdnadshavare har skickat en anmälan som ska lämnas till rektorn eller huvudmannen. Se 🏫 Skolan.")
                 continue
             if x.get("typ") == "lapp" and x["id"] not in kanda_lappar and self.far("lapp"):
                 lp = {"id": str(x["id"])[:20], "tid": str(x.get("tid") or "")[:16], "namn": str(x.get("namn") or "")[:60], "text": str(x.get("text") or "")[:2000]}
@@ -770,6 +778,8 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                 asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
             elif op == "skola_last":
                 klass.skola.last_meddelanden()
+            elif op == "anmalan_hanterad":  # rektorn noterar vad som gjorts med en anmälan
+                klass.skola.anmalan_hanterad(str(body.get("id") or ""), str(body.get("text") or ""))
             elif op == "anteckning_ny":
                 e = next(x for x in d["elever"] if x["id"] == body.get("elev"))
                 klass.skola.skriv_anteckning(e, str(body.get("amne") or ""), str(body.get("text") or ""))

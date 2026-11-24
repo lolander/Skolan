@@ -2,9 +2,9 @@
 
 *Lärarrummet hette tidigare Läxspelet Lärare. Filnamn och grupprincipnycklar har kvar det gamla namnet (Laxspelet-Larare, LaxspeletLarare).*
 
-*Gäller Lärarrummet 0.12.0 och Läxspelet 1.98.0 och senare. Senast uppdaterad: 23 november 2026.*
+*Gäller Lärarrummet 0.13.2 och Läxspelet 1.99.1 och senare. Senast uppdaterad: 24 november 2026.*
 
-**Snabbt:** [Kom igång på nivå 0 (en sida)](larare-niva0.md) · [Regelverken i Sverige](efterlevnad.md) · [Prova appen utan att installera](https://lolander.github.io/Skolan/demo/) · [Mallar i Word](mallar/) · [IT-paket](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-IT.zip) · [Säkerhet](../SECURITY.md)
+**Snabbt:** [Barnets trygghet](trygghet.md) · [Kom igång på nivå 0 (en sida)](larare-niva0.md) · [Regelverken i Sverige](efterlevnad.md) · [Prova appen utan att installera](https://lolander.github.io/Skolan/demo/) · [Mallar i Word](mallar/) · [IT-paket](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-IT.zip) · [Säkerhet](../SECURITY.md)
 
 Det här dokumentet är till för rektorer, IT-avdelningar och dataskyddsombud. Läs det **innan** appen installeras på skolans datorer. Det beskriver vad appen gör, vilka uppgifter den hanterar, hur spärrarna fungerar och hur skolan själv bestämmer nivån. Dokumentet är ett underlag för skolans egen bedömning och ersätter inte den. Huvudmannen (kommunen eller friskolan) är alltid personuppgiftsansvarig för skolans behandling av elevuppgifter.
 
@@ -106,6 +106,8 @@ Familjens Läxspelet körs hemma hos familjen och ingår inte i skolans system.
 | Gå med i skolan | Kräver en kod som gäller i 7 dagar. Högst 10 felaktiga försök per timme och adress. Skolans nyckel skickas krypterad med koden och aldrig i klartext. |
 | Rektorsbeslut | Signerade med Ed25519 (se avsnitt 3). |
 | Synk till familjen | Signerad med lärarappens egen nyckel (Ed25519) och högst 15 minuter gammal. Familjens app knyter nyckeln till läraren vid första synken och godtar sedan bara den. |
+| Förälderns godkännande | En ny lärare får ingenting (inget om eleven, inget till eleven) förrän vårdnadshavaren uttryckligen har godkänt just den läraren. Eleven kan inte själv koppla in en lärare. Se [Barnets trygghet](trygghet.md). |
+| Anmälan till rektorn | Vårdnadshavaren kan anmäla en misstanke om en lärare i Läxspelet. Läraren spärras direkt hos familjen och anmälan går via skolans andra lärare till rektorn, som ser den under 🏫 Skolan. Den anmälda läraren får den aldrig. |
 | Roller | Rektorns intyg (behörighet, mentor för klasser) och mentorns godkännande av ämneslärare är signerade (Ed25519) och gäller högst 45 dagar. Familjens app sparar det senaste, så att sänkta behörigheter och borttagna godkännanden slår igenom. |
 | Skolkonto (frivilligt) | Läraren kan verifiera sig med skolkontot hos Microsoft eller Google (bara namn och e-post). Intyget är knutet till lärarappens nyckel och kontrolleras av familjens app mot Microsofts och Googles publika nycklar. Privata konton godtas inte, och intyget gäller i 100 dagar. Det visar ett konto i organisationen, inte lärarlegitimation. IT kan behöva godkänna appen en gång, se [Verifiering med skolkonto](skolkonto.md). |
 | Familjens Läxspelet | Nås bara via HTTPS med en hemlig nyckel i länken. Länkar till privata adresser godtas inte. |

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lärarrummet för skolor</title>
+<meta name="description" content="Allt rektor, IT och dataskyddsombud behöver för att bedöma och godkänna Lärarrummet.">
+<style>
+:root{--bg:#f4f5fb;--kort:#fff;--text:#1c2340;--muted:#5f6585;--acc:#3949ab;--acc-bg:#3949ab;--rand:#dfe2f0;--ok:#1b5e20;--ok-bg:#e8f5e9}
+@media (prefers-color-scheme: dark){:root{--bg:#141726;--kort:#1f2338;--text:#e8eaf6;--muted:#a3a9c6;--acc:#9aa5e0;--acc-bg:#3949ab;--rand:#2e3352;--ok:#a5d6a7;--ok-bg:#1d3320}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc)}
+header{background:var(--acc-bg);color:#fff;padding:40px 16px 32px}
+header a{color:#fff}
+.inner{max-width:960px;margin:0 auto;padding:0 16px}
+header .inner{padding:0}
+h1{font-size:30px;margin:0 0 8px}
+header p{margin:0;font-size:18px;max-width:680px}
+main{padding:24px 0 48px}
+section{margin:0 0 28px}
+h2{font-size:22px;margin:0 0 12px}
+h3{font-size:17px;margin:0 0 6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.kort{background:var(--kort);border:1px solid var(--rand);border-radius:14px;padding:16px}
+.kort p{margin:4px 0 0}
+.muted{color:var(--muted)}
+.steg{counter-reset:s;list-style:none;padding:0;margin:0;display:grid;gap:12px}
+.steg>li{background:var(--kort);border:1px solid var(--rand);border-radius:14px;padding:16px 16px 16px 60px;position:relative}
+.steg>li::before{counter-increment:s;content:counter(s);position:absolute;left:16px;top:16px;width:30px;height:30px;border-radius:50%;background:var(--acc-bg);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center}
+.knapp{display:inline-block;background:var(--acc-bg);color:#fff;text-decoration:none;font-weight:600;padding:10px 16px;border-radius:10px;margin:8px 8px 0 0}
+.knapp.sek{background:transparent;color:var(--acc);border:2px solid var(--acc)}
+code{background:var(--bg);border:1px solid var(--rand);border-radius:6px;padding:1px 6px;font-size:14px;word-break:break-all}
+.ok{background:var(--ok-bg);color:var(--ok);border-radius:10px;padding:10px 14px;font-weight:600}
+ul.dok{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+ul.dok li{background:var(--kort);border:1px solid var(--rand);border-radius:12px;padding:12px 14px}
+footer{border-top:1px solid var(--rand);padding:20px 0 40px;font-size:14px}
+</style>
+</head>
+<body>
+<header><div class="inner">
+  <h1>📖 Lärarrummet för skolor</h1>
+  <p>Allt rektor, IT och dataskyddsombud behöver för att bedöma och godkänna Lärarrummet, på ett ställe.</p>
+  <a class="knapp sek" style="color:#fff;border-color:#fff" href="https://lolander.github.io/Skolan/demo/">▶ Prova appen utan att installera</a>
+</div></header>
+
+<main><div class="inner">
+
+<section aria-labelledby="h-fakta">
+  <h2 id="h-fakta">Kort om appen</h2>
+  <div class="grid">
+    <div class="kort"><h3>🔒 Ingen molntjänst</h3><p>All data finns på lärarens dator. Utvecklaren får aldrig någon data. Inget personuppgiftsbiträdesavtal behövs.</p></div>
+    <div class="kort"><h3>0️⃣ Inga personuppgifter som standard</h3><p>Nivå 0: inga elevnamn. Nivå 1–2 kräver rektorns beslut i appen och kan låsas av IT.</p></div>
+    <div class="kort"><h3>🛡️ Barnets trygghet</h3><p>Ingen lärare får något förrän vårdnadshavaren har godkänt hen. Misstankar kan anmälas direkt till rektorn.</p></div>
+    <div class="kort"><h3>🆓 Gratis och öppen källkod</h3><p>MIT-licens, ingen reklam, ingen telemetri, ingen AI i lärarappen.</p></div>
+    <div class="kort"><h3>♿ Tillgänglig</h3><p>Granskad mot WCAG 2.1 AA, 0 automatiska fel i ljust och mörkt läge.</p></div>
+    <div class="kort"><h3>🏫 Frivilligt komplement</h3><p>Ersätter inte lärplattformen. Elever utan appen går inte miste om något.</p></div>
+  </div>
+</section>
+
+<section aria-labelledby="h-it">
+  <h2 id="h-it">För IT: tre steg</h2>
+  <ol class="steg">
+    <li><h3>Installera</h3>
+      <p><b>Microsoft Store</b> (granskning pågår): signerad av Microsoft, kan läggas till i Intune som <i>Microsoft Store-app (ny)</i>. Store sköter uppdateringarna.</p>
+      <p><b>Installationsprogram:</b> per användare utan administratör, eller för alla användare med <code>/ALLUSERS</code>. Tyst installation: <code>/VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code>.</p>
+      <a class="knapp" href="https://github.com/lolander/Skolan/releases/latest">⬇ Senaste versionen</a>
+      <a class="knapp sek" href="https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-IT.zip">IT-paket (ADMX, .reg, Intune)</a></li>
+    <li><h3>Godkänn inloggningen med skolkonto (en gång, frivilligt)</h3>
+      <p>Lärarna kan visa vårdnadshavarna att de har ett konto hos skolan. Appen ber bara om <code>openid</code>, <code>profile</code> och <code>email</code>.</p>
+      <p><b>Microsoft 365:</b> logga in som global administratör eller programadministratör och godkänn. Efteråt visar webbläsaren ett fel om <code>localhost</code>. Det är normalt, godkännandet är sparat.</p>
+      <a class="knapp" href="https://login.microsoftonline.com/organizations/adminconsent?client_id=ed3db50e-7a88-4dc3-8c0b-8f92e16ecf51">Godkänn i Microsoft Entra</a>
+      <p><b>Google Workspace:</b> Administratörskonsolen → Säkerhet → API-kontroller → Hantera åtkomst för tredjepartsappar → Konfigurera ny app → klient-id<br>
+        <code>643812673723-33m2dqh36du5mvtio6e2cdpkiafj6sin.apps.googleusercontent.com</code> → <b>Betrodd</b>. Behövs bara om tredjepartsappar är begränsade.</p></li>
+    <li><h3>Styr med grupprinciper (valfritt)</h3>
+      <p><code>HKLM\SOFTWARE\Policies\Laxspelet Larare</code>: <code>MaxNiva</code> (0, 1 eller 2) låser högsta nivå. <code>Uppdateringar</code> (automatisk, manuell, av).
+        Nätverk: TCP och UDP 8770 i det lokala nätet, HTTPS ut till GitHub och familjerna.</p>
+      <a class="knapp sek" href="https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md#7-f%C3%B6r-it-installation-och-styrning">Detaljer för IT</a></li>
+  </ol>
+</section>
+
+<section aria-labelledby="h-rektor">
+  <h2 id="h-rektor">För rektor: rekommenderad väg</h2>
+  <ol class="steg">
+    <li><h3>Börja på nivå 0</h3><p>Inga personuppgifter behandlas. Låt en lärare prova under en termin, frivilligt för familjerna.</p></li>
+    <li><h3>Informera vårdnadshavarna</h3><p>Berätta vilka lärare som använder appen, så att vårdnadshavarna vet vilka de ska godkänna. Mall finns.</p></li>
+    <li><h3>Vill ni gå vidare till nivå 1–2</h3><p>Gör en konsekvensbedömning med dataskyddsombudet, för in i registerförteckningen och fatta ett rektorsbeslut. Allt finns som Word-mallar.</p></li>
+  </ol>
+  <p class="ok">✔ Som rektor i appen ser du anmälningar från vårdnadshavare under 🏫 Skolan, och alla behörighetsbeslut loggas.</p>
+</section>
+
+<section aria-labelledby="h-dok">
+  <h2 id="h-dok">Dokument</h2>
+  <ul class="dok">
+    <li>🛡️ <a href="https://github.com/lolander/Skolan/blob/main/docs/trygghet.md">Barnets trygghet</a> <span class="muted">· hur barnen skyddas och hur misstankar anmäls</span></li>
+    <li>📄 <a href="https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md">Information till skolor, IT och dataskyddsombud</a></li>
+    <li>🔐 <a href="https://github.com/lolander/Skolan/blob/main/docs/sakerhetssvar.md">Svar på vanliga frågor om informationssäkerhet</a> <span class="muted">· för leverantörsbedömningen</span></li>
+    <li>✔️ <a href="https://github.com/lolander/Skolan/blob/main/docs/skolkonto.md">Verifiering med skolkonto</a></li>
+    <li>♿ <a href="https://github.com/lolander/Skolan/blob/main/docs/tillganglighet.md">Tillgänglighetsredogörelse</a></li>
+    <li>⚖️ <a href="https://github.com/lolander/Skolan/blob/main/docs/efterlevnad.md">Regelverken i Sverige</a> <span class="muted">· GDPR, skollagen, OSL, arkivlagen, cybersäkerhetslagen, AI-förordningen</span></li>
+    <li>🗂️ <a href="https://github.com/lolander/Skolan/tree/main/docs/mallar">Mallar i Word</a> <span class="muted">· konsekvensbedömning, registerförteckning, rektorsbeslut, information till vårdnadshavare, brev till rektorn</span></li>
+    <li>🧾 <a href="https://github.com/lolander/Skolan/blob/main/docs/integritet.md">Integritetspolicy</a></li>
+    <li>🐞 <a href="https://github.com/lolander/Skolan/blob/main/SECURITY.md">Rapportera en säkerhetsbrist</a></li>
+  </ul>
+</section>
+
+</div></main>
+<footer><div class="inner muted">Lärarrummet är öppen källkod (MIT): <a href="https://github.com/lolander/Skolan">github.com/lolander/Skolan</a>. Frågor och fel: <a href="https://github.com/lolander/Skolan/issues">GitHub Issues</a>.</div></footer>
+</body>
+</html>

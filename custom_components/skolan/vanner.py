@@ -75,12 +75,29 @@ def normal_kod(text: str) -> str:
     return kod
 
 
+# Allt som kommer från ett annat hem kan vara skrivet av vem som helst (en vuxen kan låtsas vara ett barn).
+# Därför släpps inga kontaktvägar fram: telefonnummer, e-post, länkar eller namn på appar där man kan skriva till varandra.
+_KONTAKT = re.compile(r"\d[\d\s.\-]{3,}\d|@|https?:|www\.|\.(se|com|nu|net|org|io|gg|me|app)\b|snap|insta|tik ?tok|discord|whats ?app|"
+                      r"\bkik\b|telegram|\bsignal\b|messenger|facebook|roblox|fortnite|minecraft|telefon|\btel\b|nummer|adress|mejl|mail",
+                      re.IGNORECASE)
+
+
+def har_kontakt(text: str) -> bool:
+    return bool(_KONTAKT.search(str(text or "")))
+
+
+def ren(text, n: int, ersatt: str = "") -> str:
+    """Text från ett annat hem: kort, på en rad och utan kontaktvägar (annars ersatt)."""
+    t = re.sub(r"\s+", " ", str(text or "")).strip()[:n]
+    return ersatt if har_kontakt(t) else t
+
+
 def smeknamn_ok(text: str) -> str:
     s = re.sub(r"\s+", " ", str(text or "")).strip()
     if not 2 <= len(s) <= 16:
         raise ValueError("Smeknamnet ska vara 2–16 tecken.")
-    if re.search(r"\d{4,}|@|https?:|www\.", s):
-        raise ValueError("Skriv inte telefonnummer, mejl eller länkar i smeknamnet.")
+    if re.search(r"\d{4,}|@|https?:|www\.", s) or har_kontakt(s):
+        raise ValueError("Skriv inte telefonnummer, mejl, länkar eller andra appar i smeknamnet.")
     return s
 
 
@@ -136,9 +153,9 @@ def publik(v: dict, foralder: bool, bas: str) -> dict:
 
 
 def _rensa_kort(k: dict) -> dict:
-    return {"smeknamn": str(k.get("smeknamn") or "?")[:16], "art": str(k.get("art") or "")[:8],
+    return {"smeknamn": ren(k.get("smeknamn"), 16, "Vän") or "?", "art": str(k.get("art") or "")[:8],
             "niva": max(1, min(100000, int(k.get("niva") or 1))), "stjarnor": max(0, min(10**6, int(k.get("stjarnor") or 0))),
-            "titel": str(k.get("titel") or "")[:40], "steg": max(0, min(5, int(k.get("steg") or 0))),
+            "titel": ren(k.get("titel"), 40), "steg": max(0, min(5, int(k.get("steg") or 0))),
             "attack": meriter.repris(k["attack"]) if isinstance(k.get("attack"), dict) else None,
             "arena_ver": max(0, min(10**6, int(k.get("arena_ver") or 0))),  # 0 = vännens Skolan kan inte vänstrider
             "lag": _rensa_lag(k.get("lag"))}
@@ -217,7 +234,7 @@ def ta_emot_forfragan(v: dict, text: str, smeknamn: str, hemlighet: str = "") ->
     if len(v["inkommande"]) >= MAX_INKOMMANDE:
         raise ValueError("För många förfrågningar.")
     h = str(hemlighet or "")[:64] if re.fullmatch(r"[A-Za-z0-9_\-]{20,64}", str(hemlighet or "")) else ""
-    rad = {"kod": kod, "smeknamn": str(smeknamn or "")[:16], "tid": dt_util.now().isoformat(timespec="minutes"), "hemlighet": h}
+    rad = {"kod": kod, "smeknamn": ren(smeknamn, 16, "Ny vän"), "tid": dt_util.now().isoformat(timespec="minutes"), "hemlighet": h}
     v["inkommande"].append(rad)
     return rad
 

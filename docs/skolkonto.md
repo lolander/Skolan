@@ -1,6 +1,6 @@
 # Verifiering med skolkonto
 
-*Gäller Lärarrummet 0.13.0 och Läxspelet 1.99.0 och senare.*
+*Gäller Lärarrummet 0.13.2 och Läxspelet 1.99.1 och senare (då verifieringen slogs på).*
 
 En lärare kan logga in med sitt skolkonto hos Microsoft eller Google i Lärarrummet. Föräldern ser då till exempel
 **"✔ kommun.se"** vid läraren: Microsoft eller Google intygar lärarens namn och att organisationen har gett personen ett konto.
@@ -25,13 +25,18 @@ Föräldern kan välja **"Ta bara emot lärare som har verifierat sig med sitt s
 ### Microsoft 365 / Entra ID
 Många organisationer låter inte användare godkänna nya appar själva. Då ser läraren ett meddelande om att en administratör måste godkänna appen. Godkänn Lärarrummet en gång för hela organisationen:
 
-- Öppna `https://login.microsoftonline.com/organizations/adminconsent?client_id=<KLIENT-ID>` som global administratör eller administratör för molnprogram. Klient-id står i `custom_components/skolan/skolkonto.py` (`MICROSOFT_KLIENT`).
+- **Snabbast:** öppna länken nedan som global administratör, administratör för molnprogram eller programadministratör och godkänn. Efteråt skickas webbläsaren till `localhost` och visar ett fel om att sidan inte går att nå. Det är normalt: godkännandet är redan sparat.
+
+  **[Godkänn Lärarrummet för organisationen](https://login.microsoftonline.com/organizations/adminconsent?client_id=ed3db50e-7a88-4dc3-8c0b-8f92e16ecf51)**
+
+  `https://login.microsoftonline.com/organizations/adminconsent?client_id=ed3db50e-7a88-4dc3-8c0b-8f92e16ecf51`
+- Lärarrummets program-ID (klient) hos Microsoft: `ed3db50e-7a88-4dc3-8c0b-8f92e16ecf51`. Utgivare: David Martell (privatperson, inte verifierad utgivare).
 - Eller använd **Entra-administrationscentret → Företagsprogram → Lärarrummet → Behörigheter → Bevilja administratörsmedgivande**.
 - Behörigheter: `openid`, `profile`, `email` (delegerade, bara inloggning).
 - Begränsa gärna till lärare: **Företagsprogram → Lärarrummet → Egenskaper → Tilldelning krävs = Ja** och tilldela personalgruppen.
 
 ### Google Workspace for Education
-- **Administratörskonsolen → Säkerhet → Åtkomst- och datakontroll → API-kontroller → Hantera åtkomst för tredjepartsappar → Konfigurera ny app**. Sök på klient-id (`GOOGLE_KLIENT` i `skolkonto.py`) och välj **Betrodd** för personalens organisationsenhet.
+- **Administratörskonsolen → Säkerhet → Åtkomst- och datakontroll → API-kontroller → Hantera åtkomst för tredjepartsappar → Konfigurera ny app**. Sök på klient-id `643812673723-33m2dqh36du5mvtio6e2cdpkiafj6sin.apps.googleusercontent.com` och välj **Betrodd** för personalens organisationsenhet. Är tredjepartsappar inte begränsade i er domän behövs inget alls.
 - Behörigheter: `openid`, `email`, `profile`.
 
 ## Integritet

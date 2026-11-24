@@ -16,6 +16,9 @@ Bara i dessa fall, och bara för att funktionen ska fungera:
 - **Lärarkoppling** (frivillig, föräldern slår på varje del): det föräldern godkänner delas med barnets lärare. Se nästa avsnitt.
 - **Uppdateringar**: appen frågar GitHub om det finns en ny version (inte i Store-versionen, där sköter Microsoft Store det).
 
+## Barnets trygghet
+Ingen vuxen kan nå barnet genom appen utan att en förälder först har sagt ja: nya lärare och nya vänner måste godkännas, inga kontaktuppgifter släpps fram från andra hem, och barnet kan trycka 🚩 för att säga till en vuxen. Läs mer i [Barnets trygghet](trygghet.md).
+
 ## Lärarkopplingen
 - **Allt är av tills föräldern slår på det.** En funktion fungerar bara när både föräldern (i Läxspelet) och läraren (i Lärarrummet) har slagit på den. Föräldern kan välja olika för olika lärare, och när som helst stänga av eller koppla bort en lärare. Den gamla klasslänken slutar då att fungera.
 - **Föräldern godkänner skolan och rektorn.** När en lärare från en skola kopplar sig visar Läxspelet skolans och rektorns namn, och föräldern godkänner eller nekar. Byter skolan rektor frågar Läxspelet igen. Innan föräldern har godkänt får lärarna bara det som är nivå 0 (se nedan).

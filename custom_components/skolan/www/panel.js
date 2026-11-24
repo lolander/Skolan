@@ -1307,7 +1307,7 @@ class SkolanPanel extends HTMLElement {
       <span class="van-namn"><b>${esc(x.smeknamn)}</b>${x.jag ? " (du)" : ""}${x.titel ? `<br><span class="titel-bricka">${esc(x.titel)}</span>` : ""}</span>
       <span class="van-niva">🗺️ ${x.niva}<br><span class="small">⭐ ${x.stjarnor}</span></span>
       ${!x.jag && x.attack ? this._reprisKnapp(x.attack, x.smeknamn, { art: x.art, steg: x.steg || 1, namn: x.smeknamn }, `van:${x.kod}`, true) : ""}
-      ${!x.jag ? `<button class="mini ghost" data-van-bort="${esc(x.kod)}" title="Ta bort">✕</button>` : ""}</li>`;
+      ${!x.jag ? `<button class="mini ghost" data-van-flagga="${esc(x.kod)}" title="Något känns fel: säg till en vuxen">🚩</button><button class="mini ghost" data-van-bort="${esc(x.kod)}" title="Ta bort">✕</button>` : ""}</li>`;
     const vard = (kod) => { try { return new URL(kod).hostname.split(".")[0].slice(0, 8) + "…"; } catch (e) { return "?"; } };
     const ut = v.utgaende.map((x) => `<li>Ny vän (${esc(vard(x.kod))}) · ⏳ väntar på förälder
       ${f ? `<button class="mini primary" data-van-ut="${esc(x.kod)}" data-ja="1">Godkänn</button><button class="mini" data-van-ut="${esc(x.kod)}" data-ja="">Neka</button>` : ""}</li>`).join("");
@@ -1330,9 +1330,14 @@ class SkolanPanel extends HTMLElement {
       </div>
       ${this._vanSkanna ? `<div class="van-skanna"><video id="van-video" playsinline muted></video><div class="small">Rikta kameran mot kompisens kod</div><button class="ghost" id="van-skanna-stang">Stäng</button></div>` : ""}
       <div class="card"><details ${v.utgaende.length || v.inkommande.length ? "open" : ""}><summary class="small">Har du fått en länk? Klistra in den</summary><div class="row"><input id="van-kod" placeholder="Klistra in kompisens vänlänk"><button class="primary" id="van-lagg">Lägg till</button></div></details>
+        ${(inn || ut) && f ? `<div class="small" style="margin:8px 0">⚠️ <b>Godkänn bara barn som ni känner i verkliga livet.</b> Smeknamnet kan vara påhittat av vem som helst, även en vuxen.
+          Är du osäker: fråga kompisens förälder innan du godkänner.</div>` : ""}
         ${inn ? `<h3>Förfrågningar</h3><ul class="van-vantar">${inn}</ul>` : ""}
         ${ut ? `<h3>Väntar</h3><ul class="van-vantar">${ut}</ul>` : ""}</div>
       <h3>🏆 Vänner på kartan</h3><ol class="van-lista">${lista.map(rad).join("")}</ol>
+      <div class="card small">🛡️ <b>Vänner i Läxspelet är bara kompisar du känner på riktigt.</b> Ber någon dig hålla en hemlighet, skicka bilder,
+        berätta var du bor eller träffas? Det är aldrig ditt fel. Tryck 🚩 och berätta för en vuxen du litar på.
+        <div class="actions"><button class="mini" id="van-flagga-allm">🚩 Säg till en vuxen</button></div></div>
       <div class="actions"><button class="ghost" id="van-synka">🔄 Uppdatera</button></div>
       <p class="small muted center">Kompisar ser bara ditt smeknamn, husdjur, nivå och stjärnor. En förälder godkänner varje ny vän.</p>`;
   }
@@ -1953,6 +1958,12 @@ class SkolanPanel extends HTMLElement {
           ? `📴 ${esc(this._s.namn || "")}s konto finns i ${esc(this._s.fjarr_hem)}, som inte svarar just nu. Du ser en sparad kopia${typeof this._s.offline === "string" ? ` från ${esc(this._s.offline.replace("T", " "))}` : ""}. Ändringar går inte att spara förrän det hemmet är igång.`
           : `🏠 ${esc(this._s.namn || "")}s konto finns i ${esc(this._s.fjarr_hem)}. Allt sparas där, så det är samma i båda hemmen.`}</div>` : ""}
         ${this._msg ? `<div class="msg ${this._msg.type}">${esc(this._msg.text)}</div>` : ""}
+        ${this._omsorg ? `<div class="card" role="alertdialog" aria-labelledby="omsorg-rubrik" style="border:3px solid #f4a261">
+          <h2 id="omsorg-rubrik" style="margin-top:0">${esc(this._omsorg.rubrik)}</h2><p>${esc(this._omsorg.text)}</p>
+          <ul>${(this._omsorg.nummer || []).map(([vad, nr]) => `<li>${esc(vad)}: <a href="tel:${esc(nr.replace(/\s/g, ""))}"><b>${esc(nr)}</b></a></li>`).join("")}</ul>
+          ${this._omsorg.hem_meddelad ? `<p class="small">En vuxen hemma har fått veta att du behöver prata.</p>` : ""}
+          <a href="https://www.bris.se/" target="_blank" rel="noopener">Chatta med BRIS</a>
+          <div class="actions"><button class="primary" id="omsorg-ok">Jag har läst</button></div></div>` : ""}
         ${body}
       </div>
       </div>
@@ -3849,8 +3860,9 @@ class SkolanPanel extends HTMLElement {
       ${(k.grupper || []).map((g) => `<div class="grupp-kort"><b>👥 ${esc(g.namn)}</b> <span class="small muted">med ${g.medlemmar.map(esc).join(", ")}</span>
         <div>${esc(g.uppgift) || "<span class='muted'>Ingen uppgift än</span>"}${g.datum ? ` <span class="small muted">· klar senast ${esc(g.datum)}</span>` : ""}</div>
         ${g.klar ? `<div class="small">✅ Du har bockat av uppgiften. Läraren ser det när du synkar.</div>` : `<button class="mini primary" data-grupp-klar="${g.id}">✔️ Vi är klara</button>`}</div>`).join("")}
-      ${k.larare?.url ? `<button class="primary" id="klass-synk">🔄 Synka med läraren</button> <button class="mini" id="klass-anslut">Annan lärare</button>`
-        : `<div class="small muted">Be läraren visa adressen i lärarappen.</div><button class="primary" id="klass-anslut">🏫 Anslut till läraren</button>`}
+      ${k.larare?.url ? `<button class="primary" id="klass-synk">🔄 Synka med läraren</button>${k.foralder ? ` <button class="mini" id="klass-anslut">Annan lärare</button>` : ""}`
+        : k.foralder ? `<div class="small muted">Be läraren visa adressen i lärarappen.</div><button class="primary" id="klass-anslut">🏫 Anslut till läraren</button>`
+        : `<div class="small muted">En förälder kopplar in läraren.</div>`}
       ${k.larare?.synkad ? `<div class="small muted">Senast synkad ${new Date(k.larare.synkad).toLocaleString("sv-SE", { dateStyle: "short", timeStyle: "short" })}</div>` : ""}</div>`;
   }
 
@@ -3881,14 +3893,34 @@ class SkolanPanel extends HTMLElement {
           Kontrollera att det är barnets skola och rektor. Är du osäker, fråga skolan.</div>
         <button class="primary" id="sk-skola-ok">✅ Godkänn</button> <button class="mini" id="sk-skola-nej">Neka</button></div>`
       : sk.godkand ? `<div class="small">🏫 Godkänd skola: <b>${esc(sk.namn)}</b> · rektor ${esc(sk.rektor || "?")} <button class="mini" id="sk-skola-bort">Ta bort skolan</button></div>` : "";
-    const larKort = lararna.length || fs ? `<div class="card"><b>🏫 ${esc(s.namn)}s lärare</b>
+    const vantande = lararna.filter((x) => x.godkand === false), godkanda = lararna.filter((x) => x.godkand !== false);
+    const vantKort = vantande.map((x) => `<div class="card" style="border:2px solid var(--primary-color)"><b>👩‍🏫 ${esc(x.namn || "Någon")} vill bli lärare för ${esc(s.namn)}</b>
+        <div class="small">${x.klass ? `Klass ${esc(x.klass)}` : ""}${x.skola?.namn ? ` · ${esc(x.skola.namn)}` : ""}${kontoKort(x)}${x.vantar_sedan ? ` · sedan ${esc(x.vantar_sedan.replace("T", " "))}` : ""}</div>
+        ${kontoInfo(x)}
+        <div class="small" style="margin:6px 0"><b>Inget delas och inget når ${esc(s.namn)}</b> förrän du godkänner. Godkänn bara om du vet att det är barnets riktiga lärare,
+          till exempel för att du själv skickade klasslänken till läraren eller skolan har berättat om appen. Är du det minsta osäker: neka och fråga skolan.</div>
+        <button class="primary" data-sk-godk="${x.id}">✅ Godkänn</button> <button class="mini" data-sk-bort="${x.id}">Neka</button>
+        <button class="mini" data-sk-anmal="${x.id}">🚩 Anmäl misstanke</button></div>`).join("");
+    const anm = this._anmalan;
+    const anmKort = anm ? `<div class="card" style="border:2px solid var(--error-color, #c62828)"><b>🚩 Anmälan är gjord</b>
+        <div class="small">Läraren är bortkopplad och spärrad: hen kan inte längre synka med ${esc(s.namn)}.
+          ${anm.till_antal ? `Anmälan skickas till ${esc(anm.mottagare)} via ${anm.till_antal} annan lärare på skolan nästa gång de synkar. Den läraren ser inte innehållet.`
+            : `Det finns ingen annan lärare kopplad som kan lämna anmälan vidare, så <b>skicka texten nedan själv</b> till ${esc(anm.mottagare)}.`}
+          ${anm.rektor_anmald ? " Anmälan gäller rektorn, så den ska till huvudmannen (kommunen eller friskolan)." : ""}</div>
+        <div class="small" style="margin:6px 0"><b>Skicka också texten själv</b> till skolan, så att den säkert kommer fram. Spara gärna skärmbilder.
+          Misstänker du brott: polisanmäl (114 14). Är barnet i fara: ring 112. Stöd för barnet: BRIS 116 111.</div>
+        <textarea readonly rows="8" style="width:100%">${esc(anm.brev)}</textarea>
+        <div class="actions"><button class="mini primary" id="sk-anm-kopiera">📋 Kopiera texten</button> <button class="mini" id="sk-anm-stang">Stäng</button></div></div>` : "";
+    const larKort = lararna.length || fs || anm ? `<div class="card"><b>🏫 ${esc(s.namn)}s lärare</b>
+        ${anmKort}
+        ${vantKort}
         ${skolKort}
         <div class="small muted">Läxspelet kontrollerar själv varje lärare: rektorn utser mentorn, och mentorn godkänner ämneslärarna. Mentorn får det du delar. En ämneslärare får bara sina godkända ämnen i rapporter, statistik och studieteknik. Lärare utan roll får bara det som är nivå 0 (veckobrev, material och klassens summor). Du kan ändra vad varje lärare får.</div>
-        ${lararna.map((x) => `<details class="sk-larare"><summary><b>${esc(x.namn || "Läraren")}</b> · ${roll(x)}${x.skola?.namn ? ` · ${esc(x.skola.namn)}` : ""}${kontoKort(x)} · <span class="small">🔐 nivå ${x.behorighet?.niva ?? 0}</span>
+        ${godkanda.map((x) => `<details class="sk-larare"><summary><b>${esc(x.namn || "Läraren")}</b> · ${roll(x)}${x.skola?.namn ? ` · ${esc(x.skola.namn)}` : ""}${kontoKort(x)} · <span class="small">🔐 nivå ${x.behorighet?.niva ?? 0}</span>
             <span class="small muted"> · synkad ${esc((x.synkad || "").replace("T", " "))}</span></summary>
           ${kontoInfo(x)}
           ${k.funktioner.filter((fn) => fn.id !== "mejl").map((fn) => `<label class="kap-rad small"><input type="checkbox" data-sk-lf="${x.id}|${fn.id}" ${x.dela?.[fn.id] ? "checked" : ""} ${this._busy ? "disabled" : ""}> ${fn.ikon} ${esc(fn.namn)} ${x.inst?.[fn.id] ? "" : `<span class="muted">(läraren har den av)</span>`}</label>`).join("")}
-          <button class="mini" data-sk-bort="${x.id}">Koppla bort ${esc(x.namn || "läraren")}</button></details>`).join("")}</div>` : "";
+          <button class="mini" data-sk-bort="${x.id}">Koppla bort ${esc(x.namn || "läraren")}</button> <button class="mini" data-sk-anmal="${x.id}">🚩 Anmäl misstanke</button></details>`).join("")}</div>` : "";
     const sm = k.smtp || {};
     return `<p class="small muted">Du och läraren bestämmer tillsammans. En funktion är bara på när <b>båda</b> har slagit på den: du här och läraren i lärarappen.</p>
       ${larKort}
@@ -6433,6 +6465,7 @@ class SkolanPanel extends HTMLElement {
       if (!res.ok) throw new Error(x.message || res.statusText);
       f.historik.push({ vem: "djur", text: x.svar });
       f.historik = f.historik.slice(-20);
+      if (x.hjalp) this._omsorg = x.hjalp;
     } catch (e) {
       f.historik.pop();
       this._msg = { type: "error", text: e.message || String(e) };
@@ -6720,6 +6753,7 @@ class SkolanPanel extends HTMLElement {
       if (bild) h.bild = null;
       h.historik.push({ vem: "djur", text: x.svar, ratt: x.ratt });
       h.historik = h.historik.slice(-24);
+      if (x.hjalp) this._omsorg = x.hjalp;
       if (x.poang) h.poang = x.poang;
       if (x.poang?.pass_klart && x.poang.p_ny) {
         this._fx({ text: "📚 BRA PLUGGAT!", sub: `+${x.poang.p_ny} ⭐${x.poang.studiedag ? " · pluggdag mot provbossen!" : ""}`, emojis: ["📚", "🧠", "⭐", "💡"], antal: 30, konfetti: true, farg: "#43a047" });
@@ -7783,6 +7817,7 @@ class SkolanPanel extends HTMLElement {
     const r = this.shadowRoot;
     const $ = (sel) => r.querySelector(sel);
     const on = (sel, fn) => $(sel)?.addEventListener("click", fn);
+    on("#omsorg-ok", () => { this._omsorg = null; this._render(); });
     const v = this._view;
 
     on("#menu", () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })));
@@ -8449,6 +8484,16 @@ class SkolanPanel extends HTMLElement {
     on("#sk-skola-nej", () => { if (confirm("Neka? Lärarna från den skolan får bara nivå 0, och du blir inte tillfrågad igen om samma rektor.")) this._skolaAct({ op: "skolan_neka" }, "Nekad."); });
     on("#sk-skola-bort", () => { if (confirm("Ta bort skolan? Alla lärare får bara nivå 0 tills du godkänner en skola igen.")) this._skolaAct({ op: "skolan_bort" }, "Skolan är borttagen."); });
     on("#sk-koppla-bort", () => { if (confirm("Koppla bort alla lärare? Klasslänken byts ut och lärarna behöver koppla in eleven igen.")) this._skolaAct({ op: "koppla_bort" }, "Lärarna är bortkopplade."); });
+    r.querySelectorAll("[data-sk-anmal]").forEach((b) => b.addEventListener("click", async () => {
+      const text = this._ask("🚩 Beskriv kort vad som har hänt. Läraren kopplas bort direkt och anmälan går till rektorn.", "");
+      if (!text) return;
+      const kontakt = this._ask("Hur kan skolan nå dig? (telefon eller e-post, frivilligt)", "") || "";
+      const svar = await this._skolaAct({ op: "anmal", larare: b.dataset.skAnmal, text, kontakt }, "Anmälan är gjord och läraren är bortkopplad.");
+      if (svar?.anmalan) { this._anmalan = svar.anmalan; this._render(); }
+    }));
+    on("#sk-anm-kopiera", () => navigator.clipboard?.writeText(this._anmalan?.brev || "").then(() => alert("Kopierat.")));
+    on("#sk-anm-stang", () => { this._anmalan = null; this._render(); });
+    r.querySelectorAll("[data-sk-godk]").forEach((b) => b.addEventListener("click", () => this._skolaAct({ op: "larare_godkann", larare: b.dataset.skGodk }, "Läraren är godkänd.")));
     r.querySelectorAll("[data-sk-bort]").forEach((b) => b.addEventListener("click", () => { if (confirm("Koppla bort den här läraren? Hen kan inte synka med eleven längre. De andra lärarna påverkas inte.")) this._skolaAct({ op: "koppla_bort", larare: b.dataset.skBort }, "Läraren är bortkopplad."); }));
     r.querySelectorAll("[data-sk-lf]").forEach((b) => b.addEventListener("change", () => { const [lid, fn] = b.dataset.skLf.split("|"); this._skolaAct({ op: "installningar", larare: lid, [fn]: b.checked }); }));
     on("#sk-larlank", () => navigator.clipboard?.writeText("https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe").then(() => { this._msg = { type: "ok", text: "Länken till lärarappen är kopierad 📋" }; this._render(); }));
@@ -8777,7 +8822,7 @@ class SkolanPanel extends HTMLElement {
     on("#maende-skicka", async () => {
       const m = this._maende; m.text = $("#maende-text")?.value || "";
       try { const res = await this._f("/api/skolan/extra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ barn: this._s.barn, op: "mående", kansla: m.k, vad: m.vad || [], text: m.text }) });
-        if (res.ok) { this._maende = null; this._msg = { type: "ok", text: ["ledsen", "stressad", "arg"].includes(m.k) ? "Tack för att du berättar. 💛 Prata gärna med mamma eller pappa också." : "Tack! 💛" }; await this._load(this._s.barn); } } catch (e) { /* ok */ }
+        if (res.ok) { const mx = await res.clone().json().catch(() => ({})); if (mx.hjalp) this._omsorg = mx.hjalp; this._maende = null; this._msg = { type: "ok", text: ["ledsen", "stressad", "arg"].includes(m.k) ? "Tack för att du berättar. 💛 Prata gärna med mamma eller pappa också." : "Tack! 💛" }; await this._load(this._s.barn); } } catch (e) { /* ok */ }
       this._render();
     });
     // Mattemonster
@@ -9298,6 +9343,14 @@ class SkolanPanel extends HTMLElement {
       else { try { await navigator.clipboard.writeText(this._vanner.kod); this._msg = { type: "ok", text: "Vänlänken är kopierad! 📋" }; this._render(); } catch (e) { prompt("Kopiera vänlänken:", this._vanner.kod); } }
     });
     r.querySelectorAll("[data-van-ut]").forEach((b) => b.addEventListener("click", () => this._vanOp("svar_utgaende", { kod: b.dataset.vanUt, ja: !!b.dataset.ja })));
+    const flagga = async (kod) => {
+      const text = this._ask("Vill du skriva vad som hänt? (Du kan också lämna tomt. En vuxen får ett meddelande.)", "");
+      if (text === null) return;
+      await this._vanOp("flagga", { kod, text });
+      alert("Tack för att du sa till! En vuxen har fått ett meddelande.");
+    };
+    r.querySelectorAll("[data-van-flagga]").forEach((b) => b.addEventListener("click", () => flagga(b.dataset.vanFlagga)));
+    on("#van-flagga-allm", () => flagga(""));
     r.querySelectorAll("[data-van-in]").forEach((b) => b.addEventListener("click", () => this._vanOp("svar_inkommande", { kod: b.dataset.vanIn, ja: !!b.dataset.ja })));
     r.querySelectorAll("[data-van-bort]").forEach((b) => b.addEventListener("click", () => { if (confirm("Ta bort vännen?")) this._vanOp("ta_bort", { kod: b.dataset.vanBort }); }));
     on("#open-rum", () => this._go({ name: "rum" }));

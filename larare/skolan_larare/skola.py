@@ -290,7 +290,9 @@ class Skola:
                 "till_mentor": self.till_mentor(till) if till else {},
                 "meddelanden": [{k: m[k] for k in ("id", "namn", "till", "text", "tid")} for m in mina],
                 "anteckningar": self._anteckningar_till(till) if till else [], "policy": self.s.get("policy"),
-                "intyg": list(self.s.get("intyg", {}).values()), "godk": list(self.s.get("godk", {}).values())}
+                "intyg": list(self.s.get("intyg", {}).values()), "godk": list(self.s.get("godk", {}).values()),
+                # anmälningar från vårdnadshavare går bara till rektorn (krypterat som all skolsynk)
+                "anmalningar": self.s.get("anmalningar_ut", []) if till and till == (self.policy or {}).get("rektor") else []}
 
     def _ta_emot_paket(self, p: dict, ip: str | None) -> None:
         lid = _t(p.get("fran"), 40)
@@ -308,6 +310,10 @@ class Skola:
                                                   for k in ("titel", "amne", "datum", "max", "poang", "betyg", "kommentar", "larare") if k in x}
                                                  for x in rader[:30] if isinstance(x, dict)]
                                    for eid, rader in list(tm.items())[:200] if isinstance(rader, list)}
+        if self.ar_rektor():
+            for x in (p.get("anmalningar") or [])[:50]:
+                if self.anmalan_in(x) == "rektor":
+                    self.k.logga("anmalan", "🚩 En vårdnadshavare har anmält en misstanke om en lärare. Se 🏫 Skolan.")
         kanda = {m["id"] for m in self.s.setdefault("meddelanden", [])}
         for m in (p.get("meddelanden") or [])[:100]:
             if isinstance(m, dict) and _t(m.get("id"), 20) and m["id"] not in kanda and (not m.get("till") or m.get("till") == self.lid):
@@ -370,6 +376,49 @@ class Skola:
             except Exception as err:  # noqa: BLE001
                 m["fel"] = "nås inte just nu"
                 _LOGGER.info("Skolan: kunde inte synka med %s: %s", m.get("namn"), err)
+        self.k.spara()
+
+    # ---------- 🚩 anmälningar från vårdnadshavare ----------
+    @staticmethod
+    def _rensa_anmalan(x: dict) -> dict | None:
+        if not isinstance(x, dict) or not re.fullmatch(r"[A-Za-z0-9]{8,32}", str(x.get("id") or "")):
+            return None
+        om = x.get("om") if isinstance(x.get("om"), dict) else {}
+        return {"id": str(x["id"]), "tid": _t(x.get("tid"), 16), "barn": _t(x.get("barn"), 60), "text": _t(x.get("text"), 2000),
+                "kontakt": _t(x.get("kontakt"), 200), "rektor_anmald": bool(x.get("rektor_anmald")),
+                "om": {k: _t(om.get(k), 120) for k in ("id", "namn", "klass", "skola", "konto", "synkad", "kopplad")}}
+
+    def anmalan_in(self, x: dict) -> str:
+        """En vårdnadshavare har anmält en misstanke om en lärare. Rektorn får den; andra lärare lämnar den bara vidare
+        (de ser den inte). Gäller anmälan rektorn själv, eller finns ingen skola, visas den för den här läraren med
+        uppmaningen att lämna den till huvudmannen eller rektorn. Returnerar vad som hände: rektor|vidare|sjalv."""
+        a = self._rensa_anmalan(x)
+        if not a or a["om"]["id"] == self.lid or (a["rektor_anmald"] and self.s and self.ar_rektor()):
+            return ""  # en anmälan om en själv visas aldrig för den anmälda
+        rektor = (self.policy or {}).get("rektor")
+        if self.s and self.ar_rektor() and not a["rektor_anmald"] and a["om"]["id"] != self.lid:
+            lista = self.s.setdefault("anmalningar", [])
+            if all(y["id"] != a["id"] for y in lista):
+                lista.append({**a, "mottagen": time.strftime("%Y-%m-%d %H:%M"), "hanterad": ""})
+            return "rektor"
+        if self.s and rektor and rektor != self.lid and not a["rektor_anmald"] and a["om"]["id"] != rektor:
+            ut = self.s.setdefault("anmalningar_ut", [])
+            if all(y["id"] != a["id"] for y in ut):
+                ut.append(a)
+            self.s["anmalningar_ut"] = ut[-50:]
+            return "vidare"
+        lista = self.d.setdefault("anmalningar_sjalv", [])
+        if all(y["id"] != a["id"] for y in lista):
+            lista.append({**a, "mottagen": time.strftime("%Y-%m-%d %H:%M")})
+        return "sjalv"
+
+    def anmalan_hanterad(self, aid: str, text: str) -> None:
+        if not (self.s and self.ar_rektor()):
+            raise PermissionError("Bara rektorn hanterar anmälningar.")
+        a = next((y for y in self.s.get("anmalningar", []) if y["id"] == aid), None)
+        if not a:
+            raise ValueError("Anmälan finns inte.")
+        a["hanterad"] = f"{time.strftime('%Y-%m-%d %H:%M')}: {str(text or '').strip()[:300] or 'hanterad'}"
         self.k.spara()
 
     # ---------- rektorn ----------
@@ -585,6 +634,7 @@ class Skola:
                                    "eget": k in (s.get("policy") or {}).get("larare", {})} if s.get("policy") else {})}
                               for k, v in sorted(s["medlemmar"].items(), key=lambda kv: kv[1].get("namn", ""))],
                 "min_roll": self.min_roll(),
+                "anmalningar": s.get("anmalningar", [])[::-1] if self.ar_rektor() else [],
                 "mentorer": {k: v for k, v in ((s.get("policy") or {}).get("mentorer") or {}).items()},
                 "godkanda": [{**x, "namn": self._namn(x["lid"])} for x in (self.d.get("godkanda") or {}).values() if x["klass"] in self.mentor_for() and not x.get("bort")],
                 "rektor": {"namn": s["policy"].get("rektor_namn"), "jag": self.ar_rektor(), "standard": s["policy"].get("standard", []),

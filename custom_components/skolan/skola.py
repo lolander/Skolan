@@ -89,6 +89,8 @@ def las(mapp: Path) -> dict:
     if s["larare"].get("id") and s["larare"]["id"] not in s["lararna"]:
         s["lararna"][s["larare"]["id"]] = {**s["larare"], "roll": s["larare"].get("roll") or "mentor", "dela": {}}
     s["larare"] = {}
+    for x in s["lararna"].values():  # kopplade före 1.100.0: föräldern hade redan sett dem. Nya lärare får "godkand": False.
+        x.setdefault("godkand", True)
     s.setdefault("blockerade", [])  # lärare som föräldern har kopplat bort
     s.setdefault("blockerade_pub", [])  # deras nycklar
     # skolan föräldern har godkänt: {id, namn, rektor_pub, rektor_namn, godkand, intyg: {lid: intyg}, godk: {nyckel: godkännande},
@@ -126,7 +128,7 @@ def lank(bas: str, s: dict) -> str:
 
 def huvudlarare(s: dict) -> dict:
     """Mentorn (eller den lärare som synkade senast). Tom om ingen lärare är kopplad."""
-    lar = list((s.get("lararna") or {}).values())
+    lar = [x for x in (s.get("lararna") or {}).values() if x.get("godkand", True)]
     if not lar:
         return {}
     mentorer = [x for x in lar if x.get("roll") == "mentor"]
@@ -151,6 +153,8 @@ def aktiv(s: dict, f: str, lid: str | None = None) -> bool:
         return bool(s["foralder"].get("mejl")) and all((x.get("inst") or {}).get("mejl", True) for x in lararna.values())
     if lid is not None:
         lar = lararna.get(lid) or {}
+        if not lar.get("godkand", True):  # väntar på föräldern: inget delas och inget tas emot
+            return False
         return delar(s, lid, f) and bool((lar.get("inst") or {}).get(f)) and far(lar, f)
     return any(aktiv(s, f, x) for x in lararna)
 
@@ -333,9 +337,12 @@ def roller(s: dict) -> None:
 def status(s: dict, bas: str, foralder: bool) -> dict:
     lar = huvudlarare(s)
     lista = sorted((s.get("lararna") or {}).values(), key=lambda x: (x.get("roll") != "mentor", x.get("roll") != "amne", x.get("amne") or "", x.get("namn") or ""))
+    if not foralder:  # barnet ser bara lärare som en förälder har godkänt
+        lista = [x for x in lista if x.get("godkand", True)]
     ut = {"pa": PA, "aktiv": {f: aktiv(s, f) for f in FUNKTIONER}, "larare": {k: lar.get(k) for k in ("klass", "namn", "url", "synkad", "inst")} if lar else None,
           "lararna": [{**{k: x.get(k) for k in ("id", "klass", "namn", "url", "synkad", "amne", "roll", "skola", "behorighet", "verifierad")},
-                       **({"inst": x.get("inst") or {}, "dela": {f: delar(s, x["id"], f) for f in FUNKTIONER}} if foralder else {})} for x in lista],
+                       **({"inst": x.get("inst") or {}, "dela": {f: delar(s, x["id"], f) for f in FUNKTIONER},
+                           "godkand": bool(x.get("godkand", True)), "vantar_sedan": x.get("vantar_sedan")} if foralder else {})} for x in lista],
           "klass": s.get("klass") if aktiv(s, "klasslag") else None, "lank": lank(bas, s), "kan_nas": bas.startswith("https://"),
           "grupper": s["grupper"] if aktiv(s, "grupper") else []}
     # Skolkontot: Microsoft/Google intygar namn och domän. En lärare vars domän skiljer sig från de andras på samma skola flaggas.
@@ -390,6 +397,57 @@ def satt_installningar(s: dict, body: dict) -> None:
         f["mejl_dagar"] = sorted({int(d) for d in body.get("mejl_dagar") or [] if str(d).isdigit() and 0 <= int(d) <= 6})
     if f.get("mejl") and not f.get("mejl_till"):
         raise ValueError("Skriv lärarens e-postadress först.")
+
+
+def godkann_larare(s: dict, lid: str) -> None:
+    """Föräldern godkänner en lärare som väntar. Först då delas något och tas något emot."""
+    lar = (s.get("lararna") or {}).get(lid)
+    if not lar:
+        raise ValueError("Läraren finns inte längre.")
+    lar["godkand"] = True
+    lar["godkand_tid"] = dt_util.now().isoformat(timespec="minutes")
+    lar.pop("vantar_notis", None)
+    lar.pop("vantar_sedan", None)
+
+
+def anmal(s: dict, lid: str, text: str, kontakt: str, barn_namn: str) -> dict:
+    """🚩 Föräldern anmäler en misstanke om en lärare till rektorn.
+
+    Läraren spärras genast. Anmälan skickas med nästa synk till skolans andra godkända lärare, vars Lärarrummet
+    lämnar den vidare till rektorn utan att visa den. Den anmälda läraren får aldrig den. Föräldern får också
+    en färdig text att skicka till rektorn eller huvudmannen själv (om ingen annan lärare synkar snart)."""
+    lar = (s.get("lararna") or {}).get(lid)
+    if not lar:
+        raise ValueError("Läraren finns inte längre.")
+    text = re.sub(r"[ \t]+", " ", str(text or "")).strip()[:2000]
+    if not text:
+        raise ValueError("Beskriv kort vad som har hänt.")
+    nu = dt_util.now().isoformat(timespec="minutes")
+    k = skolkonto.publik(lar.get("konto"), dt_util.utcnow().timestamp()) or {}
+    sk = s.get("skolan") or {}
+    om = {"id": lid, "namn": lar.get("namn") or "?", "klass": lar.get("klass") or "", "skola": (lar.get("skola") or {}).get("namn") or "",
+          "konto": f"{k.get('namn', '')} <{k.get('epost', '')}> ({k.get('lev_namn', '')})" if k else "inte verifierad",
+          "synkad": lar.get("synkad") or "", "kopplad": lar.get("godkand_tid") or lar.get("vantar_sedan") or ""}
+    rektor_ar_anmald = bool(sk.get("rektor_pub") and lar.get("pub") == sk.get("rektor_pub"))
+    till = [x["id"] for x in (s.get("lararna") or {}).values() if x["id"] != lid and x.get("godkand", True) and x.get("pub")
+            and (not sk.get("id") or (x.get("skola") or {}).get("id") == sk.get("id"))]
+    post = {"id": secrets.token_hex(8), "typ": "anmalan", "tid": nu, "till": till, "om": om, "text": text,
+            "kontakt": re.sub(r"\s+", " ", str(kontakt or "")).strip()[:200], "barn": barn_namn[:60], "rektor_anmald": rektor_ar_anmald}
+    if till:
+        s.setdefault("utgaende", []).append(post)
+    s.setdefault("anmalningar", []).append({k2: post[k2] for k2 in ("id", "tid", "om", "text")} | {"till": len(till)})
+    koppla_bort(s, lid)
+    mottagare = "huvudmannen (kommunen eller friskolan)" if rektor_ar_anmald else f"rektorn{' ' + sk['rektor_namn'] if sk.get('rektor_namn') else ''}"
+    brev = (f"Anmälan om misstanke: {om['namn']}{', klass ' + om['klass'] if om['klass'] else ''}{', ' + om['skola'] if om['skola'] else ''}\n\n"
+            f"Jag är vårdnadshavare till {barn_namn}. Personen ovan kopplade sig till mitt barns Läxspelet som lärare via appen Lärarrummet.\n"
+            f"Skolkonto: {om['konto']}. Senast synkad: {om['synkad'].replace('T', ' ')}.\n\n"
+            f"Vad som har hänt:\n{text}\n\n"
+            f"Jag har kopplat bort personen i Läxspelet. Kontakt: {post['kontakt'] or '(skriv hur du nås)'}\n")
+    return {"till_antal": len(till), "mottagare": mottagare, "brev": brev, "rektor_anmald": rektor_ar_anmald}
+
+
+def har_godkand_larare(s: dict) -> bool:
+    return any(x.get("godkand", True) for x in (s.get("lararna") or {}).values())
 
 
 def koppla_bort(s: dict, lid: str | None = None) -> None:
@@ -663,7 +721,7 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
     if ny and len(s["lararna"]) >= 20:
         raise ValueError("Eleven har redan många lärare kopplade.")
     sk = body.get("skola") if isinstance(body.get("skola"), dict) else {}
-    lar = s["lararna"].setdefault(lid, {"dela": {}})
+    lar = s["lararna"].setdefault(lid, {"dela": {}, "godkand": False})
     lar.update({"id": lid, "klass": _text(body.get("klass"), 40), "namn": _text(body.get("larare"), 60),
                 "url": _text(body.get("url"), 80) if re.fullmatch(r"https?://[\w.\-]+(:\d+)?", _text(body.get("url"), 80)) else "",
                 "inst": {k: bool(inst.get(k)) for k in FUNKTIONER}, "synkad": dt_util.now().isoformat(timespec="minutes"),
@@ -682,6 +740,15 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
     if ny and not forslag and lar.get("pub"):
         forslag = "larare"
     roller(s)
+    if not lar.get("godkand"):
+        # Skydd mot att någon som fått tag på klasslänken utger sig för att vara lärare: ingenting når barnet och
+        # ingenting om barnet lämnar hemmet förrän en förälder uttryckligen har godkänt just den här läraren.
+        nu_ts = dt_util.utcnow().timestamp()
+        paminn = ny or nu_ts - float(lar.get("vantar_notis") or 0) > 24 * 3600
+        if paminn:
+            lar["vantar_notis"] = nu_ts
+        lar.setdefault("vantar_sedan", dt_util.now().isoformat(timespec="minutes"))
+        return {"_vantar": True, "_forslag": (forslag or "larare") if paminn else None, "_filer": []}
     niva = lar["behorighet"]["niva"]
     nya = 0
     filer: list[tuple[str, bytes]] = []
@@ -759,7 +826,8 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
             "statistik": statistik(data, lar=lar) if aktiv(s, "statistik", lid) else None,
             "studieteknik": _studieteknik_for(studieteknik, lar) if aktiv(s, "studieteknik", lid) else None,
             "schema": [{k: x.get(k) for k in ("dag", "start", "slut", "namn", "sal", "larare", "info", "ej")} for x in data.get("lektioner", [])][:80] if aktiv(s, "schema", lid) else None,
-            "fran_foraldern": [x for x in s.get("utgaende", []) if aktiv(s, x["typ"], lid) and (not x.get("till") or lid in x["till"])][-20:],
+            "fran_foraldern": [x for x in s.get("utgaende", []) if (lid in (x.get("till") or []) if x["typ"] == "anmalan"
+                                                                     else aktiv(s, x["typ"], lid) and (not x.get("till") or lid in x["till"]))][-20:],
             # elevens lärare (namn, ämne, roll) så att lärarna vet vem som är mentor, och samma elev-id för hela skolan
             "lararna": [{"id": x["id"], "namn": x["namn"], "amne": x.get("amne") or "", "roll": x.get("roll") or ""} for x in s["lararna"].values()]
             if far(lar, "mentor") or far(lar, "anteckningar") else [],
