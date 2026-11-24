@@ -32,7 +32,7 @@ Svaren beskriver appen som den är byggd. Allt går att kontrollera i den öppna
 |---|---|
 | Hur loggar man in? | Appen körs i lärarens Windows-konto, och sidan nås bara från datorn själv (`localhost`). Inga egna lösenord. |
 | Behörighetsstyrning? | Rektorn i appen tilldelar nivåer och roller, signerat med Ed25519. Mentorn godkänner ämneslärare. IT kan låsa högsta nivå per dator med grupprinciper (`MaxNiva`). |
-| Spårbarhet? | Rektorns beslut loggas med namn, tid och grund och kan exporteras. Historik över utskick och synk finns i appen och kan exporteras som CSV. |
+| Spårbarhet? | Rektorns beslut loggas med namn, tid och grund och kan exporteras. **Tillsynsloggen:** allt lärarna skickar till eleverna sparas hos rektorn i ett år, signerat av lärarens app (Ed25519), och kan exporteras med signaturer, till exempel till huvudmannen eller polisen. Läraren kan inte radera rektorns kopia. Loggen öppnas bara med **fyraögonsprincipen**: rektorn anger grund, en utsedd kontrollant godkänner, och båda bekräftar med en ny inloggning med skol- eller organisationskontot (skolans MFA). Varje öppning sparas i en åtkomstlogg. |
 | Inloggning med organisationskonto? | Frivilligt: verifiering med skolkontot via Microsoft Entra ID (multitenant, offentlig klient, PKCE) eller Google, med behörigheterna `openid`, `profile` och `email`. IT godkänner appen en gång, se [Verifiering med skolkonto](skolkonto.md). |
 
 ## Barnets trygghet

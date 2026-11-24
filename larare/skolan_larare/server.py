@@ -55,7 +55,7 @@ MAX_FILER_PER_SYNK = 14 * 1024 * 1024  # base64, under elevens gräns
 KLASSBOSSAR = [("🐲", "Läxdraken"), ("🦖", "Glos-Rex"), ("🐙", "Kraken Glömska"), ("👹", "Jätten Slarv"),
                ("🤖", "Megaroboten"), ("🧊", "Isjätten"), ("🌋", "Lavamonstret"), ("👻", "Spökkungen")]
 KLASSBOSS_PER_ELEV = 120  # ⭐ per elev som är med (ungefär en vanlig veckas plugg)
-REGLER_VER = "3"  # höj när reglerna i "Så gör du rätt" ändras, så att lärarna läser dem igen
+REGLER_VER = "4"  # höj när reglerna i "Så gör du rätt" ändras, så att lärarna läser dem igen
 REKTOR_VER = "1"  # höj när det rektorn kvitterar ändras
 LANK_RE = re.compile(r"https://[A-Za-z0-9.\-]+(?::\d+)?/api/skolan/klass/[A-Za-z0-9_\-]{20,64}")
 
@@ -308,6 +308,41 @@ class Klass:
         return {"namn": self.d["klass"] or "Klassen", "vecka": v, "ikon": ikon, "boss": namn, "hp": hp, "skada": min(skada, hp),
                 "antal": antal, "klar": skada >= hp, "extra": int(self.d["extra"].get(v, 0))}
 
+    @staticmethod
+    def _tillsyn_poster(body: dict) -> list[dict]:
+        """Det som gick till eleven i en synk, i den form rektorns tillsynslogg sparar (filer som namn och fingeravtryck)."""
+        import base64
+        import hashlib
+
+        def fil(f):
+            if not isinstance(f, dict):
+                return None
+            try:
+                rad = base64.b64decode(f.get("data") or "")
+            except ValueError:
+                rad = str(f.get("data") or "").encode()
+            return {"namn": str(f.get("namn") or "")[:120], "sha256": hashlib.sha256(rad).hexdigest(), "storlek": len(rad)}
+
+        def kort(t):
+            return hashlib.sha256(str(t).encode()).hexdigest()[:10]
+
+        ut = []
+        for b in body.get("veckobrev") or []:
+            ut.append({"id": f"veckobrev:{b['id']}", "typ": "veckobrev", "rubrik": b.get("titel") or "Veckobrev",
+                       "text": json.dumps({k: v for k, v in b.items() if k not in ("fil", "id")}, ensure_ascii=False), "fil": fil(b.get("fil"))})
+        for m in body.get("material") or []:
+            ut.append({"id": f"{m.get('typ', 'material')}:{m['id']}:{kort(m.get('resultat'))}", "typ": m.get("typ") or "material", "rubrik": m.get("titel") or "",
+                       "text": json.dumps({k: m.get(k) for k in ("amne", "text", "datum", "resultat") if m.get(k)}, ensure_ascii=False), "fil": fil(m.get("fil"))})
+        for r in body.get("riktlinjer") or []:
+            ut.append({"id": f"riktlinje:{r['id']}", "typ": "riktlinje", "rubrik": f"Riktlinje till AI:n ({r.get('amne') or 'alla ämnen'})", "text": r.get("text") or ""})
+        for g in body.get("grupper") or []:
+            ut.append({"id": f"grupp:{g['id']}:{kort((g.get('namn'), g.get('uppgift')))}", "typ": "grupp", "rubrik": g.get("namn") or "Grupp",
+                       "text": f"{g.get('uppgift') or ''} (klar senast {g.get('datum') or '-'})"})
+        k = body.get("klass_status")
+        if isinstance(k, dict) and k.get("boss"):
+            ut.append({"id": f"klassboss:{kort(k.get('boss'))}", "typ": "klassboss", "rubrik": "Klassbossen", "text": str(k.get("boss"))})
+        return ut
+
     def fil_data(self, fil: dict | None) -> dict | None:
         if not fil:
             return None
@@ -363,7 +398,7 @@ class Klass:
                 "inst_val": self.d["inst"], "funktioner": FUNKTIONER,
                 "larar_id": self.d["larar_id"], "regler_last": self.d.get("regler_last") == REGLER_VER, "regler_tid": self.d.get("regler_tid"),
                 "intro_klar": bool(self.d.get("intro_klar")), "ar_rektor": self.skola.ar_rektor(),
-                "anmalningar_sjalv": (self.d.get("anmalningar_sjalv") or [])[::-1],
+                "anmalningar_sjalv": (self.d.get("anmalningar_sjalv") or [])[::-1], "insyn": (self.d.get("insyn") or [])[::-1][:20],
                 "rektor_kvitterat": (self.d.get("rektor_kvittens") or {}).get("ver") == REKTOR_VER, "rektor_kvittens_tid": (self.d.get("rektor_kvittens") or {}).get("tid"),
                 "behorighet": self.behorighet(), "insikt": self.insikt() if self.far("insikt") else None,
                 "amne": self.d.get("amne", ""), "roll": self.skola.min_roll()["roll"] or "", "skola": self.skola.publik(), "provkalender": self.skola.provkalender(),
@@ -457,6 +492,7 @@ class Klass:
             e["fel"] = "Kunde inte nå elevens Läxspelet. Har familjen startat om? Be eleven trycka 🔄 Synka med läraren på lektionen, så får appen den nya adressen."
             self.spara()
             raise ValueError(e["fel"]) from err
+        self.skola.tillsyn_logga(self._tillsyn_poster(body), f"{e.get('namn') or '?'} ({e['id']})")
         e.update({"namn": str(svar.get("namn") or "?")[:40] if self.har("namn") else self.pseudonym(e), "foralder": {k: bool((svar.get("foralder") or {}).get(k)) for k in FUNKTIONER},
                   "senast": time.strftime("%Y-%m-%d %H:%M"), "fel": "", "skolan": str(svar.get("skolan") or "")[:12],
                   "veckobrev_nya": int(svar.get("nya_veckobrev") or 0),
@@ -791,7 +827,7 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                 rektor_kvittera(body)
                 klass.skola.bli_rektor()
                 asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
-            elif op in ("rektor_satt", "rektor_aterstall", "rektor_mentor", "rektor_overlat") and d.get("rektor_kvittens", {}).get("ver") != REKTOR_VER:
+            elif op in ("rektor_satt", "rektor_aterstall", "rektor_mentor", "rektor_overlat", "rektor_kontrollanter") and d.get("rektor_kvittens", {}).get("ver") != REKTOR_VER:
                 raise ValueError("Läs och kvittera rektorns ansvar först (🔐 Behörighet).")
             elif op == "rektor_satt":
                 klass.skola.satt_ratt(str(body.get("vem") or ""), body.get("ratt") or [], str(body.get("motivering") or ""))
@@ -806,6 +842,9 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                 el = body.get("elever")
                 klass.skola.godkann(str(body.get("vem") or ""), str(body.get("klass") or ""), str(body.get("amnen") or ""),
                                     None if el is None else [str(x) for x in el if isinstance(x, str)])
+                asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
+            elif op == "rektor_kontrollanter":
+                klass.skola.satt_kontrollanter([str(x) for x in (body.get("vilka") or []) if isinstance(x, str)], str(body.get("motivering") or ""))
                 asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
             elif op == "rektor_overlat":
                 klass.skola.overlat(str(body.get("vem") or ""))
@@ -872,16 +911,66 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
             return web.json_response({"fel": str(err)}, status=400)
         return web.json_response({"url": url})
 
+    async def tillsyn_bekrafta(request):
+        """Tillsynsloggen: rektorns begäran och kontrollantens svar bekräftas med en ny inloggning med skol- eller
+        organisationskontot (samma som verifieringen, med skolans tvåstegsverifiering). Åtgärden utförs först när
+        inloggningen kommer tillbaka (skolkonto_svar), med intyget knutet till just den åtgärden."""
+        _bara_datorn(request)
+        b = await request.json()
+        konto = klass.d.get("skolkonto") or {}
+        try:
+            if not konto.get("lev"):
+                raise ValueError("Verifiera dig först med ditt skol- eller organisationskonto (⚙️ Inställningar). Det krävs för tillsynsloggen.")
+            if b.get("typ") == "begar":
+                if klass.d.get("rektor_kvittens", {}).get("ver") != REKTOR_VER:
+                    raise ValueError("Läs och kvittera rektorns ansvar först (🔐 Behörighet).")
+                arg = {"grund": str(b.get("grund") or ""), "text": str(b.get("text") or ""), "larare": str(b.get("larare") or "")}
+                klass.skola.tillsyn_begar(**arg, prova=True)
+                atgard = {"typ": "begar", "arg": arg, "bind": klass.skola.begar_bind(**arg)}
+            elif b.get("typ") == "svar":
+                arg = {"bid": str(b.get("id") or ""), "ja": bool(b.get("ja"))}
+                klass.skola.kontroll_svara(**arg, prova=True)
+                atgard = {"typ": "svar", "arg": arg, "bind": klass.skola.svar_bind(**arg)}
+            else:
+                raise ValueError("Okänd åtgärd.")
+            url = inlogg.starta(konto["lev"], klass.port, beh.publik_nyckel(klass.d["nyckel"]), atgard, str(konto.get("epost") or ""))
+        except PermissionError as err:
+            return web.json_response({"fel": str(err)}, status=403)
+        except ValueError as err:
+            return web.json_response({"fel": str(err)}, status=400)
+        return web.json_response({"url": url})
+
+    async def _tillsyn_atgard(res: dict) -> None:
+        a = res["atgard"]
+        konto = klass.d.get("skolkonto") or {}
+        if str(res.get("epost") or "").lower() != str(konto.get("epost") or "").lower() or res.get("org") != konto.get("org"):
+            raise ValueError(f"Logga in med samma skolkonto som du är verifierad med ({konto.get('epost')}).")
+        if abs(time.time() - float(res.get("tid") or 0)) > 900:
+            raise ValueError("Inloggningen är för gammal. Försök igen.")
+        intyg = {k: res[k] for k in ("token", "lev", "namn", "epost", "doman", "org", "tid")}
+        if a["typ"] == "begar":
+            klass.skola.tillsyn_begar(**a["arg"], intyg=intyg)
+        else:
+            klass.skola.kontroll_svara(**a["arg"], intyg=intyg)
+        klass.spara()
+        asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
+
     async def skolkonto_svar(request):
         """Webbläsaren kommer tillbaka från Microsoft/Google med en kod."""
         _bara_datorn(request)
+        from urllib.parse import quote
+
         try:
             res = await inlogg.avsluta(await session(), dict(request.query), klass.port)
         except (ValueError, OSError) as err:
             _LOGGER.warning("Skolkonto: %s", err)
-            from urllib.parse import quote
-
             raise web.HTTPFound(f"/?skolkonto_fel={quote(str(err)[:300])}")
+        if res.get("atgard"):
+            try:
+                await _tillsyn_atgard(res)
+            except (ValueError, PermissionError) as err:
+                raise web.HTTPFound(f"/?tillsyn_fel={quote(str(err)[:300])}")
+            raise web.HTTPFound(f"/?tillsyn={res['atgard']['typ']}")
         klass.d["skolkonto"] = {k: res[k] for k in ("token", "lev", "namn", "epost", "doman", "org", "tid")}
         klass.logga("skolkonto", f"Verifierad med skolkontot hos {skolkonto.NAMN[res['lev']]}: {res['namn']} ({res['doman']}).")
         klass.spara()
@@ -923,6 +1012,58 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
         return web.Response(body=("\ufeff" + buf.getvalue()).encode("utf-8"), content_type="text/csv",
                             headers={"Content-Disposition": f'attachment; filename="skolan-historik-{date.today()}.csv"'})
 
+    async def tillsyn_api(request):
+        """Rektorn: översikt (bara namn och antal), eller loggen på en godkänd begäran ({"begaran": id})."""
+        _bara_datorn(request)
+        if request.method == "GET":
+            return web.json_response(klass.skola.tillsyn_oversikt())
+        b = await request.json()
+        try:
+            data = klass.skola.tillsyn_oppna(str(b.get("begaran") or ""))
+        except PermissionError as err:
+            return web.json_response({"fel": str(err)}, status=403)
+        except ValueError as err:
+            return web.json_response({"fel": str(err)}, status=400)
+        klass.spara()
+        return web.json_response(data)
+
+    async def tillsyn_export(request):
+        """Rektorn: exportera tillsynsloggen med signaturer på en godkänd begäran, till exempel till polisen eller huvudmannen."""
+        _bara_datorn(request)
+        try:
+            lista = klass.skola.tillsyn_oppna(request.query.get("begaran", ""), "export")
+        except PermissionError as err:
+            return web.json_response({"fel": str(err)}, status=403)
+        except ValueError as err:
+            return web.json_response({"fel": str(err)}, status=400)
+        klass.spara()
+        ut = {"skapad": time.strftime("%Y-%m-%d %H:%M"), "skola": (klass.skola.s or {}).get("namn"), "rektor": klass.d.get("larare"),
+              "app": f"Lärarrummet {VERSION}",
+              "forklaring": ("Varje post är signerad (Ed25519) av den lärarapp som skickade den till eleven. Signaturen ('sig') gäller alla fält i "
+                             "'post' utom 'sig', serialiserade som JSON med sorterade nycklar, utan mellanslag och med UTF-8. Lärarens publika nyckel står "
+                             "i 'pub'. 'sig_ok' visar om signaturen stämde när rektorns app tog emot posten. 'till' är de elever (namn eller pseudonym "
+                             "och id) som fick posten. Filer anges med namn och SHA-256-fingeravtryck. 'atkomst' visar varje gång loggen öppnats, "
+                             "på vilken grund och vem som godkände. Källkod: https://github.com/lolander/Skolan"),
+              "atkomst": klass.skola.tillsyn_atkomst(),
+              "lararna": lista}
+        return web.Response(body=json.dumps(ut, ensure_ascii=False, indent=1).encode("utf-8"), content_type="application/json",
+                            headers={"Content-Disposition": f'attachment; filename="tillsynslogg-{time.strftime("%Y%m%d")}.json"'})
+
+    async def tillsyn_atkomst_csv(request):
+        """Åtkomstloggen: varje gång rektorn öppnat tillsynsloggen, och varför (till dataskyddsombudet)."""
+        _bara_datorn(request)
+        import csv
+        import io
+
+        buf = io.StringIO()
+        w = csv.writer(buf, delimiter=";")
+        w.writerow(["Tid", "Rektor", "Rektorns skolkonto", "Visa/export", "Lärare", "Grund", "Motivering", "Godkänd av", "Kontrollantens skolkonto", "Läraren meddelad"])
+        for x in klass.skola.tillsyn_atkomst():
+            w.writerow([x["tid"], x["av"], (x.get("rektor_konto") or {}).get("epost", ""), x["typ"], x["larare_namn"], x["grund_text"], x["text"],
+                        x.get("godkand_av", ""), (x.get("godkand_konto") or {}).get("epost", ""), "ja" if x["meddela"] else "nej (utredning)"])
+        return web.Response(body=("\ufeff" + buf.getvalue()).encode("utf-8"), content_type="text/csv",
+                            headers={"Content-Disposition": f'attachment; filename="tillsyn-atkomst-{date.today()}.csv"'})
+
     async def beslut_csv(request):
         """Rektorns beslutslogg: vem som fått vilken behörighet, när och på vilken grund (till dataskyddsombudet)."""
         _bara_datorn(request)
@@ -940,6 +1081,11 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
 
     app.router.add_get("/api/historik.csv", historik_csv)
     app.router.add_get("/api/beslut.csv", beslut_csv)
+    app.router.add_get("/api/tillsyn", tillsyn_api)
+    app.router.add_post("/api/tillsyn", tillsyn_api)
+    app.router.add_get("/api/tillsyn_atkomst.csv", tillsyn_atkomst_csv)
+    app.router.add_post("/api/tillsyn_bekrafta", tillsyn_bekrafta)
+    app.router.add_get("/api/tillsyn.json", tillsyn_export)
     app.router.add_get("/", index)
     app.router.add_get("/elev", elev)
     app.router.add_get("/ikon.png", ikon)

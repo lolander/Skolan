@@ -27,6 +27,7 @@ import time
 from aiohttp import ClientSession, ClientTimeout
 
 from . import behorighet as beh
+from . import skolkonto
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -291,8 +292,11 @@ class Skola:
                 "meddelanden": [{k: m[k] for k in ("id", "namn", "till", "text", "tid")} for m in mina],
                 "anteckningar": self._anteckningar_till(till) if till else [], "policy": self.s.get("policy"),
                 "intyg": list(self.s.get("intyg", {}).values()), "godk": list(self.s.get("godk", {}).values()),
-                # anmälningar från vårdnadshavare går bara till rektorn (krypterat som all skolsynk)
-                "anmalningar": self.s.get("anmalningar_ut", []) if till and till == (self.policy or {}).get("rektor") else []}
+                # anmälningar från vårdnadshavare och tillsynsloggen går bara till rektorn (krypterat som all skolsynk)
+                "anmalningar": self.s.get("anmalningar_ut", []) if till and till == (self.policy or {}).get("rektor") else [],
+                "tillsyn": self._tillsyn_ut() if till and till == (self.policy or {}).get("rektor") else [],
+                "insyn": self._insyn_till(till) if till and self.ar_rektor() else [],
+                "kontroll": self._till_kontrollant(till), "kontroll_svar": self._kontroll_svar_ut(till)}
 
     def _ta_emot_paket(self, p: dict, ip: str | None) -> None:
         lid = _t(p.get("fran"), 40)
@@ -310,7 +314,12 @@ class Skola:
                                                   for k in ("titel", "amne", "datum", "max", "poang", "betyg", "kommentar", "larare") if k in x}
                                                  for x in rader[:30] if isinstance(x, dict)]
                                    for eid, rader in list(tm.items())[:200] if isinstance(rader, list)}
+        if lid == (self.policy or {}).get("rektor"):
+            self._insyn_in(p.get("insyn"))
+            self._kontrollant_in(p.get("kontroll"))
         if self.ar_rektor():
+            self._kontroll_svar_in(lid, p.get("kontroll_svar"))
+            self._tillsyn_in(lid, p.get("tillsyn"), (self.s["medlemmar"].get(lid) or {}).get("pub"))
             for x in (p.get("anmalningar") or [])[:50]:
                 if self.anmalan_in(x) == "rektor":
                     self.k.logga("anmalan", "🚩 En vårdnadshavare har anmält en misstanke om en lärare. Se 🏫 Skolan.")
@@ -377,6 +386,312 @@ class Skola:
                 m["fel"] = "nås inte just nu"
                 _LOGGER.info("Skolan: kunde inte synka med %s: %s", m.get("namn"), err)
         self.k.spara()
+
+    # ---------- 🔎 tillsynslogg: allt lärarna skickar till eleverna, hos rektorn ----------
+    # Varje lärares app loggar det som faktiskt kom fram till en elev, signerat med lärarens nyckel, och skickar loggen
+    # till rektorn med skolsynken. Läraren kan radera sin egen historik, men rektorns kopia finns kvar (gallras efter ett år).
+    # Rektorn kan inte ändra eller hitta på poster i en lärares namn: signaturen skulle inte stämma.
+    TILLSYN_DAGAR = 365
+
+    def tillsyn_logga(self, poster: list[dict], elev: str) -> None:
+        if not poster:
+            return
+        logg = self.d.setdefault("tillsyn", {})
+        nu = time.time()
+        for p in poster:
+            x = logg.get(p["id"])
+            if not x:
+                post = {"id": _t(p["id"], 80), "larar_id": self.lid, "larare": self.d.get("larare") or "?", "tid": time.strftime("%Y-%m-%d %H:%M"),
+                        "typ": _t(p.get("typ"), 20), "rubrik": _t(p.get("rubrik"), 120), "text": _t(p.get("text"), 4000), "fil": p.get("fil")}
+                x = logg[p["id"]] = {"post": beh.signera(post, self.d["nyckel"]), "till": [], "andrad": nu}
+            if elev not in x["till"]:
+                x["till"] = (x["till"] + [elev])[-300:]
+                x["andrad"] = nu
+        gräns = nu - self.TILLSYN_DAGAR * 86400
+        for k in [k for k, x in logg.items() if x.get("andrad", 0) < gräns]:
+            del logg[k]
+        if len(logg) > 5000:
+            for k in sorted(logg, key=lambda k: logg[k].get("andrad", 0))[:len(logg) - 5000]:
+                del logg[k]
+        if self.s and self.ar_rektor():  # rektorns egna utskick hamnar också i loggen
+            self._tillsyn_in(self.lid, [x for x in logg.values() if x["andrad"] == nu], self.d["nyckel"] and beh.publik_nyckel(self.d["nyckel"]))
+
+    def _tillsyn_ut(self) -> list[dict]:
+        gräns = time.time() - 30 * 86400
+        return sorted([x for x in self.d.get("tillsyn", {}).values() if x.get("andrad", 0) > gräns], key=lambda x: x["andrad"])[-500:]
+
+    def _tillsyn_in(self, lid: str, poster, pub: str | None) -> None:
+        if not (self.s and self.ar_rektor()):
+            return
+        lista = self.s.setdefault("tillsyn", {}).get(lid) or {}
+        for x in (poster or [])[:500]:
+            post = x.get("post") if isinstance(x, dict) else None
+            if not isinstance(post, dict) or post.get("larar_id") != lid or not re.fullmatch(r"[\w:\-]{3,80}", str(post.get("id") or "")):
+                continue
+            gammal = lista.get(post["id"])
+            till = [_t(e, 60) for e in (x.get("till") or [])][:300]
+            if gammal and gammal["post"].get("sig") == post.get("sig"):
+                gammal["till"] = sorted(set(gammal["till"]) | set(till))[:300]
+                continue
+            if gammal:  # en annan version av samma post: behåll båda (ingen ska kunna skriva över historiken)
+                post = {**post, "id": post["id"] + "~" + secrets.token_hex(3)}
+            lista[post["id"]] = {"post": post, "till": till, "sig_ok": bool(pub and beh.sig_ok(post, pub)), "mottagen": time.strftime("%Y-%m-%d %H:%M")}
+        gräns = time.strftime("%Y-%m-%d", time.localtime(time.time() - self.TILLSYN_DAGAR * 86400))
+        for k in [k for k, v in lista.items() if v["post"].get("tid", "") < gräns]:
+            del lista[k]
+        if lista:
+            self.s["tillsyn"][lid] = lista
+
+    # Tillgång kräver två personer: rektorn begär med grund och motivering, en kontrollant (utsedd av rektorn i ett beslut som
+    # alla lärare ser) godkänner i sitt eget Lärarrum. Det gäller utan undantag, även vid misstanke om brott: hellre att rektorn
+    # väcker en kollega än att systemet kan användas fel. Varje öppning loggas, och kontrollanterna får en kopia av åtkomstloggen.
+    # Enda undantaget: rektorn är ensam i skolan. Då finns bara rektorns egna uppgifter, och bara de visas. Finns fler gäller
+    # samma regel för alla, även för rektorns egna utskick.
+    # Vid uppföljning och klagomål får läraren veta att rektorn tittat; vid brott och myndighetsbegäran inte (utredningen ska inte röjas).
+    GRUNDER = {"uppfoljning": ("Uppföljning av undervisningen", True),
+               "klagomal": ("Klagomål från vårdnadshavare eller elev", True),
+               "brott": ("Misstanke om brott eller att ett barn far illa", False),
+               "myndighet": ("Begäran från polis, socialtjänst eller tillsynsmyndighet", False)}
+    GODKAND_DAGAR = 7
+
+    def kontrollanter(self) -> list[str]:
+        return list(((self.policy or {}).get("kontrollanter") or []))[:3]
+
+    def satt_kontrollanter(self, vilka: list, motivering: str) -> None:
+        """Rektorn utser 1–3 kollegor som måste godkänna innan tillsynsloggen öppnas (t.ex. biträdande rektor)."""
+        lista = []
+        for v in (vilka or [])[:3]:
+            v = _t(v, 40)
+            if v == self.lid:
+                raise ValueError("Du kan inte vara kontrollant åt dig själv.")
+            if not (self.s["medlemmar"].get(v) or {}).get("pub"):
+                raise ValueError("Kontrollanten måste vara med i skolan och ha synkat med en ny version av appen.")
+            if v not in lista:
+                lista.append(v)
+        namn = ", ".join(self._namn(v) for v in lista) or "ingen"
+        self._nytt_beslut(lambda p: p.update({"kontrollanter": lista}),
+                          f"Kontrollanter för tillsynsloggen: {namn}." + (f" Grund: {_t(motivering, 300)}" if motivering else ""))
+
+    def tillsyn_oversikt(self) -> dict:
+        """Rektorn: bara lärarnas namn och antal poster, innan loggen öppnas."""
+        if not (self.s and self.ar_rektor()):
+            return {}
+        return {lid: {"namn": self._namn(lid), "antal": len(lista)} for lid, lista in self.s.get("tillsyn", {}).items()}
+
+    def _begaran_publik(self, b: dict) -> dict:
+        giltig = b["status"] in ("godkand", "egen") and time.time() - b.get("godkand_ts", 0) < self.GODKAND_DAGAR * 86400
+        return {**{k: v for k, v in b.items() if k not in ("konto", "godkand_konto")}, "kan_oppna": giltig,
+                "rektor_epost": (b.get("konto") or {}).get("epost", ""), "godkand_epost": (b.get("godkand_konto") or {}).get("epost", "")}
+
+    def tillsyn_begaranden(self) -> list[dict]:
+        if not (self.s and self.ar_rektor()):
+            return []
+        return [self._begaran_publik(b) for b in sorted(self.s.get("tillsyn_begaran", {}).values(), key=lambda b: b["tid"], reverse=True)[:30]]
+
+    @staticmethod
+    def begar_bind(grund: str, text: str, larare: str) -> str:
+        return "tillsyn_begar:" + hashlib.sha256(json.dumps([grund, _t(text, 500).strip(), _t(larare, 40)]).encode()).hexdigest()[:32]
+
+    @staticmethod
+    def svar_bind(bid: str, ja: bool) -> str:
+        return f"tillsyn_svar:{bid}:{'ja' if ja else 'nej'}"
+
+    @staticmethod
+    def _konto(intyg: dict | None) -> dict:
+        """Intyget från inloggningen med skol- eller organisationskontot, som sparas med åtgärden."""
+        if not isinstance(intyg, dict) or not intyg.get("token"):
+            raise ValueError("Bekräfta med ditt skol- eller organisationskonto.")
+        return {"lev": _t(intyg.get("lev"), 20), "namn": _t(intyg.get("namn"), 80), "epost": _t(intyg.get("epost"), 120),
+                "doman": _t(intyg.get("doman"), 80), "org": _t(intyg.get("org"), 80), "tid": int(intyg.get("tid") or 0), "token": str(intyg["token"])[:8000]}
+
+    def tillsyn_begar(self, grund: str, text: str, larare: str = "", intyg: dict | None = None, prova: bool = False) -> dict:
+        """Rektorn begär att få öppna loggen. Öppnas först när en kontrollant har godkänt, oavsett grund.
+        Kräver en ny inloggning med skol- eller organisationskontot (intyg); prova=True kontrollerar bara villkoren först."""
+        if not (self.s and self.ar_rektor()):
+            raise PermissionError("Bara rektorn kan begära tillgång till tillsynsloggen.")
+        if grund not in self.GRUNDER:
+            raise ValueError("Välj en grund.")
+        text = _t(text, 500).strip()
+        if len(text) < 10:
+            raise ValueError("Skriv kort varför (minst 10 tecken). Det sparas i åtkomstloggen och visas för kontrollanten.")
+        larare = _t(larare, 40)
+        if larare and larare not in self.s.get("tillsyn", {}):
+            raise ValueError("Det finns inget loggat för den läraren.")
+        # rektorn ensam i skolan: bara egna uppgifter, ingen kontrollant behövs (och ingen finns att utse)
+        egen = not [m for m in self.s.get("medlemmar", {}) if m != self.lid] and larare in ("", self.lid)
+        if not egen and not [k for k in self.kontrollanter() if k != larare]:
+            raise ValueError("Det finns ingen kontrollant som kan godkänna. Utse en under 🔐 Behörighet"
+                             + (" (den som granskas kan inte godkänna)." if larare in self.kontrollanter() else "."))
+        if prova:
+            return {}
+        konto = self._konto(intyg)
+        b = {"id": secrets.token_hex(6), "tid": time.strftime("%Y-%m-%d %H:%M"), "av": self.d.get("larare") or "?", "konto": konto, "grund": grund,
+             "grund_text": self.GRUNDER[grund][0], "text": text, "larare": larare, "larare_namn": self._namn(larare) if larare else "Alla lärare",
+             "status": "egen" if egen else "vantar", "godkand_av": "", "godkand_ts": time.time() if egen else 0}
+        alla = self.s.setdefault("tillsyn_begaran", {})
+        alla[b["id"]] = b
+        for k in sorted(alla, key=lambda k: alla[k]["tid"])[:-200]:
+            del alla[k]
+        self.k.logga("tillsyn", f"Rektorn begärde tillgång till tillsynsloggen ({b['larare_namn']}). Grund: {b['grund_text']}. {text}")
+        return self._begaran_publik(b)
+
+    def tillsyn_oppna(self, bid: str, typ: str = "visa") -> dict:
+        """Öppna loggen på en godkänd begäran. Varje öppning loggas."""
+        if not (self.s and self.ar_rektor()):
+            raise PermissionError("Bara rektorn ser tillsynsloggen.")
+        b = self.s.get("tillsyn_begaran", {}).get(_t(bid, 20))
+        if not b:
+            raise ValueError("Begäran finns inte.")
+        if not self._begaran_publik(b)["kan_oppna"]:
+            raise PermissionError("Begäran är inte godkänd av en kontrollant" + (" eller har gått ut." if b["status"] == "godkand" else "."))
+        rad = {"id": secrets.token_hex(6), "tid": time.strftime("%Y-%m-%d %H:%M"), "av": self.d.get("larare") or "?", "begaran": b["id"],
+               "grund": b["grund"], "grund_text": b["grund_text"], "text": b["text"], "larare": b["larare"], "larare_namn": b["larare_namn"],
+               "typ": "export" if typ == "export" else "visa", "meddela": self.GRUNDER[b["grund"]][1],
+               "godkand_av": b.get("godkand_av") or ("ingen (rektorn ensam i skolan)" if b["status"] == "egen" else ""),
+               "rektor_konto": {k: (b.get("konto") or {}).get(k, "") for k in ("epost", "doman", "lev", "tid", "token")},
+               "godkand_konto": {k: (b.get("godkand_konto") or {}).get(k, "") for k in ("epost", "doman", "lev", "tid", "token")}}
+        atk = self.s.setdefault("tillsyn_atkomst", [])
+        atk.append(rad)
+        self.s["tillsyn_atkomst"] = atk[-3000:]
+        self.k.logga("tillsyn", f"Rektorn {'exporterade' if rad['typ'] == 'export' else 'öppnade'} tillsynsloggen ({rad['larare_namn']}). Grund: {rad['grund_text']}.")
+        # "Alla lärare" på ett vanligt godkännande: kontrollanten har inte kunnat godkänna granskning av sig själv
+        if b["status"] == "egen":  # även om kollegor har tillkommit sedan begäran: bara rektorns egna
+            return {lid: x for lid, x in self.tillsyn_lista().items() if lid == self.lid}
+        return {lid: x for lid, x in self.tillsyn_lista().items()
+                if (lid == b["larare"] if b["larare"] else lid != b.get("godkand_lid"))}
+
+    # --- kontrollantens sida ---
+    def _till_kontrollant(self, till: str) -> dict:
+        """Rektorn → kontrollant: begäranden att ta ställning till (aldrig om kontrollanten själv), och kopia av åtkomstloggen."""
+        if not (till and self.ar_rektor() and till in self.kontrollanter()):
+            return {}
+        bg = [{**{k: b[k] for k in ("id", "tid", "av", "grund_text", "text", "larare_namn", "status")}, "rektor_epost": (b.get("konto") or {}).get("epost", "")}
+              for b in self.s.get("tillsyn_begaran", {}).values() if b["larare"] != till and b["status"] != "egen"]
+        atk = [{**{k: x.get(k, "") for k in ("id", "tid", "av", "typ", "larare_namn", "grund_text", "text", "godkand_av")},
+                "rektor_epost": (x.get("rektor_konto") or {}).get("epost", ""), "godkand_epost": (x.get("godkand_konto") or {}).get("epost", "")}
+               for x in self.s.get("tillsyn_atkomst", []) if x.get("larare") != till][-500:]
+        return {"begaran": bg[-100:], "atkomst": atk}
+
+    def _kontrollant_in(self, data) -> None:
+        if not isinstance(data, dict) or self.lid not in self.kontrollanter():
+            return
+        fr = self.d.setdefault("kontroll_fragor", {})
+        for b in (data.get("begaran") or [])[:100]:
+            if not isinstance(b, dict) or not re.fullmatch(r"[0-9a-f]{12}", str(b.get("id") or "")):
+                continue
+            ny = b["id"] not in fr
+            x = fr.setdefault(b["id"], {"svar": None})
+            x.update({k: _t(b.get(k), 500 if k == "text" else 120) for k in ("id", "tid", "av", "grund_text", "text", "larare_namn", "status", "rektor_epost")})
+            if ny:
+                self.k.logga("tillsyn", f"🔎 Rektorn ber dig godkänna att tillsynsloggen öppnas ({x['larare_namn']}). Se 🏫 Skolan.")
+        for k in sorted(fr, key=lambda k: fr[k].get("tid", ""))[:-200]:
+            del fr[k]
+        kop = {x["id"]: x for x in self.d.get("kontroll_atkomst", [])}
+        for x in (data.get("atkomst") or [])[:500]:
+            if isinstance(x, dict) and re.fullmatch(r"[0-9a-f]{12}", str(x.get("id") or "")):
+                kop.setdefault(x["id"], {k: _t(x.get(k), 500 if k == "text" else 120)
+                                         for k in ("id", "tid", "av", "typ", "larare_namn", "grund_text", "text", "godkand_av", "rektor_epost", "godkand_epost")})
+        self.d["kontroll_atkomst"] = sorted(kop.values(), key=lambda x: x["tid"])[-3000:]
+
+    def kontroll_svara(self, bid: str, ja: bool, intyg: dict | None = None, prova: bool = False) -> None:
+        """Kontrollanten svarar. Kräver en ny inloggning med skol- eller organisationskontot, knuten till just det här svaret."""
+        if self.lid not in self.kontrollanter():
+            raise PermissionError("Du är inte kontrollant för tillsynsloggen.")
+        x = self.d.get("kontroll_fragor", {}).get(_t(bid, 20))
+        if not x or x.get("status") != "vantar" or x.get("svar") is not None:
+            raise ValueError("Begäran finns inte eller är redan besvarad.")
+        if prova:
+            return
+        konto = self._konto(intyg)
+        x["svar"] = "ja" if ja else "nej"
+        x["svar_epost"] = konto["epost"]
+        x["svar_sig"] = beh.signera({"typ": "tillsyn_svar", "skola": self.s["id"], "begaran": x["id"], "svar": x["svar"], "av": self.lid,
+                                     "tid": time.strftime("%Y-%m-%d %H:%M"), "konto": konto}, self.d["nyckel"])
+        self.k.logga("tillsyn", f"Du {'godkände' if ja else 'nekade'} att rektorn öppnar tillsynsloggen ({x['larare_namn']}).")
+
+    def _kontroll_svar_ut(self, till: str | None) -> list[dict]:
+        if not till or till != (self.policy or {}).get("rektor"):
+            return []
+        return [x["svar_sig"] for x in self.d.get("kontroll_fragor", {}).values() if x.get("svar_sig")][-100:]
+
+    def _kontroll_svar_in(self, lid: str, svar) -> None:
+        """Rektorns app tar emot kontrollantens signerade svar."""
+        if lid not in self.kontrollanter():
+            return
+        pub = (self.s["medlemmar"].get(lid) or {}).get("pub")
+        alla = self.s.get("tillsyn_begaran", {})
+        for x in (svar or [])[:100]:
+            if not (isinstance(x, dict) and x.get("typ") == "tillsyn_svar" and x.get("av") == lid and x.get("skola") == self.s["id"]
+                    and pub and beh.sig_ok(x, pub)):
+                continue
+            b = alla.get(str(x.get("begaran")))
+            if not b or b["status"] != "vantar" or b["larare"] == lid:
+                continue
+            konto = self._konto_ok(x.get("konto"), pub, self.svar_bind(b["id"], x.get("svar") == "ja"), (b.get("konto") or {}).get("org"))
+            if not konto:
+                self.k.logga("tillsyn", f"⚠️ Ett svar från {self._namn(lid)} godtogs inte: inloggningen med skolkontot stämde inte.")
+                continue
+            b.update({"status": "godkand" if x.get("svar") == "ja" else "nekad", "godkand_av": self._namn(lid), "godkand_lid": lid,
+                      "godkand_ts": time.time(), "godkand_konto": konto})
+            self.k.logga("tillsyn", f"{self._namn(lid)} {'godkände' if b['status'] == 'godkand' else 'nekade'} din begäran om tillsynsloggen ({b['larare_namn']}).")
+
+    @staticmethod
+    def _konto_ok(konto, pub: str, bind: str, org: str | None) -> dict | None:
+        """Kontrollantens app har redan kontrollerat intyget mot Microsofts/Googles nycklar. Rektorns app kontrollerar dessutom
+        att intyget är knutet till just det här svaret och kontrollantens nyckel, och att kontot hör till samma organisation
+        som rektorns. Intyget sparas, så att vem som helst i efterhand kan kontrollera signaturen hos Microsoft/Google."""
+        if not isinstance(konto, dict) or not konto.get("token"):
+            return None
+        try:
+            p = skolkonto._delar(str(konto["token"]))[1]
+        except ValueError:
+            return None
+        lev = skolkonto.leverantor(str(konto["token"]))
+        if not lev or p.get("aud") != skolkonto.klient(lev) or p.get("nonce") != skolkonto.nonce_for(pub + "|" + bind):
+            return None
+        tok_org = str(p.get("tid") if lev == "microsoft" else p.get("hd") or "")
+        if not tok_org or (org and tok_org != org):
+            return None
+        return {k: konto.get(k) for k in ("lev", "namn", "epost", "doman", "org", "tid", "token")}
+
+    def kontroll_publik(self) -> dict | None:
+        if not self.s or self.lid not in self.kontrollanter():
+            return None
+        return {"fragor": sorted(self.d.get("kontroll_fragor", {}).values(), key=lambda x: x.get("tid", ""), reverse=True)[:30],
+                "atkomst": list(self.d.get("kontroll_atkomst", []))[::-1][:200]}
+
+    def tillsyn_atkomst(self) -> list[dict]:
+        if not (self.s and self.ar_rektor()):
+            return []
+        return list(self.s.get("tillsyn_atkomst", []))[::-1]
+
+    def _insyn_till(self, lid: str) -> list[dict]:
+        """Rektorns öppningar som läraren lid ska få veta om (inte vid misstanke om brott eller myndighetsbegäran)."""
+        return [{k: x[k] for k in ("id", "tid", "av", "grund_text", "typ")} for x in self.s.get("tillsyn_atkomst", [])
+                if x.get("meddela") and x.get("larare") in ("", lid)][-100:]
+
+    def _insyn_in(self, poster) -> None:
+        sedda = self.d.setdefault("insyn", [])
+        kanda = {x["id"] for x in sedda}
+        for x in (poster or [])[:100]:
+            if not isinstance(x, dict) or not re.fullmatch(r"[0-9a-f]{12}", str(x.get("id") or "")) or x["id"] in kanda:
+                continue
+            rad = {"id": x["id"], "tid": _t(x.get("tid"), 16), "av": _t(x.get("av"), 60), "grund_text": _t(x.get("grund_text"), 120),
+                   "typ": "export" if x.get("typ") == "export" else "visa"}
+            sedda.append(rad)
+            self.k.logga("tillsyn", f"🔎 Rektorn ({rad['av']}) {'exporterade' if rad['typ'] == 'export' else 'tittade i'} tillsynsloggen över det du skickat till eleverna. Grund: {rad['grund_text']}.")
+        self.d["insyn"] = sedda[-200:]
+
+    def tillsyn_lista(self) -> dict:
+        """Rektorn: hela loggen per lärare (nyast först). Internt; utåt öppnas den bara via tillsyn_oppna."""
+        if not (self.s and self.ar_rektor()):
+            raise PermissionError("Bara rektorn ser tillsynsloggen.")
+        ut = {}
+        for lid, lista in self.s.get("tillsyn", {}).items():
+            namn = self._namn(lid)
+            ut[lid] = {"namn": namn, "pub": (self.s["medlemmar"].get(lid) or {}).get("pub") or (beh.publik_nyckel(self.d["nyckel"]) if lid == self.lid else ""),
+                       "poster": sorted(lista.values(), key=lambda v: v["post"].get("tid", ""), reverse=True)}
+        return ut
 
     # ---------- 🚩 anmälningar från vårdnadshavare ----------
     @staticmethod
@@ -640,7 +955,9 @@ class Skola:
                 "rektor": {"namn": s["policy"].get("rektor_namn"), "jag": self.ar_rektor(), "standard": s["policy"].get("standard", []),
                            "mina_eget": self.lid in s["policy"].get("larare", {}),
                            "jag_ratt": beh.rensa_ratt(s["policy"].get("larare", {}).get(self.lid, s["policy"].get("standard"))),
-                           "beslut": s["policy"].get("beslut", [])[-100:][::-1], "ver": s["policy"].get("ver")} if s.get("policy") else None}
+                           "beslut": s["policy"].get("beslut", [])[-100:][::-1], "ver": s["policy"].get("ver"),
+                           "kontrollanter": [{"id": k, "namn": self._namn(k)} for k in self.kontrollanter()]} if s.get("policy") else None,
+                "tillsyn_begaran": self.tillsyn_begaranden(), "kontroll": self.kontroll_publik()}
 
     def provkalender(self) -> list[dict]:
         if not self.s:

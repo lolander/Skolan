@@ -23,7 +23,9 @@ Läxspelet är byggt så att **ingen vuxen kan nå ett barn genom appen utan att
 - **Barnet kan inte koppla in en lärare.** Knappen för att ansluta till en ny lärare finns bara för föräldern. Barnet får klasslänken först när en förälder har godkänt minst en lärare, och kan då bara synka med godkända lärare.
 - **En lärare = en nyckel.** Varje synk är signerad med lärarappens nyckel. Någon annan kan inte ta över en godkänd lärares plats. Nekar eller kopplar föräldern bort en lärare spärras både lärar-id och nyckel.
 - **Verifiering med skolkonto** visar om läraren har ett konto i en organisation (Microsoft eller Google) och vilken domän, till exempel `kommun.se`. Föräldern kan välja att bara ta emot verifierade lärare. Observera: verifieringen visar en organisation, inte att personen är lärare. Föräldern ska alltid själv bedöma om domänen är barnets skola.
-- **Allt från läraren granskas av föräldern först:** veckobrev, material, provresultat och riktlinjer till AI:n hamnar i förälderns inkorg.
+- **Allt från läraren granskas av föräldern först:** veckobrev, material, provresultat och riktlinjer till AI:n hamnar i förälderns inkorg. Föräldern uppmanas att öppna filer innan de sparas.
+- **Det lilla som går direkt till barnet** (gruppuppgifter och klassbossens namn) filtreras: kontaktuppgifter, länkar och olämpligt innehåll visas inte, och föräldern får en notis.
+- **Lärarens adress** som barnet öppnar på lektionen måste vara en adress i skolans lokala nät. En lärare kan inte skicka barnet till en webbsida på internet.
 - **Skolans regler:** rektorn i appen bestämmer vad varje lärare får göra, och familjens app kontrollerar rektorns signerade beslut själv.
 
 ## 2. Vänner mellan familjer
@@ -82,10 +84,32 @@ Barnet får veta när en vuxen hemma har fått en notis. Notiserna skickas högs
 
 Vid misstanke om brott mot ett barn: polisanmäl (114 14). Är barnet i fara: ring 112. Stöd för barnet: BRIS 116 111.
 
-## 6. Det appen inte kan skydda mot
+## 6. Rektorns tillsynslogg
+
+Allt lärarna skickar till eleverna (veckobrev, material, provresultat, gruppuppgifter, riktlinjer till AI:n och klassbossen) sparas hos **rektorn** i ett år:
+- Varje post är **signerad av lärarens app**. Rektorn kan inte ändra eller hitta på något i en lärares namn, och läraren kan inte radera rektorns kopia.
+- Rektorn kan se allt per lärare under 🏫 Skolan och **exportera** loggen med signaturer till huvudmannen eller polisen. Det gör det möjligt att utreda även när ingen har anmält något, till exempel om fler elever kan vara utsatta.
+- Det föräldrarna skickar till läraren (lappar, underlag till utvecklingssamtal) loggas inte där.
+- Lärarna får veta det i reglerna de kvitterar.
+
+**Ingen kan öppna loggen ensam (fyraögonsprincipen):**
+- Rektorn anger **grund och motivering** varje gång: uppföljning, klagomål, misstanke om brott eller begäran från polis, socialtjänst eller tillsynsmyndighet.
+- En **kontrollant** som rektorn har utsett, till exempel biträdande rektor, måste godkänna i sitt eget Lärarrum. Utnämningen är ett signerat beslut som alla lärare ser. Kontrollanten får aldrig frågor om granskning av sig själv.
+- Både rektorn och kontrollanten **bekräftar med en ny inloggning med skol- eller organisationskontot** (Microsoft eller Google), med skolans tvåstegsverifiering. Intyget från inloggningen är knutet till just den begäran eller det svaret och till personens lärarapp. Kontot måste höra till samma organisation som rektorns. Det går därför inte att godkänna åt någon annan, eller att använda ett gammalt intyg.
+- **Inga undantag**, inte heller vid misstanke om brott. Enda undantaget är när rektorn är ensam i skolan: då finns bara rektorns egna uppgifter i loggen. Så fort det finns fler gäller samma regel för alla, även för rektorns egna utskick. Det är viktigare att systemet inte kan missbrukas än att det går fort. Vid brådska kontaktar rektorn kontrollanten direkt, även på kvällen. Utse gärna två eller tre kontrollanter, så att någon alltid går att nå. Polisen kan dessutom alltid själv besluta om beslag.
+- Godkännandet gäller i 7 dagar och bara för den lärare begäran gällde.
+- Varje öppning och export sparas i en **åtkomstlogg** med båda kontona. Kontrollanterna har en egen kopia, och den finns med i varje export. Dataskyddsombudet kan få den som Excel-fil.
+- **Läraren får veta** när rektorn har tittat vid uppföljning och klagomål. Vid misstanke om brott och myndighetsbegäran får läraren inte veta det, så att utredningen inte röjs.
+
+Spärren finns i appen. En rektor med teknisk kunskap kan läsa sin egen datafil utanför appen. Det skulle då inte synas i åtkomstloggen. Spärren hindrar alltså missbruk i vardagen och gör varje öppning spårbar, men den är ingen kryptografisk garanti.
+
+## 7. Det appen inte kan skydda mot
 
 - En förälder som godkänner fel person. Därför är varningarna tydliga, och därför ska skolan informera vårdnadshavarna om vilka lärare som använder Lärarrummet.
 - Det som händer utanför appen, till exempel om någon ger barnet sitt nummer i verkligheten.
+- **Falsk trygghet i skolkontot:** vem som helst kan skapa en egen organisation hos Microsoft eller Google. Märket visar bara domänen. Föräldern måste själv kontrollera att domänen är barnets skola eller kommun.
+- **Länkar som sprids:** barnets vänlänk visar smeknamn och husdjur för den som har den, och nya vänner kräver ändå förälderns godkännande. Länken till barnets andra hem ger samma tillgång som barnet har och ska bara ges till barnets andra vårdnadshavare. Den kan tas bort när som helst.
+- **Föräldrar som godkänner allt utan att läsa.** Godkännandena skyddar bara om de görs med eftertanke.
 - En riktig lärare med ont uppsåt som föräldern har godkänt. Då gäller skolans vanliga ansvar och rutiner. Anmälan till rektorn, spärren och förälderns granskning av allt innehåll gör att det upptäcks och stoppas snabbt.
 
 Hittar du en brist? Rapportera den enligt [SECURITY.md](../SECURITY.md).

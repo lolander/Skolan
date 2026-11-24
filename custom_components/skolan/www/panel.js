@@ -3797,7 +3797,9 @@ class SkolanPanel extends HTMLElement {
     if (typ === "riktlinje") {
       const t = amnen.find((a) => x.amne && a.namn.toLowerCase().includes(x.amne.toLowerCase()));
       return `<li>📝 <b>Riktlinje till AI:n</b>${x.amne ? ` · ${esc(x.amne)}` : ""}<div>”${esc(x.text)}”</div>
-        <div class="small muted">AI:n följer lärarens riktlinjer i hjälpläraren, pluggplaner, övningsprov och skrivfeedback.</div>
+        <div class="small muted">AI:n följer lärarens riktlinjer i hjälpläraren, pluggplaner, övningsprov och skrivfeedback, i högst ett halvår.</div>
+        <div class="small">Godkänn bara om den handlar om <b>hur ämnet lärs ut</b> (metod, begrepp, nivå, hur mycket hjälp). AI:n följer aldrig riktlinjer om
+          barnets förmåga eller framtid, skolval, religion, politik, hemmet eller kontakt, och slutar följa lärarens riktlinjer om du kopplar bort läraren.</div>
         <div class="small">Gäller <select data-ink-amne="${x.id}"><option value="">Alla ämnen</option>${amnen.map((a) => `<option value="${a.id}" ${t?.id === a.id ? "selected" : ""}>${esc(a.namn)}</option>`).join("")}</select></div>
         <button class="mini primary" data-ink-riktlinje="${x.id}">✅ Godkänn riktlinjen</button>${bort}</li>`;
     }
@@ -3811,6 +3813,7 @@ class SkolanPanel extends HTMLElement {
       ${typ === "prov" ? `<div>${res ? `Resultat: <b>${res}</b>` : "Rättat prov"}${r?.kommentar ? ` · ”${esc(r.kommentar)}”` : ""}</div>` : ""}
       ${x.text ? `<div class="small muted">${esc(x.text)}</div>` : ""}
       <div class="small">Spara i ${val}</div>
+      ${x.fil ? `<div class="small">👀 Öppna och titta igenom filen innan du sparar: ${esc(this._s.namn)} ser den sedan.</div>` : ""}
       <button class="mini primary" data-ink-spara="${x.id}" data-ink-typ="${typ}">💾 ${typ === "prov" ? "Spara resultatet" : "Spara i ämnet"}</button>${fil}${bort}</li>`;
   }
 
@@ -3884,7 +3887,8 @@ class SkolanPanel extends HTMLElement {
     const kontoKort = (x) => x.konto ? (x.konto.giltig ? ` · <span class="small" title="Verifierad med skolkonto hos ${esc(x.konto.lev_namn)}">✔ ${esc(x.konto.doman)}</span>${x.konto.avviker ? ` <span class="small">⚠️ annan domän än skolans övriga lärare</span>` : ""}`
         : ` · <span class="small">⚠️ verifieringen har gått ut</span>`) : ` · <span class="small muted">inte verifierad</span>`;
     const kontoInfo = (x) => `<div class="small" style="margin:6px 0">${x.konto ? `✔ <b>Verifierad med skolkonto</b> hos ${esc(x.konto.lev_namn)}: ${esc(x.konto.namn)} (${esc(x.konto.epost)}), ${new Date(x.konto.tid * 1000).toLocaleDateString("sv-SE")}${x.konto.giltig ? "" : " – har gått ut, läraren behöver verifiera sig igen"}.
-        <span class="muted">Det betyder att ${esc(x.konto.doman)} har gett personen ett konto. Det är inte en kontroll av lärarlegitimation.</span>`
+        <span class="muted">Det betyder att ${esc(x.konto.doman)} har gett personen ett konto. Det är inte en kontroll av lärarlegitimation.
+          <b>Vem som helst kan skapa en egen organisation</b>, så kontrollera att ${esc(x.konto.doman)} verkligen är barnets skola eller kommun.</span>`
         : `<span class="muted">Läraren har inte verifierat sig med sitt skolkonto. Fråga skolan om du är osäker på vem det är.</span>`}${x.konto_fel ? `<div class="small">⚠️ Verifieringen kunde inte godkännas: ${esc(x.konto_fel)}</div>` : ""}</div>`;
     const sk = k.skolan || {}, fs = sk.forslag;
     const skolKort = fs ? `<div class="card" style="border:2px solid var(--primary-color)"><b>🏫 ${fs.typ === "rektor" ? `Ny rektor på ${esc(fs.namn || "skolan")}` : `${esc(fs.namn || "En skola")} vill kopplas till ${esc(s.namn)}`}</b>

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -54,6 +55,14 @@ try:
     l = json.loads(anrop("/api/lage"))
     assert "windows" in l, l
     print("✓ uppdateringar och Windows-status")
+    for vag, body in (("/api/tillsyn_bekrafta", {"typ": "begar", "grund": "klagomal", "text": "Provkörning av tillsynen"}),
+                      ("/api/andra", {"op": "tillsyn_begar", "grund": "klagomal", "text": "Provkörning av tillsynen"})):
+        try:
+            anrop(vag, body)
+            raise AssertionError("tillsynsloggen gick att begära utan skolkonto: " + vag)
+        except urllib.error.HTTPError as err:
+            assert err.code in (400, 403), err.code
+    print("✓ tillsynsloggen kräver skolkonto")
     print("ALLT OK")
 finally:
     proc.terminate()

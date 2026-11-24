@@ -105,6 +105,15 @@ function demoAndra(b) {
     case "elev_lank": return { fel: "I demon finns inga riktiga familjer att lägga till." };
     case "skola_ny": case "skola_ga_med": case "skola_lamna": case "skola_kod": case "skola_synka": case "rektor_bli":
       return { fel: "I demon är skolan påhittad och går inte att ändra." };
+    case "tillsyn_begar": {
+      if (!b.text || b.text.trim().length < 10) return { fel: "Skriv kort varför (minst 10 tecken). Det sparas i åtkomstloggen och visas för kontrollanten." };
+      const namn = b.larare ? (d.skola.medlemmar.find((m) => m.id === b.larare) || {}).namn : "Alla lärare";
+      // i demon godkänner kontrollanten direkt
+      d.skola.tillsyn_begaran.unshift({ id: Math.random().toString(16).slice(2, 14), tid: DEMO_TID(), av: d.larare, grund: b.grund, grund_text: b.grund, text: b.text,
+        larare: b.larare, larare_namn: namn, status: "godkand", godkand_av: "Bengt Engelska", kan_oppna: true });
+      break;
+    }
+    case "rektor_kontrollanter": d.skola.rektor.kontrollanter = (b.vilka || []).map((id) => ({ id, namn: (d.skola.medlemmar.find((m) => m.id === id) || {}).namn })); break;
     default: return { fel: "Okänd åtgärd." };
   }
   return null;
@@ -124,6 +133,18 @@ window.fetch = async (url, opt) => {
     const namn = Math.random().toString(16).slice(2) + (f.type === "application/pdf" ? ".pdf" : ".jpg");
     DEMO_FILER[namn] = URL.createObjectURL(f);
     return { ok: true, json: async () => ({ namn, mime: f.type, orig: f.name, storlek: f.size }) };
+  }
+  if (String(url).endsWith("/api/tillsyn")) {
+    if (!opt || !opt.method || opt.method === "GET") return { ok: true, json: async () => ({ LB: { namn: "Bengt Engelska", antal: 2 }, LC: { namn: "Cecilia Matte", antal: 1 } }) };
+    const post = (typ, rubrik, text) => ({ post: { tid: DEMO_TID(), typ, rubrik, text }, till: ["Familj 1", "Familj 2", "Familj 3"], sig_ok: true });
+    return { ok: true, json: async () => ({ LB: { namn: "Bengt Engelska", poster: [post("veckobrev", "Veckobrev v.48", "Glosor: although, through, enough"), post("riktlinje", "Engelska", "Låt eleven försöka själv först")] },
+                                             LC: { namn: "Cecilia Matte", poster: [post("prov", "Bråk", "")] } }) };
+  }
+  if (String(url).endsWith("/api/tillsyn_bekrafta")) {
+    // i demon finns ingen riktig inloggning: åtgärden görs direkt
+    const b = JSON.parse(opt.body);
+    const f = b.typ === "begar" ? demoAndra({ ...b, op: "tillsyn_begar" }) : null;
+    return { ok: !f, json: async () => f || { klar: true } };
   }
   let fel = null;
   if (String(url).includes("/api/andra")) fel = demoAndra(JSON.parse(opt.body));

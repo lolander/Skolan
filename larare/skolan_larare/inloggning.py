@@ -32,20 +32,29 @@ class Inloggning:
     def __init__(self) -> None:
         self._vantar: dict[str, dict] = {}
 
-    def starta(self, lev: str, port: int, pub: str) -> str:
+    def starta(self, lev: str, port: int, pub: str, atgard: dict | None = None, epost: str = "") -> str:
+        """atgard: en åtgärd som ska bekräftas med en ny inloggning (t.ex. tillsynsloggen). Intyget knyts då till just den
+        åtgärden (nonce = hash av nyckeln + åtgärden) och inloggningen krävs på nytt, med skolans tvåstegsverifiering."""
         if lev not in skolkonto.tillgangliga():
             raise ValueError("Den här inloggningen är inte tillgänglig än.")
         nu = time.time()
         for k in [k for k, v in self._vantar.items() if nu - v["tid"] > 900]:
             self._vantar.pop(k)
         state, verifier = secrets.token_urlsafe(24), secrets.token_urlsafe(48)
-        self._vantar[state] = {"lev": lev, "verifier": verifier, "tid": nu, "pub": pub}
+        bunden = pub + "|" + atgard["bind"] if atgard else pub
+        self._vantar[state] = {"lev": lev, "verifier": verifier, "tid": nu, "pub": bunden, "atgard": atgard}
         param = {"client_id": skolkonto.klient(lev), "response_type": "code", "redirect_uri": svar_adress(lev, port),
-                 "scope": "openid profile email", "state": state, "nonce": skolkonto.nonce_for(pub),
+                 "scope": "openid profile email", "state": state, "nonce": skolkonto.nonce_for(bunden),
                  "code_challenge": _b64(hashlib.sha256(verifier.encode()).digest()), "code_challenge_method": "S256",
                  "prompt": "select_account"}
         if lev == "google":
             param["hd"] = "*"  # visa bara skol- och organisationskonton i kontoväljaren
+        if atgard:
+            param["max_age"] = "0"  # logga in på nytt, även om webbläsaren redan är inloggad
+            if lev == "microsoft":
+                param["prompt"] = "login"
+            if epost:
+                param["login_hint"] = epost
         return skolkonto.INLOGGNING[lev] + "?" + urlencode(param)
 
     async def avsluta(self, session: ClientSession, fraga: dict, port: int) -> dict:
@@ -67,7 +76,7 @@ class Inloggning:
         token = svar["id_token"]
         async with session.get(skolkonto.NYCKLAR[lev], timeout=ClientTimeout(total=30)) as r:
             jwks = await r.json(content_type=None)
-        return {"token": token, **skolkonto.kontrollera(token, jwks, v["pub"])}
+        return {"token": token, "atgard": v.get("atgard"), **skolkonto.kontrollera(token, jwks, v["pub"])}
 
 
 def _fel_text(kod: str, text: str) -> str:

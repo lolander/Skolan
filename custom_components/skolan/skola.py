@@ -35,7 +35,7 @@ from pathlib import Path
 
 from homeassistant.util import dt as dt_util
 
-from . import meriter, skolkonto
+from . import meriter, omsorg, skolkonto, vanner
 
 PA = True  # visar lärare och klass i appen
 VAG = "/api/skolan/klass/"
@@ -616,6 +616,29 @@ def skicka_mejl(bas: Path, till: str, amne: str, text: str) -> None:
 
 
 # ---------- från lärarappen ----------
+def _lan_url(url: str) -> str:
+    """Lärarappens adress som barnet öppnar på lektionen: bara en adress i skolans lokala nät (privat IP eller .local),
+    aldrig en vanlig webbsida på internet."""
+    import ipaddress
+    from urllib.parse import urlparse
+    if not re.fullmatch(r"https?://[\w.\-]+(:\d+)?", url or ""):
+        return ""
+    host = urlparse(url).hostname or ""
+    try:
+        return url if ipaddress.ip_address(host).is_private else ""
+    except ValueError:
+        return url if host.endswith(".local") else ""
+
+
+def _till_barnet(text: str, n: int) -> tuple[str, bool]:
+    """Fritext från läraren som visas direkt för barnet (gruppuppgifter, klassbossen). Kontaktuppgifter, länkar eller
+    olämpligt innehåll visas aldrig; returnerar (text, flaggad)."""
+    t = _text(text, n)
+    if t and (vanner.har_kontakt(t) or omsorg.bedom(t) in ("akut", "hot", "vald", "farlig")):
+        return "(Visas inte: texten innehöll kontaktuppgifter, en länk eller olämpligt innehåll. En förälder har fått veta.)", True
+    return t, False
+
+
 def _text(v, n: int) -> str:
     return re.sub(r"\s+", " ", str(v or "")).strip()[:n]
 
@@ -723,7 +746,7 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
     sk = body.get("skola") if isinstance(body.get("skola"), dict) else {}
     lar = s["lararna"].setdefault(lid, {"dela": {}, "godkand": False})
     lar.update({"id": lid, "klass": _text(body.get("klass"), 40), "namn": _text(body.get("larare"), 60),
-                "url": _text(body.get("url"), 80) if re.fullmatch(r"https?://[\w.\-]+(:\d+)?", _text(body.get("url"), 80)) else "",
+                "url": _lan_url(_text(body.get("url"), 80)),
                 "inst": {k: bool(inst.get(k)) for k in FUNKTIONER}, "synkad": dt_util.now().isoformat(timespec="minutes"),
                 "skola": {"id": _text(sk.get("id"), 40), "namn": _text(sk.get("namn"), 60)} if sk.get("id") else None})
     if signerad:
@@ -755,6 +778,7 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
     budget = [MAX_FILER_PER_SYNK * 4 // 3]
     kanda = set(s.setdefault("mottagna", [])) | {x["id"] for x in s["inkorg"]}
     nu = dt_util.now().isoformat(timespec="minutes")
+    flaggor: list[str] = []  # fritext till barnet som stoppades: föräldern får veta
 
     def in_korg(post: dict, fil) -> bool:
         """Lägg posten i inkorgen. En bifogad fil som inte kom fram (för stor eller fel sort) gör att posten väntar till nästa synk."""
@@ -797,13 +821,23 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
     if aktiv(s, "riktlinjer", lid):
         for m in (body.get("riktlinjer") or [])[:20]:
             if isinstance(m, dict) and re.fullmatch(r"[A-Za-z0-9_\-]{4,40}", str(m.get("id") or "")) and m["id"] not in kanda and _text(m.get("text"), 600):
-                in_korg({"id": m["id"], "typ": "riktlinje", "titel": "Riktlinje till AI:n", "amne": _text(m.get("amne"), 40), "text": _text(m.get("text"), 600)}, None)
+                rt = _text(m.get("text"), 600)
+                if vanner.har_kontakt(rt) or omsorg.bedom(rt) in ("akut", "hot", "vald", "farlig"):  # når aldrig AI:n, föräldern får veta
+                    flaggor.append(f"riktlinje till AI:n: {rt[:200]}")
+                    kanda.add(m["id"])
+                    s["mottagna"].append(m["id"])
+                    continue
+                in_korg({"id": m["id"], "typ": "riktlinje", "titel": "Riktlinje till AI:n", "amne": _text(m.get("amne"), 40), "text": rt}, None)
     mentor_finns = any(x.get("roll") == "mentor" and x["id"] != lid and aktiv(s, "klasslag", x["id"]) for x in s["lararna"].values())
     if aktiv(s, "klasslag", lid) and isinstance(body.get("klass_status"), dict) and (lar["roll"] == "mentor" or not mentor_finns):
         k = body["klass_status"]
         try:
+            boss, fl = _till_barnet(k.get("boss"), 40)
+            if fl:
+                flaggor.append(f"klassbossens namn: {_text(k.get('boss'), 40)}")
+                boss = "Klassbossen"
             s["klass"] = {"namn": _text(k.get("namn"), 40), "vecka": _text(k.get("vecka"), 10), "ikon": _text(k.get("ikon"), 4),
-                          "boss": _text(k.get("boss"), 40), "hp": max(1, min(10**7, int(k.get("hp") or 1))),
+                          "boss": boss, "hp": max(1, min(10**7, int(k.get("hp") or 1))),
                           "skada": max(0, min(10**7, int(k.get("skada") or 0))), "antal": max(0, min(1000, int(k.get("antal") or 0))), "larare": lid}
         except (TypeError, ValueError):
             pass
@@ -812,7 +846,11 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
         ny = [g for g in s["grupper"] if g.get("larare") and g.get("larare") != lid]  # andra lärares grupper ligger kvar
         for g in (body.get("grupper") or [])[:10]:
             if isinstance(g, dict) and re.fullmatch(r"[A-Za-z0-9_\-]{4,20}", str(g.get("id") or "")):
-                ny.append({"id": g["id"], "namn": _text(g.get("namn"), 40), "uppgift": _text(g.get("uppgift"), 1000), "datum": _text(g.get("datum"), 10),
+                gnamn, fl1 = _till_barnet(g.get("namn"), 40)
+                uppg, fl2 = _till_barnet(g.get("uppgift"), 1000)
+                if fl1 or fl2:
+                    flaggor.append(f"gruppuppgift: {_text(g.get('namn'), 40)}: {_text(g.get('uppgift'), 300)}")
+                ny.append({"id": g["id"], "namn": "Grupp" if fl1 else gnamn, "uppgift": uppg, "datum": _text(g.get("datum"), 10),
                            "medlemmar": [_text(x, 40) for x in (g.get("medlemmar") or [])][:40], "klar": (gamla.get(g["id"]) or {}).get("klar", ""),
                            "larare": lid, "larare_namn": lar["namn"]})
         s["grupper"] = ny  # avslutade grupper försvinner hos eleven (läraren har dem i sin historik)
@@ -832,7 +870,7 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
             "lararna": [{"id": x["id"], "namn": x["namn"], "amne": x.get("amne") or "", "roll": x.get("roll") or ""} for x in s["lararna"].values()]
             if far(lar, "mentor") or far(lar, "anteckningar") else [],
             "elev_id": elev_id(s) if far(lar, "namn") and niva >= 1 else "",
-            "mottagna": s["mottagna"][-100:], "_filer": filer}
+            "mottagna": s["mottagna"][-100:], "_filer": filer, "_flaggor": flaggor}
 
 
 def insikt(s: dict, data: dict, lid: str, fraga) -> dict | None:

@@ -118,6 +118,8 @@ k.skola.satt_ratt("LC", beh.niva_ratt(1), "Ämneslärare: bara namn och grupper 
 k.skola.satt_mentor(k.d["larar_id"], "4B", "Klassens mentor läsåret 2026/27")
 k.skola.godkann("LB", "4B", "Engelska", None)
 k.skola.godkann("LC", "4B", "Matte", None)
+k.skola.satt_kontrollanter(["LB"], "Biträdande rektor enligt delegationsordningen")
+k.d["skolkonto"] = {"token": "demo", "lev": "microsoft", "namn": "Anna Lärare", "epost": "anna.larare@ekbacken.se", "doman": "ekbacken.se", "org": "demo", "tid": int(time.time())}
 for i, b_ in enumerate(sk["policy"]["beslut"][1:]):
     b_["tid"] = dag(-18 + i) + " 09:1" + str(i)
 sk["policy"] = beh.signera_policy(sk["policy"], k.d["nyckel"])
@@ -140,5 +142,8 @@ assert html.count("<script>\n") == 1, "lärarappen har fler skript än väntat"
 html = html.replace("<script>\n", "<script>\n" + shim + "\n</script>\n<script>\n", 1)
 html = html.replace('<a href="/api/beslut.csv">', '<a href="#behorighet" onclick="alert(\'I demon går det inte att ladda ner.\');return false">')
 html = html.replace('<a href="/api/historik.csv">', '<a href="#historik" onclick="alert(\'I demon går det inte att ladda ner.\');return false">')
+for a in ('<a href="/api/tillsyn_atkomst.csv">', '<a class="small" href="/api/tillsyn.json?begaran=${encodeURIComponent(b.id)}">'):
+    assert a in html, a
+    html = html.replace(a, '<a href="#skolan" onclick="alert(\'I demon går det inte att ladda ner.\');return false">')
 (ut / "index.html").write_text(html, "utf-8")
 print("ok", len(html))

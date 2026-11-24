@@ -7250,8 +7250,11 @@ class SkolaView(HomeAssistantView):
                 barn_namn = next((b["namn"] for b in hass.data[DOMAIN]["conf"]["barn"] if b["id"] == barn), "")
                 async with _vlock(hass, f"skola:{barn}"):
                     s = await hass.async_add_executor_job(skola.las, mapp)
-                    anm = skola.anmal(s, str(body.get("larare") or ""), body.get("text"), body.get("kontakt"), barn_namn)
+                    lid_anm = str(body.get("larare") or "")
+                    anm_namn = (s["lararna"].get(lid_anm) or {}).get("namn") or ""
+                    anm = skola.anmal(s, lid_anm, body.get("text"), body.get("kontakt"), barn_namn)
                     await hass.async_add_executor_job(skola.spara, mapp, s)
+                await _riktlinjer_bort(hass, barn, mapp, [(lid_anm, anm_namn)])
                 _LOGGER.warning("Skolan: en förälder har anmält en misstanke om en lärare för %s och kopplat bort läraren", barn_namn)
                 return self.json({**await _skola_status(hass, barn, True), "anmalan": anm})
             elif op in ("inkorg_material", "inkorg_prov"):
@@ -7266,7 +7269,7 @@ class SkolaView(HomeAssistantView):
                         data = await hass.async_add_executor_job(_load, mapp)
                         a = next((x for x in data.get("amnen", []) if x["id"] == body.get("amne")), None)
                         plugg.riktlinje_ny(data, a["id"] if a else "", a["namn"] if a else "Alla ämnen", b["text"], "larare",
-                                           b.get("larare") or skola.huvudlarare(s).get("namn") or "Läraren")
+                                           b.get("larare") or skola.huvudlarare(s).get("namn") or "Läraren", b.get("larar_id") or "")
                         b["status"] = "sparad"
                         await hass.async_add_executor_job(_save, mapp, data)
                         await hass.async_add_executor_job(skola.spara, mapp, s)
@@ -7276,7 +7279,9 @@ class SkolaView(HomeAssistantView):
                     if op == "installningar":
                         skola.satt_installningar(s, body)
                     elif op == "koppla_bort":
-                        skola.koppla_bort(s, str(body.get("larare") or "") or None)
+                        lid_bort = str(body.get("larare") or "") or None
+                        bort_namn = [(x["id"], x.get("namn") or "") for x in s["lararna"].values() if not lid_bort or x["id"] == lid_bort]
+                        skola.koppla_bort(s, lid_bort)
                     elif op == "larare_godkann":  # föräldern godkänner en ny lärare (inget delas förrän nu)
                         skola.godkann_larare(s, str(body.get("larare") or ""))
                     elif op in ("skolan_godkann", "skolan_neka"):  # föräldern godkänner skolan och rektorn (eller en ny rektor)
@@ -7292,9 +7297,21 @@ class SkolaView(HomeAssistantView):
                     else:
                         raise ValueError("Okänd åtgärd.")
                     await hass.async_add_executor_job(skola.spara, mapp, s)
+                if op == "koppla_bort":  # efter skolans lås (samma låsordning som annan kod: barnets lås före skolans)
+                    await _riktlinjer_bort(hass, barn, mapp, bort_namn)
         except ValueError as err:
             return self.json_message(str(err), 400)
         return self.json(await _skola_status(hass, barn, True))
+
+
+async def _riktlinjer_bort(hass: HomeAssistant, barn: str, mapp: Path, lararna: list[tuple[str, str]]) -> None:
+    """Bortkopplade eller anmälda lärares riktlinjer slutar genast styra AI:n."""
+    if not lararna:
+        return
+    async with hass.data[DOMAIN]["locks"][barn]:
+        data = await hass.async_add_executor_job(_load, mapp)
+        if sum(plugg.riktlinjer_bort_for_larare(data, lid, namn) for lid, namn in lararna):
+            await hass.async_add_executor_job(_save, mapp, data)
 
 
 async def _inkorg_spara(hass: HomeAssistant, barn: str, mapp: Path, op: str, body: dict) -> None:
@@ -7434,6 +7451,7 @@ class KlassView(HomeAssistantView):
                     await hass.async_add_executor_job(skola.spara, mapp, s)
                     vantar = [x for x in s["inkorg"] if x.get("status") == "ny"]
                     forslag = svar.pop("_forslag", None)
+                flaggor = svar.pop("_flaggor", []) if not vantar_godk else []
                 sk_f = (s.get("skolan") or {}).get("forslag") or {}
                 lar_namn = (s["lararna"].get(str(body.get("larar_id") or "")[:40]) or {}).get("namn") or "En lärare"
         if forslag:  # skolan, en ny rektor eller en ny lärare: föräldern ska veta (och godkänna skola och rektor)
@@ -7447,6 +7465,13 @@ class KlassView(HomeAssistantView):
             }.get(forslag, ("", ""))
             for tjanst in hass.data[DOMAIN]["conf"].get("foralder_notify", {}).values():
                 await _notis(hass, tjanst, rubrik, text, f"/skolan?barn={hitta['id']}")
+        if flaggor:  # läraren skickade fritext till barnet med kontaktuppgifter eller olämpligt innehåll: stoppat, föräldern får veta
+            _LOGGER.warning("Skolan: text från läraren %s till %s stoppades", lar_namn, hitta["namn"])
+            for tjanst in hass.data[DOMAIN]["conf"].get("foralder_notify", {}).values():
+                await _notis(hass, tjanst, f"⚠️ Text från {lar_namn} stoppades",
+                             f"Läraren skickade något till {hitta['namn']} som innehöll kontaktuppgifter, en länk eller olämpligt innehåll, och det visas inte: "
+                             f"\"{flaggor[0][:200]}\". Tycker du att det är konstigt: Läxspelet → Föräldrar → Skolan → 🚩 Anmäl misstanke.",
+                             f"/skolan?barn={hitta['id']}")
         if vantar_godk:
             return self.json({"fel": "Föräldern har inte godkänt dig som lärare än. Be föräldern godkänna dig i Läxspelet → Föräldrar → Skolan."},
                              status_code=409)

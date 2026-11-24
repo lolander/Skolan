@@ -78,8 +78,22 @@ async function ladda() {
     msg = q.has("skolkonto_fel") ? { t: "fel", x: q.get("skolkonto_fel") } : { t: "ok", x: "✔ Du är verifierad med skolkontot. Föräldrarna ser det vid nästa synk." };
     history.replaceState(null, "", "/#inst");
   }
+  if (q.has("tillsyn") || q.has("tillsyn_fel")) {
+    flik = "skolan";
+    msg = q.has("tillsyn_fel") ? { t: "fel", x: q.get("tillsyn_fel") } : { t: "ok", x: TS_KLAR[q.get("tillsyn")] || "✔ Klart." };
+    history.replaceState(null, "", "/#skolan");
+  }
   L = await (await fetch("/api/lage")).json(); rita();
 }
+// Tillsynsloggen: bekräfta med en ny inloggning med skol- eller organisationskontot
+async function bekrafta(body) {
+  const r = await fetch("/api/tillsyn_bekrafta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (j.url) { location.href = j.url; return; }
+  if (r.ok && j.klar) { msg = { t: "ok", x: TS_KLAR[body.typ] }; await ladda(); return; }
+  msg = { t: "fel", x: j.fel || "Det gick inte." }; rita();
+}
+const TS_KLAR = { begar: "✔ Bekräftat med skolkontot. Begäran är skickad till kontrollanten.", svar: "✔ Bekräftat med skolkontot. Rektorn får svaret vid nästa synk." };
 async function uppdatera(body, ok) {
   const r = await fetch("/api/uppdatering", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
@@ -192,6 +206,7 @@ function regler(forsta) {
       <li><b>Gallra.</b> Radera klassens data när läsåret är slut (🔐 Behörighet → 🗑️).</li>
       <li><b>Bara ditt skolkonto.</b> Verifiera dig med skolans konto, aldrig ett privat. Verifieringen visar att skolan har gett dig ett konto. Den är ingen kontroll av lärarlegitimation; skolan ansvarar för vem som undervisar.</li>
       <li><b>Skydda datorn och skolans kod.</b> Ge skolans kod bara till kollegor på skolan. Har datorn försvunnit eller misstänker du att någon annan har kommit åt appen: säg till rektorn och IT direkt (det kan vara en personuppgiftsincident som ska anmälas inom 72 timmar).</li>
+      <li><b>Allt du skickar till eleverna loggas hos rektorn.</b> Veckobrev, material, provresultat, gruppuppgifter, riktlinjer till AI:n och klassbossen sparas, signerade av din app, i rektorns tillsynslogg i ett år. Det skyddar eleverna och dig: rektorn kan se exakt vad som skickades och när. Rektorn kan bara öppna loggen med en angiven grund och efter godkännande från en kontrollant, och båda bekräftar med skolkontot. Vid uppföljning och klagomål får du veta när rektorn har tittat.</li>
     </ol>
     <p class="small muted">Mer för rektor, IT och dataskyddsombud: <a href="https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md" target="_blank" rel="noopener">📄 Information till skolor</a></p>
     ${L.regler_last ? `<p class="small muted">✅ Du kvitterade reglerna${L.regler_tid ? " " + esc(L.regler_tid) : ""}.</p>` : `<button class="p" id="regler-ok">✅ Jag har läst och förstår</button>`}</div>`;
@@ -240,7 +255,8 @@ const REKTOR_STEG = [
     "<b>Huvudmannen är personuppgiftsansvarig.</b> Informera dataskyddsombudet innan skolan börjar använda appen.",
     "Innan någon lärare får <b>nivå 1 eller 2</b>: konsekvensbedömning (DPIA), registerförteckning och information till vårdnadshavare ska vara klara. Mallar finns i Information till skolor (bilaga A–D).",
     "<b>Ge så lite som möjligt.</b> Välj den lägsta nivån som behövs, ompröva besluten och sänk eller ta bort behörigheter när en lärare byter klass eller slutar.",
-    "<b>Personuppgiftsincidenter</b> (t.ex. en borttappad dator med nivå 2) ska anmälas till IMY inom 72 timmar via huvudmannen. Sänk behörigheter och byt skolans kod direkt."]],
+    "<b>Personuppgiftsincidenter</b> (t.ex. en borttappad dator med nivå 2) ska anmälas till IMY inom 72 timmar via huvudmannen. Sänk behörigheter och byt skolans kod direkt.",
+    "<b>Tillsynsloggen</b> (🏫 Skolan) visar allt lärarna har skickat till eleverna, signerat av lärarnas appar, i ett år. Du öppnar den med grund och motivering, efter godkännande från en kontrollant du utser, och båda bekräftar med skolkontot. Varje öppning loggas. Den ska stå i registerförteckningen, och lärarna informeras i reglerna."]],
   ["🏫", "Lärarna och eleverna", [
     "<b>Läxspelet kontrollerar inte lärarlegitimation eller anställning.</b> Det är ditt och skolans ansvar att bara anställda lärare får roller och behörigheter. Verifiering med skolkonto visar bara att skolan har gett personen ett konto.",
     "Utse bara <b>rätt mentorer</b>. Mentorerna godkänner ämneslärarna, så de behöver veta vad det innebär.",
@@ -307,6 +323,10 @@ function behorighet() {
         ${val(m.id, m.ratt || [])}</div>`).join("")}</div>
     <div class="kort"><h3>Lämna över rektorsrollen</h3>${s.medlemmar.length ? `<div class="grid2"><div><select id="beh-ny">${s.medlemmar.map((m) => `<option value="${m.id}" ${m.kan_bli_rektor ? "" : "disabled"}>${esc(m.namn)}${m.kan_bli_rektor ? "" : " (behöver uppdatera appen)"}</option>`).join("")}</select></div>
       <div><button class="m" id="beh-overlat">👩‍💼 Lämna över</button></div></div><p class="small muted">Den nya rektorn tar över direkt. Du blir vanlig lärare.</p>` : `<p class="small muted">Inga kollegor i skolan än.</p>`}</div>
+    <div class="kort"><h3>🔎 Kontrollanter för tillsynsloggen</h3><p class="small muted">Tillsynsloggen kan bara öppnas när en kontrollant har godkänt (fyraögonsprincipen). Enda undantaget är när du är ensam i skolan. Då finns bara dina egna utskick i loggen. Utse gärna två eller tre, så att någon alltid går att nå.
+      Välj 1–3 personer, till exempel biträdande rektor eller den huvudmannen utser. Alla lärare ser beslutet. En kontrollant kan aldrig godkänna granskning av sig själv.</p>
+      ${s.medlemmar.length ? s.medlemmar.map((m) => `<label class="chk small"><input type="checkbox" data-kontr value="${esc(m.id)}" ${(r.kontrollanter || []).some((k) => k.id === m.id) ? "checked" : ""} ${m.kan_bli_rektor ? "" : "disabled"}> ${esc(m.namn)}${m.kan_bli_rektor ? "" : " (behöver uppdatera appen)"}</label>`).join("")
+        + `<div><button class="m" data-kontr-spara>💾 Spara kontrollanter</button></div>` : `<p class="small muted">Inga kollegor i skolan än.</p>`}</div>
     <div class="kort"><h3>📜 Beslutslogg</h3><p class="small muted">Alla beslut om behörigheter, till exempel för dataskyddsombudet. <a href="/api/beslut.csv">⬇️ Ladda ner (Excel/CSV)</a></p>
       ${r.beslut.slice(0, 50).map((x) => `<div class="small" style="padding:4px 0;border-bottom:1px solid var(--rand)">${esc(x.tid)} · <b>${esc(x.av)}</b> · ${esc(x.text)}</div>`).join("")}</div>` + nivaer;
 }
@@ -581,7 +601,63 @@ function anmalningar() {
     ${sj.length ? `<p class="small"><b>Lämna de här till rektorn eller huvudmannen direkt.</b> De kom till dig eftersom ingen rektor fanns att skicka dem till, eller för att anmälan gäller rektorn.
       Prata inte med den anmälda personen om innehållet.</p>${sj.map((a) => en(a, false)).join("")}` : ""}</div>`;
 }
-function skolan() { return anmalningar() + skolanInnehall(); }
+let tillsyn = null, tillsynOversikt = null;
+const TS_TYP = { veckobrev: "📬 Veckobrev", material: "📎 Material", prov: "📝 Prov", schema: "🗓️ Schema", riktlinje: "📝 Riktlinje till AI:n", grupp: "👥 Grupp", klassboss: "🐙 Klassboss" };
+const TS_GRUND = { uppfoljning: "Uppföljning av undervisningen", klagomal: "Klagomål från vårdnadshavare eller elev", brott: "Misstanke om brott eller att ett barn far illa", myndighet: "Begäran från polis, socialtjänst eller tillsynsmyndighet" };
+const TS_STATUS = { vantar: "⏳ Väntar på kontrollant", godkand: "✅ Godkänd", nekad: "⛔ Nekad", egen: "✅ Du är ensam i skolan: bara dina egna utskick" };
+const TS_HUR = `<div class="msg"><b>Vid misstanke om brott mot ett barn</b><br>1. Anmäl till polisen (114 14, vid fara 112) och till socialtjänsten. Utred inte själv.<br>
+  2. Prata inte med den misstänkta läraren först. Då kan bevis försvinna.<br>3. Lämna exporten som den är. Signaturerna visar att ingen har ändrat i den.</div>`;
+function tillsynKort() {
+  if (!L.skola?.rektor?.jag) return "";
+  const kontr = L.skola.rektor.kontrollanter || [], bg = L.skola.tillsyn_begaran || [];
+  const intro = `<p class="small">Allt lärarna har skickat till eleverna, signerat av lärarnas appar, sparat i ett år. För att öppna loggen anger du grund och motivering,
+    och en kontrollant (${kontr.length ? esc(kontr.map((k) => k.namn).join(", ")) : "ingen utsedd än, se 🔐 Behörighet"}) godkänner i sitt Lärarrum.
+    Både du och kontrollanten bekräftar med en ny inloggning med skol- eller organisationskontot. Det gäller även vid misstanke om brott:
+    kontakta kontrollanten direkt, även på kvällen. Varje öppning loggas.</p>
+    ${L.skolkonto?.konto ? "" : `<div class="msg fel">Du behöver verifiera dig med ditt skol- eller organisationskonto (⚙️ Inställningar) för att använda tillsynsloggen.</div>`}`;
+  if (!tillsynOversikt) return `<div class="kort"><h2>🔎 Tillsynslogg</h2>${intro}<button class="m" id="tillsyn-start">🔎 Begär tillgång</button>
+    ${bg.length ? `<button class="m" id="tillsyn-start2">Visa mina begäranden (${bg.length})</button>` : ""}</div>`;
+  const lar = Object.entries(tillsynOversikt);
+  const form = `<h3>Ny begäran</h3><div class="grid2">
+      <div><label for="ts-lar">Lärare</label><select id="ts-lar"><option value="">Alla lärare</option>${lar.map(([id, x]) => `<option value="${esc(id)}">${esc(x.namn)} (${x.antal})</option>`).join("")}</select></div>
+      <div><label for="ts-grund">Grund</label><select id="ts-grund">${Object.entries(TS_GRUND).map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join("")}</select></div></div>
+    <label for="ts-text">Motivering (visas för kontrollanten och sparas i åtkomstloggen)</label><textarea id="ts-text" rows="2" placeholder="t.ex. anmälan från vårdnadshavare 2026-11-20, dnr …"></textarea>
+    <div><button class="p" id="ts-begar">🔐 Bekräfta med skolkontot och skicka</button></div>
+    <p class="small muted">Vid uppföljning och klagomål får läraren veta att du har tittat. Vid misstanke om brott och myndighetsbegäran får läraren inte veta det.</p>`;
+  const lista = bg.length ? `<h3>Begäranden</h3>${bg.map((b) => `<div class="grupp"><b>${esc(b.larare_namn)}</b> · ${esc(TS_STATUS[b.status] || b.status)}${b.godkand_av ? ` av ${esc(b.godkand_av)}${b.godkand_epost ? ` (${esc(b.godkand_epost)})` : ""}` : ""}
+      <div class="small">${esc(b.tid)} · ${esc(b.grund_text)} · ${esc(b.text)}${b.rektor_epost ? ` · bekräftad som ${esc(b.rektor_epost)}` : ""}</div>
+      ${b.kan_oppna ? `<div><button class="m" data-ts-oppna="${esc(b.id)}">🔎 Öppna</button> <a class="small" href="/api/tillsyn.json?begaran=${encodeURIComponent(b.id)}">⬇️ Exportera (JSON med signaturer)</a></div>` : ""}</div>`).join("")}` : "";
+  const visa = tillsyn ? Object.entries(tillsyn).map(([id, x]) => `<h3>${esc(x.namn)}</h3>${x.poster.length ? `<table><tr><th>Tid</th><th>Vad</th><th>Innehåll</th><th>Elever</th></tr>
+      ${x.poster.slice(0, 200).map((p) => `<tr><td class="small">${esc(p.post.tid)}</td><td>${esc(TS_TYP[p.post.typ] || p.post.typ)}<br><span class="small">${esc(p.post.rubrik || "")}</span></td>
+        <td class="small" style="white-space:pre-wrap;max-width:420px">${esc((p.post.text || "").slice(0, 600))}${p.post.fil ? `<br>📎 ${esc(p.post.fil.namn)}` : ""}</td>
+        <td class="small">${p.till.length}${p.sig_ok === false ? "<br>⚠️ signaturen stämde inte" : ""}</td></tr>`).join("")}</table>` : `<p class="small muted">Inget loggat.</p>`}`).join("") : "";
+  return `<div class="kort"><h2>🔎 Tillsynslogg</h2>${intro}${TS_HUR}${form}${lista}${visa}
+    <p class="small"><a href="/api/tillsyn_atkomst.csv">⬇️ Åtkomstloggen (Excel/CSV)</a>, till exempel till dataskyddsombudet.</p>
+    <button class="m" id="tillsyn-dolj">Dölj</button></div>`;
+}
+// Kontrollanten: godkänn eller neka rektorns begäran, och se kopian av åtkomstloggen
+function kontrollKort() {
+  const k = L.skola?.kontroll;
+  if (!k) return "";
+  const vantar = k.fragor.filter((f) => f.status === "vantar" && !f.svar);
+  return `<div class="kort"><h2>🔎 Du är kontrollant för tillsynsloggen</h2>
+    <p class="small">Rektorn kan bara öppna loggen över det lärarna skickat till eleverna om du godkänner. Godkänn när grunden är rimlig, till exempel ett klagomål eller en misstanke.
+      Neka om det ser ut som att någon kollega granskas utan skäl. Du får aldrig frågor om dig själv. Du bekräftar ditt svar med en ny inloggning med skolkontot.</p>
+    ${L.skolkonto?.konto ? "" : `<div class="msg fel">Verifiera dig med ditt skol- eller organisationskonto (⚙️ Inställningar) för att kunna svara.</div>`}
+    ${vantar.length ? vantar.map((f) => `<div class="grupp"><b>${esc(f.larare_namn)}</b> <span class="small muted">${esc(f.tid)} · från ${esc(f.av)}</span>
+      <div class="small">${esc(f.grund_text)} · ${esc(f.text)}${f.rektor_epost ? ` · rektorn bekräftad som ${esc(f.rektor_epost)}` : ""}</div>
+      <div><button class="p" data-ktr-ja="${esc(f.id)}">🔐 Godkänn</button> <button class="m" data-ktr-nej="${esc(f.id)}">🔐 Neka</button></div></div>`).join("") : `<p class="small muted">Inga begäranden väntar.</p>`}
+    ${k.fragor.filter((f) => f.status !== "vantar" || f.svar).slice(0, 10).map((f) => `<div class="small">${esc(f.tid)} · ${esc(f.larare_namn)} · ${f.svar === "ja" ? "✅ du godkände" : f.svar === "nej" ? "⛔ du nekade" : esc(f.status)} · ${esc(f.grund_text)}</div>`).join("")}
+    ${k.atkomst.length ? `<details><summary class="small">Åtkomstloggen (${k.atkomst.length})</summary>${k.atkomst.map((x) => `<div class="small">${esc(x.tid)} · ${esc(x.av)} ${x.typ === "export" ? "exporterade" : "öppnade"} · ${esc(x.larare_namn)} · ${esc(x.grund_text)}${x.godkand_av ? ` · ${esc(x.godkand_av)}` : ""}</div>`).join("")}</details>` : ""}</div>`;
+}
+// Läraren: när rektorn har tittat i det du skickat (vid uppföljning och klagomål)
+function insynKort() {
+  const x = L.insyn || [];
+  if (!x.length) return "";
+  return `<div class="kort"><h3>🔎 Rektorn har tittat i dina utskick</h3>${x.slice(0, 5).map((r) => `<div class="small">${esc(r.tid)} · ${esc(r.av)} ${r.typ === "export" ? "exporterade" : "tittade"} · ${esc(r.grund_text)}</div>`).join("")}
+    <p class="small muted">Tillsynsloggen visar det du skickat till eleverna. Rektorn måste ange grund och få en kontrollants godkännande för att öppna den.</p></div>`;
+}
+function skolan() { return anmalningar() + kontrollKort() + tillsynKort() + insynKort() + skolanInnehall(); }
 function skolanInnehall() {
   const s = L.skola;
   if (!s) return `<div class="kort"><h2>🏫 Skolan</h2>
@@ -834,6 +910,20 @@ function koppla() {
   on("#sk-ga", () => { msg = { t: "ok", x: "Letar efter kollegan på nätverket…" }; rita(); andra({ op: "skola_ga_med", kod: $("#sk-kod")?.value || "", adress: $("#sk-adress")?.value || "" }, "Du är med i skolan! 🏫"); });
   on("#sk-ny-kod", () => andra({ op: "skola_kod" }, "Ny kod. Den gamla slutar fungera."));
   on("#sk-synka", () => andra({ op: "skola_synka" }, "Synkat med kollegorna."));
+  const tsStart = async () => { try { const r = await fetch("/api/tillsyn"); tillsynOversikt = r.ok ? await r.json() : {}; } catch (e) { tillsynOversikt = {}; } rita(); };
+  on("#tillsyn-start", tsStart); on("#tillsyn-start2", tsStart);
+  on("#tillsyn-dolj", () => { tillsyn = null; tillsynOversikt = null; rita(); });
+  on("#ts-begar", () => bekrafta({ typ: "begar", larare: $("#ts-lar").value, grund: $("#ts-grund").value, text: $("#ts-text").value }));
+  document.querySelectorAll("[data-ts-oppna]").forEach((b) => b.onclick = async () => {
+    const r = await fetch("/api/tillsyn", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ begaran: b.dataset.tsOppna }) });
+    const j = await r.json();
+    if (r.ok) tillsyn = j; else msg = { t: "fel", x: j.fel || "Det gick inte." };
+    rita();
+  });
+  document.querySelectorAll("[data-ktr-ja]").forEach((b) => b.onclick = () => bekrafta({ typ: "svar", id: b.dataset.ktrJa, ja: true }));
+  document.querySelectorAll("[data-ktr-nej]").forEach((b) => b.onclick = () => bekrafta({ typ: "svar", id: b.dataset.ktrNej, ja: false }));
+  document.querySelectorAll("[data-kontr-spara]").forEach((b) => b.onclick = () => andra({ op: "rektor_kontrollanter",
+    vilka: [...document.querySelectorAll("[data-kontr]:checked")].map((x) => x.value), motivering: $("#beh-grund")?.value || "" }, "Kontrollanterna är sparade."));
   document.querySelectorAll("[data-anm-hanterad]").forEach((b) => b.onclick = () => {
     const text = prompt("Vad har gjorts? (t.ex. polisanmält, IT har spärrat kontot, personen borttagen ur skolan)", "");
     if (text !== null) andra({ op: "anmalan_hanterad", id: b.dataset.anmHanterad, text }, "Noterat.");
