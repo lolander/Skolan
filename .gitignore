@@ -7,3 +7,6 @@ fristaende/build/
 fristaende/dist/
 fristaende/windows/Output/
 __pycache__/
+
+# Googles klienthemlighet (skapas av bygget från repo-hemligheten GOOGLE_HEMLIGHET)
+skolkonto_hemlighet.py

@@ -20,10 +20,16 @@ import time
 
 # Läxspelets registreringar hos Microsoft (Entra, flera organisationer, publik klient) och Google (skrivbordsapp).
 # Tomma tills apparna är registrerade: då visas inte verifieringen i Lärarrummet.
-MICROSOFT_KLIENT = ""
-GOOGLE_KLIENT = ""
-# Googles "hemlighet" för skrivbordsappar är inte hemlig (den finns i varje installation); Google kräver den ändå vid inlösen.
+MICROSOFT_KLIENT = "ed3db50e-7a88-4dc3-8c0b-8f92e16ecf51"
+GOOGLE_KLIENT = "643812673723-33m2dqh36du5mvtio6e2cdpkiafj6sin.apps.googleusercontent.com"
+# Googles "hemlighet" för skrivbordsappar behövs bara i Lärarrummet vid inlösen. Den ligger inte i repot
+# (GitHub/Google spärrar läckta hemligheter) utan i skolkonto_hemlighet.py, som bygget skapar från
+# repo-hemligheten GOOGLE_HEMLIGHET. Familjens app behöver den inte: den kontrollerar bara intyg.
 GOOGLE_HEMLIGHET = ""
+try:
+    from .skolkonto_hemlighet import GOOGLE_HEMLIGHET  # noqa: F811
+except ImportError:
+    pass
 
 GILTIG_DAGAR = 100  # Lärarrummet ber läraren verifiera igen efter 90 dagar
 NYCKLAR = {"microsoft": "https://login.microsoftonline.com/common/discovery/v2.0/keys",
@@ -42,7 +48,8 @@ def klient(lev: str) -> str:
 
 
 def tillgangliga() -> list[str]:
-    return [x for x in ("microsoft", "google") if klient(x)]
+    """Leverantörer läraren kan verifiera sig med (Google kräver hemligheten vid inlösen)."""
+    return [x for x in ("microsoft", "google") if klient(x) and (x != "google" or GOOGLE_HEMLIGHET)]
 
 
 def _b64(b: bytes) -> str:

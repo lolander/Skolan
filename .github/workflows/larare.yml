@@ -23,6 +23,17 @@ jobs:
       - name: Installera beroenden
         run: pip install -r larare/requirements.txt pyinstaller
 
+      - name: Googles klienthemlighet (repo-hemlighet, ligger inte i koden)
+        env:
+          GOOGLE_HEMLIGHET: ${{ secrets.GOOGLE_HEMLIGHET }}
+        shell: python
+        run: |
+          import os
+          h = os.environ.get("GOOGLE_HEMLIGHET", "")
+          with open("larare/skolan_larare/skolkonto_hemlighet.py", "w", encoding="utf-8") as f:
+              f.write(f"GOOGLE_HEMLIGHET = {h!r}\n")
+          print("Google-hemligheten", "finns" if h else "SAKNAS: Google-verifieringen döljs i appen")
+
       - name: Bygg SkolanLarare.exe
         working-directory: larare
         run: pyinstaller --noconfirm windows/larare.spec
