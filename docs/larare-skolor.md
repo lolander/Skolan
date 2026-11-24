@@ -1,6 +1,8 @@
-# Läxspelet Lärare: information till skolor, IT och dataskyddsombud
+# Lärarrummet: information till skolor, IT och dataskyddsombud
 
-*Gäller Läxspelet Lärare 0.12.0 och Läxspelet 1.98.0 och senare. Senast uppdaterad: 23 november 2026.*
+*Lärarrummet hette tidigare Läxspelet Lärare. Filnamn och grupprincipnycklar har kvar det gamla namnet (Laxspelet-Larare, LaxspeletLarare).*
+
+*Gäller Lärarrummet 0.12.0 och Läxspelet 1.98.0 och senare. Senast uppdaterad: 23 november 2026.*
 
 **Snabbt:** [Kom igång på nivå 0 (en sida)](larare-niva0.md) · [Regelverken i Sverige](efterlevnad.md) · [Prova appen utan att installera](https://lolander.github.io/Skolan/demo/) · [Mallar i Word](mallar/) · [IT-paket](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-IT.zip) · [Säkerhet](../SECURITY.md)
 
@@ -59,6 +61,7 @@ Rektorn kan också välja enskilda funktioner i stället för en hel nivå. Ett 
 ## 3. Rektorn i appen
 
 - En lärare skapar skolan i appen och blir då **rektor i appen**. Rollen kan lämnas över till en kollega, till exempel till skolans rektor eller den rektorn utser.
+- **Rektorn kvitterar sitt ansvar** innan rollen kan användas: när skolan skapas, när någon tar rollen och när den lämnas över. Kvittensen gäller att rektorn beslutar för huvudmannens räkning, att besluten loggas, att huvudmannen är personuppgiftsansvarig, att DPIA, registerförteckning och information till vårdnadshavare ska vara klara före nivå 1–2, att behörigheter ska vara så små som möjligt, att personuppgiftsincidenter anmäls inom 72 timmar, att Läxspelet inte kontrollerar lärarlegitimation eller anställning (det är skolans ansvar), att appen är ett frivilligt komplement, gallring och samråd med IT. Varje punkt bockas i, och kvittensen sparas med datum i beslutsloggen.
 - Rektorn bestämmer en **standard** för alla lärare och kan ge enskilda lärare andra behörigheter.
 - Ett beslut om nivå 1 eller 2 kräver att rektorn skriver **vad beslutet grundar sig på**, till exempel dataskyddsombudets bedömning eller ett diarienummer.
 - Besluten **signeras digitalt** av rektorn (Ed25519). Lärarnas appar godtar bara beslut som är signerade av den rektor de redan litar på, så en lärare kan inte höja sin egen nivå.
@@ -104,6 +107,7 @@ Familjens Läxspelet körs hemma hos familjen och ingår inte i skolans system.
 | Rektorsbeslut | Signerade med Ed25519 (se avsnitt 3). |
 | Synk till familjen | Signerad med lärarappens egen nyckel (Ed25519) och högst 15 minuter gammal. Familjens app knyter nyckeln till läraren vid första synken och godtar sedan bara den. |
 | Roller | Rektorns intyg (behörighet, mentor för klasser) och mentorns godkännande av ämneslärare är signerade (Ed25519) och gäller högst 45 dagar. Familjens app sparar det senaste, så att sänkta behörigheter och borttagna godkännanden slår igenom. |
+| Skolkonto (frivilligt) | Läraren kan verifiera sig med skolkontot hos Microsoft eller Google (bara namn och e-post). Intyget är knutet till lärarappens nyckel och kontrolleras av familjens app mot Microsofts och Googles publika nycklar. Privata konton godtas inte, och intyget gäller i 100 dagar. Det visar ett konto i organisationen, inte lärarlegitimation. IT kan behöva godkänna appen en gång, se [Verifiering med skolkonto](skolkonto.md). |
 | Familjens Läxspelet | Nås bara via HTTPS med en hemlig nyckel i länken. Länkar till privata adresser godtas inte. |
 | Uppdateringar | Hämtas från projektets GitHub-sida. Appen installerar bara filer vars SHA-256-fingeravtryck stämmer. IT kan stänga av automatiska uppdateringar (se avsnitt 7). |
 | Ingen insamling | Ingen telemetri, ingen analys, ingen reklam, inga konton. |
@@ -187,7 +191,7 @@ Appen är byggd för att vara ett **frivilligt komplement**. Då stämmer den me
 - **Mobiltelefoner i skolan:** inget i appen kräver att elever använder mobilen i skolan. Vårdnadshavaren skickar klasslänken hemifrån.
 
 ### Lärarna får reglerna i appen
-Första gången appen startas, och när reglerna ändras, måste läraren läsa och kvittera **📘 Så gör du rätt** (frivilligt komplement, inga elevuppgifter i utskick, inte för betyg, insikten gäller bara de som är med, saklighet i anteckningar, bara det rektorn beslutat, gallring). Kvitteringen sparas i lärarens historik. Dessutom visas korta påminnelser där det är lätt att göra fel: när läraren skriver veckobrev, material, provresultat, anteckningar och meddelanden, delar in grupper, och tittar på statistik, studieteknik, rapporter och lappar.
+Första gången appen startas får läraren en kort introduktion (namn och klass, verifiering med skolkonto, skolan, familjerna). Den avslutas med att läraren läser och kvitterar **📘 Så gör du rätt**: frivilligt komplement, inga elevuppgifter i utskick, inte för betyg, insikten gäller bara de som är med, saklighet i anteckningar, bara det rektorn har beslutat, gallring, bara skolkontot (verifieringen är ingen kontroll av legitimation) och att en försvunnen dator eller ett misstänkt intrång ska anmälas till rektorn och IT direkt. Läraren kvitterar igen när reglerna ändras. Kvittensen sparas med datum. Dessutom visas korta påminnelser där det är lätt att göra fel: när läraren skriver veckobrev, material, provresultat, anteckningar och meddelanden, delar in grupper, och tittar på statistik, studieteknik, rapporter och lappar.
 
 ## 10. Rekommenderad väg för en skola
 
@@ -226,9 +230,9 @@ Första gången appen startas, och när reglerna ändras, måste läraren läsa 
 
 ## Bilaga C: mall för rektorsbeslut
 
-> **Beslut om användning av Läxspelet Lärare**
+> **Beslut om användning av Lärarrummet**
 > Skola: … Datum: … Diarienummer: …
-> Rektor beslutar att lärarna på skolan får använda Läxspelet Lärare med följande behörigheter:
+> Rektor beslutar att lärarna på skolan får använda Lärarrummet med följande behörigheter:
 > - Standard för alla lärare: nivå 0 (inga personuppgifter).
 > - [Namn]: nivå … , funktioner: …
 >
@@ -241,9 +245,11 @@ Första gången appen startas, och när reglerna ändras, måste läraren läsa 
 ## Bilaga D: informationstext till vårdnadshavare
 
 > **Läxspelet och skolan**
-> Vissa lärare på skolan använder Läxspelet Lärare för att skicka veckobrev, glosor och studiematerial direkt till familjer som använder Läxspelet hemma. Det är frivilligt och ersätter inte [skolans lärplattform], där all information också finns.
+> Vissa lärare på skolan använder Lärarrummet för att skicka veckobrev, glosor och studiematerial direkt till familjer som använder Läxspelet hemma. Det är frivilligt och ersätter inte [skolans lärplattform], där all information också finns.
 >
 > Första gången en lärare från skolan kopplar sig frågar Läxspelet om du godkänner [skolans namn] och rektor [namn]. Rektorn utser ditt barns mentor, och mentorn godkänner ämneslärarna. Läxspelet visar vilken roll varje lärare har.
+>
+> Lärare kan verifiera sig med sitt skolkonto. Då visar Läxspelet att Microsoft eller Google intygar lärarens namn och att [skolan/kommunen] har gett personen ett konto. Läxspelet kontrollerar inte lärarlegitimation eller anställning. Det ansvarar skolan för, och du kan alltid fråga skolan.
 >
 > Du bestämmer själv i Läxspelet vad som delas med läraren. Allt är avstängt tills du slår på det, och du kan stänga av eller koppla bort läraren när du vill. Det läraren skickar läggs in först när du har godkänt det.
 >

@@ -9,12 +9,12 @@
 
 [Setup]
 AppId={{5E1D2C3B-7A49-4F0E-9C21-8B6D4A3F2E10}
-AppName=Läxspelet Lärare
+AppName=Lärarrummet
 AppVersion={#VERSION}
 AppPublisher=Skolan
 AppPublisherURL=https://github.com/lolander/Skolan
 DefaultDirName={autopf}\Laxspelet Larare
-DefaultGroupName=Läxspelet Lärare
+DefaultGroupName=Lärarrummet
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=commandline
@@ -43,17 +43,20 @@ Source: "..\dist\SkolanLarare\*"; DestDir: "{app}"; Flags: ignoreversion recurse
 
 ; Gamla genvägar från när appen hette Skolan.
 [InstallDelete]
+; Appen hette Läxspelet Lärare före 0.13.0
+Type: filesandordirs; Name: "{autoprograms}\Läxspelet Lärare"
+Type: files; Name: "{autodesktop}\Läxspelet Lärare.lnk"
 Type: files; Name: "{group}\Skolan Lärare.lnk"
 Type: files; Name: "{group}\Avinstallera Skolan Lärare.lnk"
 Type: files; Name: "{autodesktop}\Skolan Lärare.lnk"
 
 [Icons]
-Name: "{group}\Läxspelet Lärare"; Filename: "{app}\SkolanLarare.exe"
-Name: "{group}\Avinstallera Läxspelet Lärare"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Läxspelet Lärare"; Filename: "{app}\SkolanLarare.exe"; Tasks: skrivbord
+Name: "{group}\Lärarrummet"; Filename: "{app}\SkolanLarare.exe"
+Name: "{group}\Avinstallera Lärarrummet"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Lärarrummet"; Filename: "{app}\SkolanLarare.exe"; Tasks: skrivbord
 
 [Run]
-Filename: "{app}\SkolanLarare.exe"; Description: "Starta Läxspelet Lärare nu"; Flags: nowait postinstall skipifsilent; Check: not IsAdminInstallMode
+Filename: "{app}\SkolanLarare.exe"; Description: "Starta Lärarrummet nu"; Flags: nowait postinstall skipifsilent; Check: not IsAdminInstallMode
 ; Automatisk uppdatering (tyst installation): starta appen igen utan att öppna webbläsaren.
 Filename: "{app}\SkolanLarare.exe"; Parameters: "--tyst"; Flags: nowait; Check: WizardSilent and not IsAdminInstallMode
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Laxspelet Larare"" dir=in action=allow program=""{app}\SkolanLarare.exe"" enable=yes profile=private,domain"; Flags: runhidden; Tasks: brandvagg

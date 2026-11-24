@@ -1,5 +1,5 @@
 """Automatiska uppdateringar av Läxspelet för Windows (utan certifikat och utan att Windows frågar).
-Samma kod som i Läxspelet Lärare (larare/skolan_larare/uppdatera.py), med appens egna namn.
+Samma kod som i Lärarrummet (larare/skolan_larare/uppdatera.py), med appens egna namn.
 Appar från Microsoft Store uppdateras av Store, inte här.
 
 - Appen är installerad per användare (%LOCALAPPDATA%\\Programs), så installationen behöver ingen administratör.

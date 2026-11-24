@@ -1,2 +1,2 @@
 """Skolan Lärare: lärarens app för veckobrev, klasslag, grupper och historik."""
-VERSION = "0.12.0"
+VERSION = "0.13.0"

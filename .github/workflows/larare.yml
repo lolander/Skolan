@@ -162,7 +162,7 @@ jobs:
             larare/windows/Output/Laxspelet-Larare-IT.zip
           prerelease: true
           body: |
-            Läxspelet Lärare för Windows: veckobrev, studiematerial, klassens insikt, klasslag och grupper.
+            Lärarrummet för Windows: veckobrev, studiematerial, klassens insikt, klasslag och grupper.
             📄 Skolor, IT och dataskyddsombud: läs först https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md (nivåer, rektorns beslut, kryptering, grupprinciper och mallar).
             Utan beslut från en rektor i appen hanterar appen inga personuppgifter om elever (nivå 0).
             🧪 Prova utan att installera: https://lolander.github.io/Skolan/demo/ (påhittad klass).

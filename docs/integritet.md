@@ -2,7 +2,7 @@
 
 *Senast uppdaterad: 23 november 2026*
 
-Läxspelet är en app för familjer där barn pluggar läxor, glosor och prov som ett spel. Den här policyn gäller Windows-appen (från Microsoft Store eller GitHub), integrationen för Home Assistant och lärarappen **Läxspelet Lärare**.
+Läxspelet är en app för familjer där barn pluggar läxor, glosor och prov som ett spel. Den här policyn gäller Windows-appen (från Microsoft Store eller GitHub), integrationen för Home Assistant och lärarappen **Lärarrummet**.
 
 ## Var data finns
 - **All data sparas lokalt på familjens egen dator** (eller i familjens Home Assistant): barnens namn, läxor, glosor, foton av böcker och texter, resultat, husdjur och inställningar.
@@ -17,7 +17,7 @@ Bara i dessa fall, och bara för att funktionen ska fungera:
 - **Uppdateringar**: appen frågar GitHub om det finns en ny version (inte i Store-versionen, där sköter Microsoft Store det).
 
 ## Lärarkopplingen
-- **Allt är av tills föräldern slår på det.** En funktion fungerar bara när både föräldern (i Läxspelet) och läraren (i Läxspelet Lärare) har slagit på den. Föräldern kan välja olika för olika lärare, och när som helst stänga av eller koppla bort en lärare. Den gamla klasslänken slutar då att fungera.
+- **Allt är av tills föräldern slår på det.** En funktion fungerar bara när både föräldern (i Läxspelet) och läraren (i Lärarrummet) har slagit på den. Föräldern kan välja olika för olika lärare, och när som helst stänga av eller koppla bort en lärare. Den gamla klasslänken slutar då att fungera.
 - **Föräldern godkänner skolan och rektorn.** När en lärare från en skola kopplar sig visar Läxspelet skolans och rektorns namn, och föräldern godkänner eller nekar. Byter skolan rektor frågar Läxspelet igen. Innan föräldern har godkänt får lärarna bara det som är nivå 0 (se nedan).
 - **Rektorn utser mentorn, och mentorn godkänner ämneslärarna.** Läxspelet kontrollerar själv rektorns digitalt signerade intyg (lärarens behörighet och vilka klasser hen är mentor för) och mentorns signerade godkännande av en ämneslärare (vilka ämnen, och hela klassen eller bara vissa elever). En lärare kan inte ge sig själv en roll. En lärare utan roll får bara det som är nivå 0. Intyg och godkännanden gäller i högst 45 dagar och förnyas automatiskt.
 - **Varje synk är signerad av lärarens app.** Klasslänken räcker inte för att utge sig för att vara en lärare som redan är kopplad. Kopplar föräldern bort en lärare spärras också lärarappens nyckel.
@@ -29,13 +29,14 @@ Bara i dessa fall, och bara för att funktionen ska fungera:
 - **Klassens insikt** (frivillig): Läxspelet skickar bara summor för lärarens ämne, till exempel vilka glosor barnet har missat och hur många dagar barnet har pluggat inför ett prov. Inget namn, inget elev-id och inga datum skickas, bara en ny slumpad kod varje vecka. Läraren ser inget förrän minst 5 familjer är med, och ett ord visas bara om minst 2 familjer har missat det.
 - Det som skickas till läraren går direkt till lärarens dator (HTTPS via klasslänken), inte via någon server hos utvecklaren. Med Cloudflare-tunneln passerar trafiken Cloudflare (se ovan).
 
-## Läxspelet Lärare (för lärare och skolor)
+## Lärarrummet (för lärare och skolor)
 - **Data finns bara på lärarens dator**, krypterad med lärarens Windows-konto (`%APPDATA%\SkolanLarare`). Lärarappen har ingen server, använder ingen AI och skickar ingenting till utvecklaren.
 - **Utan beslut från en rektor sparas inga personuppgifter om elever** (nivå 0). Familjerna visas då som "Familj 1, 2, 3 …".
 - **Rektorn i appen** bestämmer lärarnas nivå. Besluten signeras digitalt, så en lärare kan inte höja sin egen nivå, och de sparas i en beslutslogg. Sänks en nivå raderar lärarappen genast de kopior av elevuppgifter som inte längre är tillåtna.
 - **Skolans IT kan låsa en högsta nivå** på varje dator med grupprinciper eller Intune, oavsett rektorns beslut.
 - **Synken mellan lärare på samma skola** är krypterad (AES-256-GCM) och signerad. Elevuppgifter går bara till elevens mentor, och det föräldern har delat med en lärare skickas aldrig vidare till kollegor.
-- **Lärarna informeras i appen.** Innan appen kan användas måste läraren läsa och kvittera "📘 Så gör du rätt": appen är ett frivilligt komplement, inga uppgifter om enskilda elever i veckobrev eller meddelanden, det föräldrar delar används inte för betyg, och bara det rektorn har beslutat. Påminnelser visas också där det är lätt att göra fel.
+- **Lärarna och rektorn informeras i appen.** Innan appen kan användas måste läraren läsa och kvittera "📘 Så gör du rätt": appen är ett frivilligt komplement, inga uppgifter om enskilda elever i veckobrev eller meddelanden, det föräldrar delar används inte för betyg, och bara det rektorn har beslutat. Rektorn kvitterar dessutom sitt ansvar, bland annat för dataskydd, behörigheter och att bara anställda lärare får roller, innan rektorn kan besluta. Påminnelser visas också där det är lätt att göra fel.
+- **Verifiering med skolkonto (frivillig):** läraren kan logga in med skolkontot hos Microsoft eller Google. Lärarrummet får bara namn och e-post. Intyget sparas på lärarens dator och skickas till de familjer läraren synkar med, som sparar namn, e-post, domän och datum. Det visar att skolan har gett personen ett konto. Läxspelet kontrollerar inte lärarlegitimation eller anställning, det ansvarar skolan för. Se [Verifiering med skolkonto](skolkonto.md).
 - **Ansvar:** när en skola använder lärarappen är skolans huvudman (kommunen eller friskolan) personuppgiftsansvarig för skolans behandling. Utvecklaren behandlar inga uppgifter och är inte personuppgiftsbiträde.
 - Mer för skolor, IT och dataskyddsombud: [Läxspelet och regelverken i Sverige](efterlevnad.md) och [Information till skolor](larare-skolor.md) (nivåer, kryptering, nätverk, gallring, skollagen och mallar).
 
@@ -46,6 +47,14 @@ Läxspelet ska ses som ett komplement. Det ersätter inte föräldern i läxarbe
 - Stjärnor och husdjur är ett medel för att göra pluggandet roligare, inte målet.
 - Skolan ansvarar för undervisningen. Appen ersätter inte kontakten med läraren, skolans lärplattform eller utvecklingssamtalet.
 - Att må bra går före. Det är okej att hoppa över en dag.
+
+Introduktionen avslutas med **✍️ Viktigt att veta**, som föräldern kvitterar med datum (och igen när texten ändras viktigt):
+- AI-tjänsten är familjens val och avtal. Flera tjänster kräver vårdnadshavarens samtycke för barn, och vissa tillåter inte barn alls.
+- Läxspelet kontrollerar inte lärarlegitimation eller anställning; det ansvarar skolan för.
+- Mående är ingen övervakning eller vård (elevhälsan, 1177, BRIS 116 111, akut 112).
+- Gratistunneln går via Cloudflare (Windowsappen), och datan finns hemma hos familjen, som ansvarar för säkerhetskopior.
+
+Föräldern kan också ge **samtycke som vårdnadshavare** till att barnet använder den AI-tjänst familjen kopplar in. Samtycket sparas med datum hos familjen och kan ändras genom att gå igenom introduktionen igen.
 
 ## Barn
 Appen används av barn under en förälders uppsikt. Föräldern installerar appen, lägger till barnen och bestämmer vilka funktioner som är på. Föräldern kan när som helst se, ändra eller ta bort barnens data i appen, eller avinstallera appen och radera mappen med data.

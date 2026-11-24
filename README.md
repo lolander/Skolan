@@ -32,7 +32,7 @@ Varje barn behöver en egen användare i Home Assistant (inte administratör). *
 
 Har ni inte Home Assistant? Ladda ner **[Laxspelet-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Setup.exe)** och installera på familjens dator.
 
-**Lärare:** ladda ner **[Laxspelet-Larare-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe)** (Läxspelet Lärare för Windows). Den installeras utan administratör och uppdaterar sig själv. Skolor, IT och dataskyddsombud: läs **[Information till skolor](docs/larare-skolor.md)** (behörighetsnivåer, rektorns beslut, kryptering, grupprinciper och mallar).
+**Lärare:** ladda ner **[Laxspelet-Larare-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe)** (Lärarrummet för Windows). Den installeras utan administratör och uppdaterar sig själv. Skolor, IT och dataskyddsombud: läs **[Information till skolor](docs/larare-skolor.md)** (behörighetsnivåer, rektorns beslut, kryptering, grupprinciper och mallar).
 
 🧪 **[Prova lärarappen utan att installera](https://lolander.github.io/Skolan/demo/)** · 📄 [Kom igång på nivå 0](docs/larare-niva0.md) · 📝 [Mallar i Word](docs/mallar/) · 🛠️ [IT-paket](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-IT.zip) · 🔏 [Kodsignering](docs/kodsignering.md) · 🛡️ [Säkerhet](SECURITY.md)
 

@@ -1,4 +1,4 @@
-"""Automatiska uppdateringar av Läxspelet Lärare (utan certifikat och utan att Windows frågar).
+"""Automatiska uppdateringar av Lärarrummet (utan certifikat och utan att Windows frågar).
 
 - Appen är installerad per användare (%LOCALAPPDATA%\\Programs), så installationen behöver ingen administratör.
 - Var 6:e timme frågar appen GitHub (lolander/Skolan) om det finns en nyare Skolan-Larare-Setup.

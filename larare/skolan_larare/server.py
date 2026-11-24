@@ -1,4 +1,4 @@
-"""Läxspelet Lärare: en liten server på lärarens dator.
+"""Lärarrummet: en liten server på lärarens dator.
 
 - Läraren använder sidan på datorn (http://localhost:8770). Bara datorn själv får ändra något.
 - Eleverna ansluter på lektionen från sin mobil: http://<datorns adress>:8770/elev. Elevens Skolan-app skickar
@@ -27,7 +27,7 @@ from aiohttp import ClientSession, ClientTimeout, web
 
 from . import VERSION, schemavy
 from . import behorighet as beh
-from . import windows
+from . import inloggning, skolkonto, windows
 from .skola import Skola
 from .uppdatera import Uppdaterare
 
@@ -55,7 +55,8 @@ MAX_FILER_PER_SYNK = 14 * 1024 * 1024  # base64, under elevens gräns
 KLASSBOSSAR = [("🐲", "Läxdraken"), ("🦖", "Glos-Rex"), ("🐙", "Kraken Glömska"), ("👹", "Jätten Slarv"),
                ("🤖", "Megaroboten"), ("🧊", "Isjätten"), ("🌋", "Lavamonstret"), ("👻", "Spökkungen")]
 KLASSBOSS_PER_ELEV = 120  # ⭐ per elev som är med (ungefär en vanlig veckas plugg)
-REGLER_VER = "2"  # höj när reglerna i "Så gör du rätt" ändras, så att lärarna läser dem igen
+REGLER_VER = "3"  # höj när reglerna i "Så gör du rätt" ändras, så att lärarna läser dem igen
+REKTOR_VER = "1"  # höj när det rektorn kvitterar ändras
 LANK_RE = re.compile(r"https://[A-Za-z0-9.\-]+(?::\d+)?/api/skolan/klass/[A-Za-z0-9_\-]{20,64}")
 
 
@@ -360,9 +361,13 @@ class Klass:
             material.append({**m, "fatt": fatt})
         return {"version": VERSION, "klass": self.d["klass"], "larare": self.d["larare"], "inst": {k: self.far(k) for k in FUNKTIONER},
                 "inst_val": self.d["inst"], "funktioner": FUNKTIONER,
-                "larar_id": self.d["larar_id"], "regler_last": self.d.get("regler_last") == REGLER_VER,
+                "larar_id": self.d["larar_id"], "regler_last": self.d.get("regler_last") == REGLER_VER, "regler_tid": self.d.get("regler_tid"),
+                "intro_klar": bool(self.d.get("intro_klar")), "ar_rektor": self.skola.ar_rektor(),
+                "rektor_kvitterat": (self.d.get("rektor_kvittens") or {}).get("ver") == REKTOR_VER, "rektor_kvittens_tid": (self.d.get("rektor_kvittens") or {}).get("tid"),
                 "behorighet": self.behorighet(), "insikt": self.insikt() if self.far("insikt") else None,
                 "amne": self.d.get("amne", ""), "roll": self.skola.min_roll()["roll"] or "", "skola": self.skola.publik(), "provkalender": self.skola.provkalender(),
+                "skolkonto": {"tillgangliga": skolkonto.tillgangliga(), "konto": skolkonto.publik(self.d.get("skolkonto")),
+                              "fornya": bool(self.d.get("skolkonto")) and time.time() - float(self.d["skolkonto"].get("tid") or 0) > 90 * 86400},
                 "elever": sorted(elever, key=lambda x: x["namn"].lower()), "veckobrev": self.d["veckobrev"][-10:][::-1],
                 "boss": self.boss() if self.far("klasslag") else None, "adress": f"{lan_ip()}:{self.port}", "url": self.url,
                 "grupper": [self.grupp_publik(g) for g in self.d["grupper"] if g.get("aktiv")],
@@ -425,6 +430,8 @@ class Klass:
                 "amne": ", ".join(a for g in mr.get("godk", []) for a in g["amnen"]) or self.d.get("amne", ""),
                 "roll": "amne" if mr["roll"] != "mentor" else "mentor", "skola": {"id": sk["id"], "namn": sk["namn"]} if sk else None,
                 "pub": beh.publik_nyckel(self.d["nyckel"]), "tid": int(time.time()), **self.skola.till_familjen(),
+                # intyget från skolkontot (eller null om läraren inte har verifierat sig / har tagit bort det)
+                "konto": (self.d.get("skolkonto") or {}).get("token"),
                 "inst": {k: self.far(k) for k in FUNKTIONER}, "veckobrev": brev,
                 "behorighet": {"niva": beh.niva_for(list(self.ratt())), "rektor": ((sk or {}).get("policy") or {}).get("rektor_namn")},
                 "insikt_fraga": {"amne": self.d.get("amne", ""), "prov": [{k: m[k] for k in ("id", "titel", "amne", "datum")} for m in self.d["material"]
@@ -633,6 +640,13 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
             raise web.HTTPNotFound
         return web.FileResponse(klass.filer / namn)
 
+    def rektor_kvittera(body: dict) -> None:
+        """Rektorn kvitterar sitt ansvar (beslutslogg, huvudmannen är personuppgiftsansvarig, DPIA före nivå 1–2)."""
+        if not body.get("kvitterat"):
+            raise ValueError("Läs och bocka i rektorns ansvar först.")
+        klass.d["rektor_kvittens"] = {"ver": REKTOR_VER, "tid": time.strftime("%Y-%m-%d %H:%M")}
+        klass.logga("behorighet", f"Kvitterade rektorns ansvar (version {REKTOR_VER}).")
+
     async def andra(request):
         _bara_datorn(request)
         body = await request.json()
@@ -742,7 +756,8 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                 v = vecka_nu()
                 d["extra"] = {v: max(0, int(d["extra"].get(v, 0)) + int(body.get("poang") or 0))}
                 klass.logga("klasslag", f"Klassens plugg i klassrummet: +{int(body.get('poang') or 0)}.")
-            elif op == "skola_ny":
+            elif op == "skola_ny":  # den som skapar skolan blir rektor
+                rektor_kvittera(body)
                 klass.skola.skapa(str(body.get("namn") or ""))
             elif op == "skola_ga_med":
                 await klass.skola.ga_med(await session(), str(body.get("kod") or ""), str(body.get("adress") or "").strip() or None)
@@ -760,9 +775,14 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                 klass.skola.skriv_anteckning(e, str(body.get("amne") or ""), str(body.get("text") or ""))
             elif op == "anteckning_bort":
                 d["anteckningar"] = [a for a in d.get("anteckningar", []) if a["id"] != body.get("id")]
+            elif op == "rektor_kvittera":  # t.ex. när rollen har lämnats över
+                rektor_kvittera(body)
             elif op == "rektor_bli":
+                rektor_kvittera(body)
                 klass.skola.bli_rektor()
                 asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
+            elif op in ("rektor_satt", "rektor_aterstall", "rektor_mentor", "rektor_overlat") and d.get("rektor_kvittens", {}).get("ver") != REKTOR_VER:
+                raise ValueError("Läs och kvittera rektorns ansvar först (🔐 Behörighet).")
             elif op == "rektor_satt":
                 klass.skola.satt_ratt(str(body.get("vem") or ""), body.get("ratt") or [], str(body.get("motivering") or ""))
                 asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
@@ -780,8 +800,11 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
             elif op == "rektor_overlat":
                 klass.skola.overlat(str(body.get("vem") or ""))
                 asyncio.get_running_loop().create_task(klass.skola.synka_alla(await session()))
+            elif op == "intro_klar":
+                d["intro_klar"] = True
             elif op == "regler_ok":
                 d["regler_last"] = REGLER_VER
+                d["regler_tid"] = time.strftime("%Y-%m-%d %H:%M")
                 klass.logga("behorighet", "Läste Så gör du rätt (version " + REGLER_VER + ").")
             elif op == "radera_dolda":
                 klass.radera_dolda()
@@ -821,6 +844,38 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
             return web.json_response({"fel": str(err)}, status=403)
         except (ValueError, TypeError) as err:
             return web.json_response({"fel": str(err)}, status=400)
+
+    inlogg = inloggning.Inloggning()
+
+    async def skolkonto_api(request):
+        """Verifiera läraren med skolkontot (Microsoft eller Google), eller ta bort verifieringen."""
+        _bara_datorn(request)
+        b = await request.json()
+        if b.get("op") == "ta_bort":
+            klass.d.pop("skolkonto", None)
+            klass.logga("skolkonto", "Verifieringen med skolkontot togs bort.")
+            klass.spara()
+            return web.json_response({"ok": True})
+        try:
+            url = inlogg.starta(str(b.get("lev") or ""), klass.port, beh.publik_nyckel(klass.d["nyckel"]))
+        except ValueError as err:
+            return web.json_response({"fel": str(err)}, status=400)
+        return web.json_response({"url": url})
+
+    async def skolkonto_svar(request):
+        """Webbläsaren kommer tillbaka från Microsoft/Google med en kod."""
+        _bara_datorn(request)
+        try:
+            res = await inlogg.avsluta(await session(), dict(request.query), klass.port)
+        except (ValueError, OSError) as err:
+            _LOGGER.warning("Skolkonto: %s", err)
+            from urllib.parse import quote
+
+            raise web.HTTPFound(f"/?skolkonto_fel={quote(str(err)[:300])}")
+        klass.d["skolkonto"] = {k: res[k] for k in ("token", "lev", "namn", "epost", "doman", "org", "tid")}
+        klass.logga("skolkonto", f"Verifierad med skolkontot hos {skolkonto.NAMN[res['lev']]}: {res['namn']} ({res['doman']}).")
+        klass.spara()
+        raise web.HTTPFound("/?skolkonto=ok")
 
     async def skola_synk(request):
         """En kollega synkar (signerat med skolans nyckel)."""
@@ -889,6 +944,8 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
     app.router.add_post("/api/fil", fil_upp)
     app.router.add_get("/api/fil/{namn}", fil_ner)
     app.router.add_post("/api/elev/koppla", elev_koppla)
+    app.router.add_post("/api/skolkonto", skolkonto_api)
+    app.router.add_get(inloggning.SVAR_VAG, skolkonto_svar)
     return app
 
 
@@ -921,7 +978,7 @@ async def huvud(port: int = STD_PORT, nar_klar=None) -> None:
                 if WIN["brandvagg"] and not WIN["gammal"]:
                     return
         loop.create_task(kolla_igen())
-    _LOGGER.info("Läxspelet Lärare %s på port %s", VERSION, port)
+    _LOGGER.info("Lärarrummet %s på port %s", VERSION, port)
     if nar_klar:
         nar_klar()
     await asyncio.Event().wait()

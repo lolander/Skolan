@@ -13,7 +13,7 @@ säkerhetsmeddelandet om hen vill.
 | | |
 |---|---|
 | Läxspelet (Home Assistant och Windows) | senaste versionen |
-| Läxspelet Lärare | senaste versionen. Versioner före 0.10.0 finns inte längre att ladda ner och får inga uppgifter om barn från familjernas Läxspelet. |
+| Lärarrummet | senaste versionen. Versioner före 0.10.0 finns inte längre att ladda ner och får inga uppgifter om barn från familjernas Läxspelet. |
 
 ## Så skyddas användarna
 - Ingen server och ingen insamling: data finns bara hos familjen och på lärarens dator. Se [integritetspolicyn](docs/integritet.md).

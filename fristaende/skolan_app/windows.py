@@ -1,5 +1,5 @@
 """Windows: brandväggen (en gång) och den gamla installationen under Program Files.
-Samma kod som i Läxspelet Lärare (larare/skolan_larare/windows.py), med appens egna namn.
+Samma kod som i Lärarrummet (larare/skolan_larare/windows.py), med appens egna namn.
 
 Appen installeras per användare (ingen administratör behövs för uppdateringar). Det enda som kräver
 administratör är brandväggsregeln som låter familjens mobiler ansluta hemma. Den skapas en gång, första gången

@@ -1,6 +1,8 @@
-# Läxspelet Lärare: för skolans IT
+# Lärarrummet: för skolans IT
 
-Allt i den här mappen är till för att installera och styra Läxspelet Lärare centralt.
+*Lärarrummet hette tidigare Läxspelet Lärare. Filnamn och grupprincipnycklar har kvar det gamla namnet (Laxspelet-Larare, LaxspeletLarare).*
+
+Allt i den här mappen är till för att installera och styra Lärarrummet centralt.
 Mer om nivåer, dataskydd och skollagen: https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md
 Prova appen utan att installera (påhittad klass): https://lolander.github.io/Skolan/demo/
 
@@ -12,7 +14,7 @@ Prova appen utan att installera (påhittad klass): https://lolander.github.io/Sk
 | `Niva0-automatiska-uppdateringar.reg` | Nivå 0, appen uppdaterar sig själv |
 
 ## 1. Grupprinciper
-- **Active Directory:** kopiera `LaxspeletLarare.admx` till `\\<domän>\SYSVOL\<domän>\Policies\PolicyDefinitions\` och `.adml`-filerna till `sv-SE\` och `en-US\` där. Inställningarna finns sedan under *Datorkonfiguration (eller Användarkonfiguration) → Administrativa mallar → Läxspelet Lärare*.
+- **Active Directory:** kopiera `LaxspeletLarare.admx` till `\\<domän>\SYSVOL\<domän>\Policies\PolicyDefinitions\` och `.adml`-filerna till `sv-SE\` och `en-US\` där. Inställningarna finns sedan under *Datorkonfiguration (eller Användarkonfiguration) → Administrativa mallar → Lärarrummet*.
 - **Intune:** *Enheter → Konfiguration → Importera ADMX*. Ladda upp `LaxspeletLarare.admx` och `en-US\LaxspeletLarare.adml`. Skapa sedan en profil (*Mallar → Importerade administrativa mallar*).
 - Utan mallen: använd `.reg`-filerna, eller sätt värdena under `HKLM\SOFTWARE\Policies\Laxspelet Larare` (`MaxNiva` DWORD 0–2, `Uppdateringar` REG_SZ `automatisk`/`manuell`/`av`).
 
@@ -39,7 +41,7 @@ Kontrollera fingeravtrycket mot `.sha256`-filen på samma sida (`Get-FileHash <f
 4. Returkoder: 0 = klart.
 
 ### Microsoft Store
-När Läxspelet Lärare finns i Microsoft Store kan den läggas till i Intune som *Microsoft Store-app (ny)*. Store-versionen är signerad av Microsoft och Store sköter uppdateringarna.
+När Lärarrummet finns i Microsoft Store kan den läggas till i Intune som *Microsoft Store-app (ny)*. Store-versionen är signerad av Microsoft och Store sköter uppdateringarna.
 
 ## 3. Data och gallring
 - Data: `%APPDATA%\SkolanLarare\` (krypterad med lärarens Windows-konto, DPAPI). Avinstallation raderar **inte** datan.

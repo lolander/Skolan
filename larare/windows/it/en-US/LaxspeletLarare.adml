@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                            revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
-  <displayName>Laxspelet Larare (teacher app)</displayName>
-  <description>Settings that school IT locks for Laxspelet Larare.</description>
+  <displayName>Lärarrummet (teacher app)</displayName>
+  <description>Settings that school IT locks for Lärarrummet.</description>
   <resources>
     <stringTable>
-      <string id="SUPPORTED_0_10">Laxspelet Larare 0.10.0 or later</string>
-      <string id="Laxspelet">Laxspelet Larare</string>
+      <string id="SUPPORTED_0_10">Lärarrummet 0.10.0 or later</string>
+      <string id="Laxspelet">Lärarrummet</string>
       <string id="MaxNiva">Highest permission level</string>
       <string id="MaxNiva_Help">The highest level teachers on this computer can get, regardless of the principal's decision in the app.
 
@@ -23,7 +23,7 @@ More (Swedish): https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.
       <string id="Niva1">Level 1: pupil names</string>
       <string id="Niva2">Level 2: data about individual pupils</string>
       <string id="Uppdateringar">Updates</string>
-      <string id="Uppdateringar_Help">How Laxspelet Larare is updated.
+      <string id="Uppdateringar_Help">How Lärarrummet is updated.
 
 Automatic: the app downloads new versions from the project's GitHub page and installs them silently when not in use. Files are only installed if their SHA-256 fingerprint matches.
 Ask: the teacher sees that a new version exists and installs it.

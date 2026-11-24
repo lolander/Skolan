@@ -1,4 +1,4 @@
-"""Startar Läxspelet Lärare. I Windows syns en ikon vid klockan.
+"""Startar Lärarrummet. I Windows syns en ikon vid klockan.
 
 python -m skolan_larare [--utan-ikon] [--port 8770] [--tyst]
 """
@@ -22,11 +22,11 @@ def _ikon(port: int) -> None:
     from PIL import Image
 
     meny = pystray.Menu(
-        pystray.MenuItem("Öppna Läxspelet Lärare", lambda: _oppna(port), default=True),
+        pystray.MenuItem("Öppna Lärarrummet", lambda: _oppna(port), default=True),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Avsluta", lambda ikon, _i=None: ikon.stop()),
     )
-    pystray.Icon("SkolanLarare", Image.open(server.WEBB / "ikon-64.png"), "Läxspelet Lärare", meny).run()
+    pystray.Icon("SkolanLarare", Image.open(server.WEBB / "ikon-64.png"), "Lärarrummet", meny).run()
 
 
 def main() -> None:

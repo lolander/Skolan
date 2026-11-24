@@ -169,7 +169,7 @@ def kedjelank(skola_id: str, fran_pub: str, till_pub: str, till_namn: str, priv:
 def ny_policy(skola_id: str, rektor_lid: str, rektor_namn: str, rektor_pub: str, priv: str) -> dict:
     p = {"skola": skola_id, "ver": 1, "rektor": rektor_lid, "rektor_namn": rektor_namn, "rektor_pub": rektor_pub,
          "standard": niva_ratt(0), "larare": {}, "beslut": [{"tid": time.strftime("%Y-%m-%d %H:%M"), "av": rektor_namn,
-                                                            "text": f"{rektor_namn} blev skolans rektor i Läxspelet Lärare. Alla lärare har nivå 0."}],
+                                                            "text": f"{rektor_namn} blev skolans rektor i Lärarrummet. Alla lärare har nivå 0."}],
          "tid": time.time()}
     return signera_policy(p, priv)
 

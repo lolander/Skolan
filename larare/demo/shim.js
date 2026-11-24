@@ -97,7 +97,9 @@ function demoAndra(b) {
       DEMO_LOGG("behorighet", amnen.length ? `Godkände ${m.namn} som ämneslärare i ${amnen.join(", ")} för ${b.klass}.` : `Tog bort ${m.namn} som ämneslärare för ${b.klass}.`); break;
     }
     case "rektor_overlat": return { fel: "I demon går det inte att lämna över rektorsrollen." };
-    case "regler_ok": d.regler_last = true; break;
+    case "regler_ok": d.regler_last = true; d.regler_tid = DEMO_TID(); break;
+    case "intro_klar": d.intro_klar = true; break;
+    case "rektor_kvittera": d.rektor_kvitterat = true; d.rektor_kvittens_tid = DEMO_TID(); DEMO_LOGG("behorighet", "Kvitterade rektorns ansvar."); break;
     case "radera_klass": return { fel: "I demon raderas inget." };
     case "radera_dolda": d.behorighet.dolda = { anteckningar: 0, prov: 0, historik: 0, summa: 0 }; break;
     case "elev_lank": return { fel: "I demon finns inga riktiga familjer att lägga till." };

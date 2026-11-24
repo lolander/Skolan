@@ -155,7 +155,7 @@ jobs:
             ## 📚 Läxspelet för Windows
             **Familjer:** ladda ner **[Laxspelet-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Setup.exe)**, öppna filen och följ installationen. Läxor och inställningar finns kvar om du uppdaterar, och appen uppdaterar sig själv.
 
-            **Lärare:** ladda ner **[Laxspelet-Larare-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe)** (Läxspelet Lärare). Den installeras på din egen dator, utan administratör, och uppdaterar sig själv.
+            **Lärare:** ladda ner **[Laxspelet-Larare-Setup.exe](https://github.com/lolander/Skolan/releases/latest/download/Laxspelet-Larare-Setup.exe)** (Lärarrummet). Den installeras på din egen dator, utan administratör, och uppdaterar sig själv.
 
             **Skolor, IT och dataskyddsombud:** [Information till skolor](https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md) · [Kom igång på nivå 0 (en sida)](https://github.com/lolander/Skolan/blob/main/docs/larare-niva0.md) · [Prova lärarappen utan att installera](https://lolander.github.io/Skolan/demo/) · IT-paket och komponentlista finns bland filerna nedan.
 

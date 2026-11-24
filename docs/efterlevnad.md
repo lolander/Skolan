@@ -1,6 +1,6 @@
 # Läxspelet och regelverken i Sverige
 
-*Senast uppdaterad: 23 november 2026. Gäller Läxspelet 1.98.1 och Läxspelet Lärare 0.12.0.*
+*Senast uppdaterad: 23 november 2026. Gäller Läxspelet 1.98.1 och Lärarrummet 0.12.0.*
 
 Det här är ett underlag för den som frågar om Läxspelet följer svenska och europeiska regler om dataskydd, informationssäkerhet och AI. Det är ingen juridisk rådgivning. En skola som använder lärarappen gör sin egen bedömning tillsammans med sitt dataskyddsombud. Mer om lärarappen finns i [Information till skolor](larare-skolor.md), och vad som händer med familjens data finns i [integritetspolicyn](integritet.md).
 
@@ -85,6 +85,7 @@ Appen använder ingen spårning, ingen analys och ingen reklam. Det som sparas i
 ### Villkor hos AI-leverantörerna (avtal, inte lag)
 Familjen ingår avtal direkt med AI-tjänsten. Flera tjänster har åldersgränser:
 - **Google Gemini:** användaren måste vara 18 år, och API:et får inte användas i en tjänst som "is likely to be accessed by individuals under the age of 18". Inom EES får sådana tjänster bara använda den betalda nivån ([Gemini API Additional Terms](https://ai.google.dev/gemini-api/terms), gäller från 23 mars 2026).
+- **Jämförelse av alla tjänster** (barn, EU-data, träning, biträdesavtal, certifieringar): se [ai-val.md](ai-val.md).
 - **Övriga tjänster** har egna regler. Windowsappen visar för varje tjänst vad den säger om barn, och familjen behöver läsa villkoren för den tjänst de väljer. I Home Assistant väljer familjen AI-integration själv.
 - **Anthropic** tillåter appar som barn använder, med skyddsåtgärder och tydlig AI-märkning. **OpenAI** och **Mistral** kräver förälderns samtycke. Läxspelet rekommenderar därför **Mistral**, som är ett europeiskt företag (Frankrike), så att texter och foton stannar inom EU och ingen överföring till tredje land sker. Mistral har en gratisplan, men där får Mistral använda texterna för att träna sina modeller om familjen inte stänger av det (Admin → Privacy). Alternativ: Anthropic eller en lokal AI.
 - **DeepSeek** (Kina, saknar beslut om adekvat skyddsnivå) har tagits bort som val. En familj som hade valt DeepSeek får välja en ny tjänst.

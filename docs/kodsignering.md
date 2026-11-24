@@ -1,6 +1,6 @@
 # Kodsignering (Code signing policy)
 
-Installationsfilerna för Läxspelet och Läxspelet Lärare signeras gratis på två sätt:
+Installationsfilerna för Läxspelet och Lärarrummet signeras gratis på två sätt:
 
 | Var | Signeras av | Kostnad |
 |---|---|---|

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                            revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
-  <displayName>Läxspelet Lärare</displayName>
-  <description>Inställningar som skolans IT låser för Läxspelet Lärare.</description>
+  <displayName>Lärarrummet</displayName>
+  <description>Inställningar som skolans IT låser för Lärarrummet.</description>
   <resources>
     <stringTable>
-      <string id="SUPPORTED_0_10">Läxspelet Lärare 0.10.0 och senare</string>
-      <string id="Laxspelet">Läxspelet Lärare</string>
+      <string id="SUPPORTED_0_10">Lärarrummet 0.10.0 och senare</string>
+      <string id="Laxspelet">Lärarrummet</string>
       <string id="MaxNiva">Högsta behörighetsnivå</string>
       <string id="MaxNiva_Help">Den högsta nivå lärare på datorn kan få, oavsett vad rektorn beslutar i appen.
 
@@ -23,7 +23,7 @@ Läs mer: https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md</st
       <string id="Niva1">Nivå 1: elevnamn</string>
       <string id="Niva2">Nivå 2: uppgifter om enskilda elever</string>
       <string id="Uppdateringar">Uppdateringar</string>
-      <string id="Uppdateringar_Help">Hur Läxspelet Lärare uppdateras.
+      <string id="Uppdateringar_Help">Hur Lärarrummet uppdateras.
 
 Automatiskt: appen hämtar nya versioner från projektets GitHub-sida och installerar dem tyst när den inte används. Filer installeras bara om deras SHA-256-fingeravtryck stämmer.
 Fråga: läraren ser att en ny version finns och trycker själv.

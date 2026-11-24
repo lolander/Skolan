@@ -1,5 +1,5 @@
 <!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Läxspelet Lärare</title><link rel="icon" href="/ikon.png">
+<title>Lärarrummet</title><link rel="icon" href="/ikon.png">
 <style>
 :root{--bg:#f4f5fb;--kort:#fff;--text:#1c2340;--muted:#6b7190;--acc:#3949ab;--rand:#dfe2f0;--ok:#2e7d32;--fel:#c62828}
 @media (prefers-color-scheme: dark){:root{--bg:#141726;--kort:#1f2338;--text:#e8eaf6;--muted:#9aa0bf;--acc:#7986cb;--rand:#2e3352}}
@@ -53,24 +53,33 @@ h3{font-size:16px;margin:0 0 6px}.badge{background:var(--fel);color:#fff;border-
 #tip{position:fixed;z-index:30;pointer-events:none;background:var(--text);color:var(--kort);font-size:13px;padding:6px 9px;border-radius:8px;max-width:280px;display:none}
 @media (max-width:640px){.grid2{grid-template-columns:1fr}}
 </style></head><body>
-<header><img src="/ikon.png" width="32" height="32" alt=""><h1 id="rubrik">Läxspelet Lärare</h1><span id="ver" class="small"></span><button class="meny-knapp" id="meny-knapp" title="Meny">☰ Meny</button></header>
+<header><img src="/ikon.png" width="32" height="32" alt=""><h1 id="rubrik">Lärarrummet</h1><span id="ver" class="small"></span><button class="meny-knapp" id="meny-knapp" title="Meny">☰ Meny</button></header>
 <nav id="nav"></nav><main id="main"></main>
 <script>
 // Samma menysystem som i Läxspelet: ☰ Meny öppnar en lista i grupper
 const MENY = [[null, ["oversikt"]], ["Eleverna", ["statistik", "studieteknik", "rapporter", "foraldrar"]], ["Skicka till klassen", ["veckobrev", "prov", "material"]],
-  ["Klassen", ["grupper", "klasslag"]], ["Skolan", ["skolan", "behorighet", "regler"]], ["Övrigt", ["historik", "inst"]]];
+  ["Klassen", ["grupper", "klasslag"]], ["Skolan", ["skolan", "behorighet", "regler"]], ["Övrigt", ["komigang", "historik", "inst"]]];
 let menyOppen = false;
 // Hovra (eller tryck) på en stapel för att se siffrorna
 document.addEventListener("pointerover", (ev) => { const m = ev.target.closest?.("[data-tip]"); const tip = document.getElementById("tip") || document.body.appendChild(Object.assign(document.createElement("div"), { id: "tip" }));
   if (!m) { tip.style.display = "none"; return; } tip.textContent = m.dataset.tip; tip.style.display = "block"; });
 document.addEventListener("pointermove", (ev) => { const tip = document.getElementById("tip"); if (tip?.style.display === "block") { tip.style.left = Math.min(ev.clientX + 12, innerWidth - 290) + "px"; tip.style.top = (ev.clientY + 14) + "px"; } });
-const flikar = [["oversikt", "🏫 Översikt"], ["statistik", "📈 Statistik"], ["studieteknik", "🧠 Studieteknik"], ["veckobrev", "📬 Veckobrev"], ["prov", "📝 Prov"], ["material", "📎 Material"], ["grupper", "👥 Grupper"], ["klasslag", "🐲 Klasslag"], ["rapporter", "📊 Rapporter"], ["foraldrar", "✉️ Från föräldrar"], ["historik", "📜 Historik"], ["skolan", "🏫 Skolan"], ["behorighet", "🔐 Behörighet"], ["regler", "📘 Så gör du rätt"], ["inst", "⚙️ Inställningar"]];
+const flikar = [["oversikt", "🏫 Översikt"], ["statistik", "📈 Statistik"], ["studieteknik", "🧠 Studieteknik"], ["veckobrev", "📬 Veckobrev"], ["prov", "📝 Prov"], ["material", "📎 Material"], ["grupper", "👥 Grupper"], ["klasslag", "🐲 Klasslag"], ["rapporter", "📊 Rapporter"], ["foraldrar", "✉️ Från föräldrar"], ["historik", "📜 Historik"], ["skolan", "🏫 Skolan"], ["behorighet", "🔐 Behörighet"], ["regler", "📘 Så gör du rätt"], ["komigang", "📘 Kom igång"], ["inst", "⚙️ Inställningar"]];
 let valdElev = null, valtProv = null, filer = {}, forraFlik = "oversikt";
 const VD = ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"];
 let L = null, flik = location.hash.slice(1) || "oversikt", msg = null;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const $ = (s) => document.querySelector(s);
-async function ladda() { L = await (await fetch("/api/lage")).json(); rita(); }
+async function ladda() {
+  // tillbaka från inloggningen med skolkontot
+  const q = new URLSearchParams(location.search);
+  if (q.has("skolkonto") || q.has("skolkonto_fel")) {
+    flik = "inst";
+    msg = q.has("skolkonto_fel") ? { t: "fel", x: q.get("skolkonto_fel") } : { t: "ok", x: "✔ Du är verifierad med skolkontot. Föräldrarna ser det vid nästa synk." };
+    history.replaceState(null, "", "/#inst");
+  }
+  L = await (await fetch("/api/lage")).json(); rita();
+}
 async function uppdatera(body, ok) {
   const r = await fetch("/api/uppdatering", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
@@ -81,13 +90,14 @@ async function uppdatera(body, ok) {
 function uppdRad() {
   const u = L.uppdatering, w = L.windows;
   const brand = w && w.windows && !w.brandvagg ? `<div class="msg">ℹ️ Vill du att eleverna ansluter från mobilen på lektionen? Då behöver Windows brandvägg öppnas för appen (en gång). <button class="m" id="u-brand">🔓 Öppna brandväggen</button><div class="small">Kräver administratör. Det behövs inte om föräldrarna skickar klasslänken till dig (📧 på Översikten).</div></div>` : "";
-  const klar = u?.uppdaterad ? `<div class="msg ok">✅ Läxspelet Lärare är uppdaterad till version ${esc(u.uppdaterad.till)}. <button class="m" id="u-ok">OK</button></div>` : "";
-  return brand + klar + uppdRad2(u);
+  const klar = u?.uppdaterad ? `<div class="msg ok">✅ Lärarrummet är uppdaterad till version ${esc(u.uppdaterad.till)}. <button class="m" id="u-ok">OK</button></div>` : "";
+  const sk = L.skolkonto?.fornya ? `<div class="msg">⏳ Din verifiering med skolkontot behöver förnyas. Se ⚙️ Inställningar.</div>` : "";
+  return brand + klar + sk + uppdRad2(u);
 }
 function uppdRad2(u) {
   if (!u?.ny) return "";
   if (u.steg) return `<div class="msg ok">⏳ ${u.steg === "laddar" ? "Laddar ner" : "Installerar"} version ${esc(u.senaste)}… Appen startar om själv om en liten stund.</div>`;
-  return `<div class="msg ok">🆕 Version ${esc(u.senaste)} av Läxspelet Lärare finns. ${u.lage === "automatisk" ? "Den installeras automatiskt när appen inte används, eller nu: " : ""}
+  return `<div class="msg ok">🆕 Version ${esc(u.senaste)} av Lärarrummet finns. ${u.lage === "automatisk" ? "Den installeras automatiskt när appen inte används, eller nu: " : ""}
     ${u.kan_installera ? `<button class="m" id="u-nu">⬇️ Uppdatera nu</button>` : `<a href="${esc(u.sida)}" target="_blank">Ladda ner</a>`}</div>`;
 }
 async function andra(body, ok) {
@@ -99,7 +109,7 @@ async function andra(body, ok) {
 }
 function rita() {
   $("#ver").textContent = "v" + L.version;
-  $("#rubrik").textContent = L.klass ? `Läxspelet Lärare · ${L.klass}` : "Läxspelet Lärare";
+  $("#rubrik").textContent = L.klass ? `Lärarrummet · ${L.klass}` : "Lärarrummet";
   const namn = Object.fromEntries(flikar);
   if (flik === "elev" && !valdElev) flik = "oversikt";
   $("#nav").textContent = flik === "elev" ? `👤 ${(L.elever.find((x) => x.id === valdElev) || {}).namn || "Elev"}` : namn[flik] || namn.oversikt;
@@ -110,8 +120,9 @@ function rita() {
   $("#meny-knapp").onclick = () => { menyOppen = !menyOppen; rita(); };
   const bak = document.querySelector(".meny-bak"); if (bak) bak.onclick = () => { menyOppen = false; rita(); };
   document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { flik = b.dataset.f; location.hash = flik; msg = null; menyOppen = false; rita(); window.scrollTo(0, 0); });
-  if (!L.regler_last && flik !== "regler") { $("#main").innerHTML = regler(true); koppla(); return; }
-  $("#main").innerHTML = uppdRad() + (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, elev, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, foraldrar, skolan, behorighet, regler, historik, inst }[flik] || oversikt)();
+  if ((!L.intro_klar || !L.regler_last) && flik !== "regler") { $("#main").innerHTML = (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + intro(); koppla(); return; }
+  if (rektorVantar || (L.ar_rektor && !L.rektor_kvitterat)) { $("#main").innerHTML = (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + rektorIntro(); koppla(); return; }
+  $("#main").innerHTML = uppdRad() + (msg ? `<div class="msg ${msg.t}">${esc(msg.x)}</div>` : "") + ({ oversikt, statistik, elev, studieteknik, veckobrev, prov, material, grupper, klasslag, rapporter, foraldrar, skolan, behorighet, regler, historik, inst, komigang }[flik] || oversikt)();
   koppla();
 }
 const lasRatt = (k) => !(L.behorighet?.ratt || []).includes(k);
@@ -156,10 +167,74 @@ function regler(forsta) {
       <li><b>Använd bara det rektorn har beslutat.</b> Din behörighet syns under 🔐 Behörighet. Är du osäker: fråga rektorn.</li>
       <li><b>Mentorer: godkänn bara rätt ämneslärare.</b> Godkänn bara kollegor som undervisar klassen i ämnet, och bara för de elever de har (t.ex. språkval). Ta bort godkännandet när de slutar.</li>
       <li><b>Gallra.</b> Radera klassens data när läsåret är slut (🔐 Behörighet → 🗑️).</li>
+      <li><b>Bara ditt skolkonto.</b> Verifiera dig med skolans konto, aldrig ett privat. Verifieringen visar att skolan har gett dig ett konto. Den är ingen kontroll av lärarlegitimation; skolan ansvarar för vem som undervisar.</li>
+      <li><b>Skydda datorn och skolans kod.</b> Ge skolans kod bara till kollegor på skolan. Har datorn försvunnit eller misstänker du att någon annan har kommit åt appen: säg till rektorn och IT direkt (det kan vara en personuppgiftsincident som ska anmälas inom 72 timmar).</li>
     </ol>
     <p class="small muted">Mer för rektor, IT och dataskyddsombud: <a href="https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md" target="_blank" rel="noopener">📄 Information till skolor</a></p>
-    ${L.regler_last ? `<p class="small muted">✅ Du har läst reglerna.</p>` : `<button class="p" id="regler-ok">✅ Jag har läst och förstår</button>`}</div>`;
+    ${L.regler_last ? `<p class="small muted">✅ Du kvitterade reglerna${L.regler_tid ? " " + esc(L.regler_tid) : ""}.</p>` : `<button class="p" id="regler-ok">✅ Jag har läst och förstår</button>`}</div>`;
 }
+// ---------- Kom igång (läraren) ----------
+let introSteg = 0, rektorSteg = 0, rektorVantar = null;  // rektorVantar = {op, namn} som körs när rektorn har kvitterat
+function stegRad(lista, i) {
+  return `<div class="small muted">Steg ${i + 1} av ${lista.length} · ${lista.map((y, j) => `<span style="${j === i ? "font-weight:bold" : "opacity:.5"}">${y[0]}</span>`).join(" ")}</div>`;
+}
+function introLista() {
+  const lista = [
+    ["👋", "Välkommen till Lärarrummet", `<p>Lärarrummet skickar veckobrev, glosor och material till familjer som använder Läxspelet hemma, och visar det föräldrarna väljer att dela. Allt sparas på den här datorn. Det finns ingen server och ingen AI i lärarappen.</p>
+      <p>Det här tar ett par minuter. Allt finns sedan under ☰ Meny → 📘 Kom igång.</p>`],
+    ["🧑‍🏫", "Du och klassen", `<p class="small muted">Det föräldrarna ser.</p><div class="grid2"><div><label>Ditt namn</label><input id="in-larare" value="${esc(L.larare)}"></div>
+      <div><label>Klass</label><input id="in-klass" value="${esc(L.klass)}" placeholder="t.ex. 4B"></div></div><button class="m" id="in-spara">💾 Spara</button>`],
+  ];
+  if (L.skolkonto?.tillgangliga?.length || L.skolkonto?.konto) lista.push(["✔️", "Verifiera dig", skolkontoKort() + `<p class="small">Det är frivilligt, men vissa föräldrar tar bara emot verifierade lärare.</p>`]);
+  lista.push(["🏫", "Skolan", L.skola ? `<p>✅ Du är med i <b>${esc(L.skola.namn)}</b>.</p>` : `<p>Gå ihop med kollegorna: då får ni gemensam provkalender, och rektorn bestämmer vad lärarna får se (nivå 0–2). Utan rektor gäller nivå 0: inga uppgifter om enskilda elever.</p>
+      <label>Kod från en kollega eller rektorn</label><input id="in-kod" placeholder="ABCD-EF23"><button class="m" id="in-ga">➕ Gå med</button>
+      <p class="small muted">Ska du skapa skolan (och bli skolans rektor i appen)? Gör det under ☰ Meny → 🏫 Skolan efter introduktionen.</p>`]);
+  lista.push(["👪", "Koppla familjerna", `<p>Föräldern slår på lärarkopplingen i Läxspelet och skickar dig <b>klasslänken</b>. Klistra in den under 🏫 Översikt. På lektionen kan eleverna också ansluta från mobilen med QR-koden.</p>
+      <p class="small">Föräldern bestämmer vad som delas och godkänner skolan, rektorn och varje sak du skickar.</p>`]);
+  lista.push(["📘", "Så gör du rätt", regler(true)]);
+  return lista;
+}
+function komigang() {
+  // Introduktionen i efterhand (alla steg på en sida), och rektorns ansvar för den som är rektor
+  return introLista().slice(0, -1).map(([ikon, rubrik, text]) => `<div class="kort"><h2>${ikon} ${rubrik}</h2>${text}</div>`).join("")
+    + `<div class="kort"><h2>📘 Så gör du rätt</h2><p>Reglerna finns under ☰ Meny → 📘 Så gör du rätt.${L.regler_tid ? ` Du kvitterade dem ${esc(L.regler_tid)}.` : ""}</p></div>`
+    + (L.ar_rektor ? `<div class="kort"><h2>👩‍💼 Rektorns ansvar</h2>${REKTOR_STEG.map(([ik, ru, p]) => `<h3>${ik} ${ru}</h3><ul>${p.map((t) => `<li>${t}</li>`).join("")}</ul>`).join("")}
+      ${L.rektor_kvittens_tid ? `<p class="small muted">✅ Du kvitterade rektorns ansvar ${esc(L.rektor_kvittens_tid)}.</p>` : ""}</div>` : "");
+}
+function intro() {
+  const lista = introLista(), i = Math.min(introSteg, lista.length - 1), [ikon, rubrik, text] = lista[i], sista = i === lista.length - 1;
+  return `${stegRad(lista, i)}<div class="kort" style="border:2px solid #4a6cf7"><h2>${ikon} ${rubrik}</h2>${sista ? text.replace(/<div class="kort"><h2>📘 Så gör du rätt<\/h2>/, "<div>") : text}</div>
+    <div class="actions">${i > 0 ? `<button class="m" id="in-bak">‹ Tillbaka</button>` : ""}${sista ? "" : `<button class="p" id="in-nasta" style="margin-top:0">Nästa ›</button>`}</div>`;
+}
+
+// ---------- Rektorns ansvar (kvitteras innan rektorn kan besluta) ----------
+const REKTOR_STEG = [
+  ["👩‍💼", "Rektorns roll", [
+    "Du beslutar för <b>huvudmannens</b> räkning (kommunen eller friskolan). Ta bara rollen om du är rektor eller har fått uppdraget av rektorn.",
+    "Dina beslut om lärarnas behörigheter <b>signeras med ditt namn och loggas</b>. Beslutsloggen kan begäras ut och kan vara en allmän handling.",
+    "När du slutar eller rollen ska bytas: <b>lämna över rollen</b> i appen (🔐 Behörighet). Annars kan föräldrarna inte godkänna nästa rektor."]],
+  ["🔐", "Dataskydd", [
+    "<b>Huvudmannen är personuppgiftsansvarig.</b> Informera dataskyddsombudet innan skolan börjar använda appen.",
+    "Innan någon lärare får <b>nivå 1 eller 2</b>: konsekvensbedömning (DPIA), registerförteckning och information till vårdnadshavare ska vara klara. Mallar finns i Information till skolor (bilaga A–D).",
+    "<b>Ge så lite som möjligt.</b> Välj den lägsta nivån som behövs, ompröva besluten och sänk eller ta bort behörigheter när en lärare byter klass eller slutar.",
+    "<b>Personuppgiftsincidenter</b> (t.ex. en borttappad dator med nivå 2) ska anmälas till IMY inom 72 timmar via huvudmannen. Sänk behörigheter och byt skolans kod direkt."]],
+  ["🏫", "Lärarna och eleverna", [
+    "<b>Läxspelet kontrollerar inte lärarlegitimation eller anställning.</b> Det är ditt och skolans ansvar att bara anställda lärare får roller och behörigheter. Verifiering med skolkonto visar bara att skolan har gett personen ett konto.",
+    "Utse bara <b>rätt mentorer</b>. Mentorerna godkänner ämneslärarna, så de behöver veta vad det innebär.",
+    "Appen är ett <b>frivilligt komplement</b>. Elever utan Läxspelet får inte gå miste om något, och allt ska också finnas i skolans vanliga kanaler (skollagen).",
+    "<b>Gallring:</b> följ huvudmannens dokumenthanteringsplan. Lärarna ska radera klassens data när läsåret är slut.",
+    "Stäm av med <b>skolans IT</b>. De kan låsa en högsta nivå på datorerna och behöver kanske godkänna verifieringen med skolkonto."]],
+];
+function rektorIntro() {
+  const i = Math.min(rektorSteg, REKTOR_STEG.length - 1), [ikon, rubrik, punkter] = REKTOR_STEG[i], sista = i === REKTOR_STEG.length - 1;
+  return `<div class="msg">👩‍💼 ${rektorVantar ? "Innan du blir skolans rektor i appen" : "Du är skolans rektor i appen"}: läs och kvittera ansvaret. ${L.ar_rektor ? "Tills dess kan du inte ändra lärarnas behörigheter." : ""}</div>
+    ${stegRad(REKTOR_STEG.map((x) => [x[0]]), i)}<div class="kort" style="border:2px solid #4a6cf7"><h2>${ikon} ${rubrik}</h2>
+    ${punkter.map((t, j) => `<label class="chk"><input type="checkbox" class="rk-punkt" data-j="${j}"> <span>${t}</span></label>`).join("")}
+    <p class="small muted">Bocka i varje punkt. <a href="https://github.com/lolander/Skolan/blob/main/docs/larare-skolor.md" target="_blank" rel="noopener">📄 Information till skolor</a></p></div>
+    <div class="actions">${i > 0 ? `<button class="m" id="rk-bak">‹ Tillbaka</button>` : rektorVantar ? `<button class="m" id="rk-avbryt">Avbryt</button>` : ""}
+      <button class="p" id="rk-nasta" style="margin-top:0">${sista ? "✅ Jag har läst, förstått och tar ansvaret" : "Nästa ›"}</button></div>`;
+}
+
 function insiktKort() {
   const i = L.insikt;
   if (!i) return lasRatt("insikt") ? "" : `<div class="kort"><h2>🔎 Klassens insikt</h2><p class="small muted">Slå på 🔎 Klassens insikt under ⚙️ Inställningar.</p></div>`;
@@ -230,11 +305,11 @@ function underlagSida() {
       ${rad("Lagring", "Lärarens dator, " + (b.skyddad ? "krypterad med lärarens Windows-konto (DPAPI)" : "<b>inte krypterad på den här datorn</b>"))}
       ${rad("Gallring", "Enligt skolans dokumenthanteringsplan, med funktionen Radera klassens data")}
       ${rad("Säkerhet", "Se avsnitt 5 i Information till skolor. Synken mellan lärare är krypterad (AES-256-GCM), rektorns beslut är signerade (Ed25519).")}</table>`;
-  const html = `<!doctype html><html lang="sv"><head><meta charset="utf-8"><title>Underlag Läxspelet Lärare ${esc(idag)}</title>
+  const html = `<!doctype html><html lang="sv"><head><meta charset="utf-8"><title>Underlag Lärarrummet ${esc(idag)}</title>
 <style>body{font:14px/1.5 system-ui,sans-serif;max-width:800px;margin:24px auto;padding:0 16px;color:#111}h1{font-size:22px}h2{font-size:17px;margin-top:24px;border-bottom:2px solid #ddd}
 table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;padding:4px 8px;border-bottom:1px solid #eee}th{width:30%}.muted{color:#666;font-size:12px}@media print{button{display:none}}</style></head><body>
 <button onclick="print()">🖨️ Skriv ut / spara som PDF</button>
-<h1>Underlag: Läxspelet Lärare</h1>
+<h1>Underlag: Lärarrummet</h1>
 <p class="muted">Skapat ${esc(idag)} av ${esc(L.larare || "läraren")}${s ? ` · ${esc(s.namn)}` : ""}${L.klass ? ` · klass ${esc(L.klass)}` : ""} · lärarappen ${esc(L.version)}. Underlaget innehåller inga uppgifter om elever.</p>
 <h2>1. Inställningar på den här datorn</h2><table>
 ${rad("Rektor i appen", r ? esc(r.namn) : "Ingen. Då har alla lärare nivå 0.")}
@@ -622,6 +697,16 @@ function historik() {
     <label>Sök</label><input id="h-sok" placeholder="t.ex. ett namn eller en grupp">
     <table id="h-tabell">${L.historik.map((h) => `<tr><td class="small" style="white-space:nowrap">${esc(h.tid)}</td><td>${ik[h.typ] || "•"}</td><td>${esc(h.text)}</td></tr>`).join("")}</table></div>`;
 }
+function skolkontoKort() {
+  const s = L.skolkonto;
+  if (!s || (!s.tillgangliga.length && !s.konto)) return "";
+  const k = s.konto;
+  const knapp = (lev, namn) => s.tillgangliga.includes(lev) ? `<button class="m" data-skolkonto="${lev}">${namn}</button>` : "";
+  return `<div class="kort"><h2>✔️ Verifiera dig med skolkontot</h2>
+    ${k ? `<div class="msg ${k.giltig && !s.fornya ? "ok" : "fel"}">${k.giltig ? "✔ Verifierad" : "⚠️ Verifieringen har gått ut"} hos ${esc(k.lev_namn)}: <b>${esc(k.namn)}</b> (${esc(k.doman)}), ${new Date(k.tid * 1000).toLocaleDateString("sv-SE")}.${s.fornya && k.giltig ? " Verifiera dig igen snart." : ""}</div>` : ""}
+    <p class="small muted">Logga in med ditt skolkonto, så ser föräldrarna att ditt namn och din skola är intygade av Microsoft eller Google. Det visar att skolan har gett dig ett konto. Lärarrummet får bara ditt namn och din e-postadress, ingen åtkomst till e-post eller filer. Privata konton godtas inte. Verifieringen gäller i 100 dagar.</p>
+    <div class="actions">${knapp("microsoft", "Verifiera med Microsoft")}${knapp("google", "Verifiera med Google")}${k ? `<button class="m" id="skolkonto-bort">Ta bort verifieringen</button>` : ""}</div></div>`;
+}
 function inst() {
   const u = L.uppdatering;
   const uppd = u ? `<div class="kort"><h2>🔄 Uppdateringar</h2>
@@ -632,7 +717,7 @@ function inst() {
     <p class="small muted">Appen kollar var 6:e timme och installerar bara filer som stämmer med sitt fingeravtryck. Uppdateringen sker tyst, utan frågor från Windows, och appen startar om själv. Startar inte en ny version går appen tillbaka till den förra. Elevernas data finns kvar.${u.kollad ? ` Senast kollat ${new Date(u.kollad * 1000).toLocaleString("sv-SE")}.` : ""}</p>
     ${u.fel ? `<div class="msg fel">${esc(u.fel)}</div>` : ""}
     <div class="actions"><button class="m" id="u-kolla">🔍 Kolla nu</button>${u.ny && u.kan_installera ? `<button class="p" id="u-nu2" style="margin-top:0">⬇️ Uppdatera nu</button>` : ""}</div></div>` : "";
-  return `${uppd}<div class="kort"><h2>Klassen</h2><div class="grid2"><div><label>Klassens namn</label><input id="i-klass" value="${esc(L.klass)}" placeholder="t.ex. 4B"></div>
+  return `${skolkontoKort()}${uppd}<div class="kort"><h2>Klassen</h2><div class="grid2"><div><label>Klassens namn</label><input id="i-klass" value="${esc(L.klass)}" placeholder="t.ex. 4B"></div>
     <div><label>Ditt namn (det föräldrarna ser)</label><input id="i-larare" value="${esc(L.larare)}"></div></div>
     <div class="grid2"><div><label>Dina ämnen (t.ex. Spanska, eller Matte, NO)</label><input id="i-amne" value="${esc(L.amne || "")}" placeholder="Valfritt"></div></div>
     <p class="small muted">Din roll väljer du inte själv: rektorn utser mentorer, och klassens mentor godkänner ämneslärare och deras ämnen (se 🔐 Behörighet). Ämnena här är ett förslag till mentorn.</p>
@@ -642,12 +727,35 @@ function inst() {
 }
 function koppla() {
   const on = (s, fn) => { const el = $(s); if (el) el.onclick = fn; };
+  on("#in-nasta", () => { introSteg++; msg = null; rita(); window.scrollTo(0, 0); });
+  on("#in-bak", () => { introSteg = Math.max(0, introSteg - 1); msg = null; rita(); });
+  on("#in-spara", () => andra({ op: "installningar", larare: $("#in-larare").value, klass: $("#in-klass").value }, "Sparat."));
+  on("#in-ga", () => { msg = { t: "ok", x: "Letar efter kollegan på nätverket…" }; rita(); andra({ op: "skola_ga_med", kod: $("#in-kod")?.value || "" }, "Du är med i skolan! 🏫"); });
+  on("#rk-bak", () => { rektorSteg = Math.max(0, rektorSteg - 1); msg = null; rita(); });
+  on("#rk-avbryt", () => { rektorVantar = null; rektorSteg = 0; msg = null; rita(); });
+  on("#rk-nasta", async () => {
+    if ([...document.querySelectorAll(".rk-punkt")].some((x) => !x.checked)) { msg = { t: "fel", x: "Bocka i varje punkt först." }; return rita(); }
+    if (rektorSteg < REKTOR_STEG.length - 1) { rektorSteg++; msg = null; rita(); window.scrollTo(0, 0); return; }
+    const v = rektorVantar;
+    rektorVantar = null; rektorSteg = 0;
+    if (v) await andra({ ...v, kvitterat: true }, v.op === "skola_ny" ? "Skolan är skapad. Du är skolans rektor. Ge koden till kollegorna." : "Du är skolans rektor.");
+    else await andra({ op: "rektor_kvittera", kvitterat: true }, "Tack! Du kan nu besluta om lärarnas behörigheter.");
+  });
+  document.querySelectorAll("[data-skolkonto]").forEach((b) => b.onclick = async () => {
+    const j = await (await fetch("/api/skolkonto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lev: b.dataset.skolkonto }) })).json();
+    if (j.url) location.href = j.url; else { msg = { t: "fel", x: j.fel || "Det gick inte." }; rita(); }
+  });
+  on("#skolkonto-bort", async () => {
+    if (!confirm("Ta bort verifieringen? Föräldrarna ser då inte längre att du är verifierad.")) return;
+    await fetch("/api/skolkonto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "ta_bort" }) });
+    msg = { t: "ok", x: "Verifieringen är borttagen." }; await ladda();
+  });
   document.querySelectorAll("[data-synka]").forEach((b) => b.onclick = () => andra({ op: "synka", id: b.dataset.synka }, "Synkat."));
   document.querySelectorAll("[data-bort]").forEach((b) => b.onclick = () => confirm("Ta bort eleven från listan?") && andra({ op: "elev_bort", id: b.dataset.bort }));
   on("#synka-alla", () => andra({ op: "synka_alla" }, "Alla är synkade."));
-  on("#regler-ok", () => andra({ op: "regler_ok" }, "Tack! Reglerna finns alltid under ☰ Meny → 📘 Så gör du rätt."));
+  on("#regler-ok", async () => { if (await andra({ op: "regler_ok" })) await andra({ op: "intro_klar" }, "Välkommen! Introduktionen finns under ☰ Meny → 📘 Kom igång."); introSteg = 0; });
   on("#el-lank-ok", () => andra({ op: "elev_lank", lank: $("#el-lank").value }, "Familjen är tillagd och synkad."));
-  on("#beh-bli", () => confirm("Bli skolans rektor i appen? Du bestämmer då vad alla lärare får göra.") && andra({ op: "rektor_bli" }, "Du är skolans rektor."));
+  on("#beh-bli", () => { rektorVantar = { op: "rektor_bli" }; rektorSteg = 0; msg = null; rita(); window.scrollTo(0, 0); });
   on("#beh-underlag", underlagSida);
   on("#beh-gallra", () => confirm("Radera ALLA elevuppgifter på den här datorn? Det går inte att ångra.") && confirm("Säker? Elever, provresultat, anteckningar och historik försvinner.") && andra({ op: "radera_klass" }, "Klassens data är raderad."));
   on("#beh-radera", () => confirm("Radera uppgifterna för gott?") && andra({ op: "radera_dolda" }, "Raderat."));
@@ -683,7 +791,7 @@ function koppla() {
   on("#u-brand", () => { msg = { t: "ok", x: "Svara Ja när Windows frågar…" }; rita(); uppdatera({ op: "brandvagg" }).then(ladda); });
   ["#u-nu", "#u-nu2"].forEach((id) => on(id, () => uppdatera({ op: "installera" }, "Uppdateringen startar. Appen startar om själv om en liten stund.")));
   on("#i-spara", () => andra({ op: "installningar", klass: $("#i-klass").value, larare: $("#i-larare").value, amne: $("#i-amne").value, roll: $("#i-roll")?.value }, "Sparat. Eleverna får det vid nästa synk."));
-  on("#sk-skapa", () => andra({ op: "skola_ny", namn: $("#sk-namn").value }, "Skolan är skapad. Ge koden till kollegorna."));
+  on("#sk-skapa", () => { if (!$("#sk-namn").value.trim()) { msg = { t: "fel", x: "Skriv skolans namn." }; return rita(); } rektorVantar = { op: "skola_ny", namn: $("#sk-namn").value }; rektorSteg = 0; msg = null; rita(); window.scrollTo(0, 0); });
   on("#sk-ga", () => { msg = { t: "ok", x: "Letar efter kollegan på nätverket…" }; rita(); andra({ op: "skola_ga_med", kod: $("#sk-kod")?.value || "", adress: $("#sk-adress")?.value || "" }, "Du är med i skolan! 🏫"); });
   on("#sk-ny-kod", () => andra({ op: "skola_kod" }, "Ny kod. Den gamla slutar fungera."));
   on("#sk-synka", () => andra({ op: "skola_synka" }, "Synkat med kollegorna."));

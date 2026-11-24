@@ -35,14 +35,14 @@ Nya versioner: ladda upp den nya `.msix`-filen i en ny submission.
 
 ---
 
-## Läxspelet Lärare i Store
+## Lärarrummet i Store
 Samma konto. Store-versionen är signerad av Microsoft, gratis, och skolor kan lägga till den i Intune som *Microsoft Store-app (ny)*.
-1. **New product → MSIX or PWA app**, reservera namnet **Läxspelet Lärare**.
+1. **New product → MSIX or PWA app**, reservera namnet **Lärarrummet**.
 2. Lägg in Product identity-namnet som GitHub-variabeln `STORE_LARARE_NAMN` (`STORE_PUBLISHER` och `STORE_PUBLISHER_NAMN` är samma som för Läxspelet).
 3. Bygget av lärarappen (**Actions → Lärarappen**) skapar artefakten **Laxspelet-Larare-Store** med en `.msix`-fil. Ladda upp den.
 4. Kategori: Utbildning. Ålder: 3+ (appen är för lärare, ingen chatt och inga köp).
 5. Förklaring av `runFullTrust`:
-   *”Läxspelet Lärare är en skrivbordsapp (Python) som kör en lokal webbserver på lärarens dator. Läraren använder den i webbläsaren (localhost), och kollegor på skolan synkar krypterat via det lokala nätverket.”*
+   *”Lärarrummet är en skrivbordsapp (Python) som kör en lokal webbserver på lärarens dator. Läraren använder den i webbläsaren (localhost), och kollegor på skolan synkar krypterat via det lokala nätverket.”*
 6. Integritetspolicy: https://github.com/lolander/Skolan/blob/main/docs/integritet.md
 
 Store-versionen kollar aldrig GitHub efter uppdateringar. Det sköter Store.

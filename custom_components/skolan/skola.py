@@ -1,7 +1,7 @@
 """Koppling till skolan: läraren och klassen.
 
 Föräldern och läraren bestämmer tillsammans. En funktion är bara på när BÅDA har slagit på den:
-föräldern i Skolans inställningar, läraren i lärarappen (Läxspelet Lärare för Windows).
+föräldern i Skolans inställningar, läraren i lärarappen (Lärarrummet för Windows).
 E-postrapporten kräver bara föräldern, men läraren kan säga nej till den i lärarappen.
 
 Lärarappen pratar med barnets Skolan via klasslänken {extern adress}/api/skolan/klass/{nyckel}
@@ -35,7 +35,7 @@ from pathlib import Path
 
 from homeassistant.util import dt as dt_util
 
-from . import meriter
+from . import meriter, skolkonto
 
 PA = True  # visar lärare och klass i appen
 VAG = "/api/skolan/klass/"
@@ -338,6 +338,21 @@ def status(s: dict, bas: str, foralder: bool) -> dict:
                        **({"inst": x.get("inst") or {}, "dela": {f: delar(s, x["id"], f) for f in FUNKTIONER}} if foralder else {})} for x in lista],
           "klass": s.get("klass") if aktiv(s, "klasslag") else None, "lank": lank(bas, s), "kan_nas": bas.startswith("https://"),
           "grupper": s["grupper"] if aktiv(s, "grupper") else []}
+    # Skolkontot: Microsoft/Google intygar namn och domän. En lärare vars domän skiljer sig från de andras på samma skola flaggas.
+    nu = dt_util.utcnow().timestamp()
+    domaner: dict = {}
+    for x in lista:
+        k = skolkonto.publik(x.get("konto"), nu)
+        if k and k["giltig"]:
+            domaner.setdefault((x.get("skola") or {}).get("id"), []).append(k["doman"])
+    for x, rad in zip(lista, ut["lararna"]):
+        k = skolkonto.publik(x.get("konto"), nu)
+        andra = domaner.get((x.get("skola") or {}).get("id"), [])
+        if k:
+            k["avviker"] = bool(k["giltig"] and (x.get("skola") or {}).get("id") and len(andra) > 1 and andra.count(k["doman"]) * 2 < len(andra))
+        rad["konto"] = k
+        if foralder and x.get("konto_fel"):
+            rad["konto_fel"] = x["konto_fel"]
     if foralder:
         sk = s.get("skolan") or {}
         ut["skolan"] = {"namn": sk.get("namn"), "rektor": sk.get("rektor_namn"), "godkand": bool(sk.get("godkand")), "sedan": sk.get("godkand_tid"),
@@ -362,6 +377,8 @@ def satt_installningar(s: dict, body: dict) -> None:
     for k in FUNKTIONER:
         if k in body:
             f[k] = bool(body[k])
+    if "bara_verifierade" in body:
+        f["bara_verifierade"] = bool(body["bara_verifierade"])
     if "namn" in body:
         f["namn"] = re.sub(r"\s+", " ", str(body.get("namn") or "")).strip()[:40]
     if "mejl_till" in body:
@@ -607,8 +624,10 @@ def _resultat(r) -> dict | None:
     return {**ut, "betyg": betyg} if betyg in meriter.PROV_BETYG else None
 
 
-def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict | None = None, raw: bytes = b"", signatur: str = "") -> dict:
-    """Lärarappen synkar. Returnerar svaret till läraren (bara det som är påslaget av båda och tillåtet av skolan)."""
+def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict | None = None, raw: bytes = b"", signatur: str = "",
+            konto: dict | None = None) -> dict:
+    """Lärarappen synkar. Returnerar svaret till läraren (bara det som är påslaget av båda och tillåtet av skolan).
+    konto = resultatet av kontrollen av lärarens skolkonto ({"ok": …}, {"fel": …}, {"bort": True} eller None om synken inte säger något)."""
     lid = _text(body.get("larar_id"), 40)
     if not lid:
         raise ValueError("Saknar lärare.")
@@ -629,6 +648,16 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
     gammal = s["lararna"].get(lid)
     if gammal and gammal.get("pub") and (not signerad or gammal["pub"] != pub):
         raise PermissionError("Det här är inte samma lärarapp som förut. Be föräldern koppla bort den gamla läraren och koppla in igen.")
+    if signerad and konto and "ok" in konto:
+        har_konto = True
+    elif konto and ("bort" in konto or "fel" in konto):
+        har_konto = False
+    else:
+        k = skolkonto.publik((gammal or {}).get("konto"), dt_util.utcnow().timestamp())
+        har_konto = bool(k and k["giltig"])
+    if s["foralder"].get("bara_verifierade") and not har_konto:
+        raise PermissionError("Föräldern tar bara emot lärare som har verifierat sig med sitt skolkonto. Verifiera dig i Lärarrummet under ⚙️ Inställningar."
+                              + (f" ({konto['fel']})" if konto and konto.get("fel") else ""))
     inst = body.get("inst") if isinstance(body.get("inst"), dict) else {}
     ny = lid not in s["lararna"]
     if ny and len(s["lararna"]) >= 20:
@@ -641,6 +670,14 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
                 "skola": {"id": _text(sk.get("id"), 40), "namn": _text(sk.get("namn"), 60)} if sk.get("id") else None})
     if signerad:
         lar["pub"] = pub
+        if konto and "ok" in konto:
+            lar["konto"] = konto["ok"]
+            lar.pop("konto_fel", None)
+        elif konto and "bort" in konto:
+            lar.pop("konto", None)
+            lar.pop("konto_fel", None)
+        elif konto and "fel" in konto:
+            lar["konto_fel"] = _text(konto["fel"], 200)
     forslag = _skolan_in(s, body, lid, pub) if signerad else None
     if ny and not forslag and lar.get("pub"):
         forslag = "larare"

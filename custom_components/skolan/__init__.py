@@ -1372,7 +1372,8 @@ class StateView(HomeAssistantView):
                 "namn": next(b["namn"] for b in conf["barn"] if b["id"] == barn),
                 "kan_valja": parent,
                 "har_ai": bool(_ai_entitet(hass)) and getattr(hass, "ai", True) is not None if parent else None,  # Windowsappen: hass.ai är None utan vald AI
-                "foralder_info": (await hass.async_add_executor_job(_load_fil, hass.data[DOMAIN]["base"] / "foralder_info.json")).get(user.id) == FORALDER_INFO_VER if parent else None,
+                **(_foralder_kvittens((await hass.async_add_executor_job(_load_fil, hass.data[DOMAIN]["base"] / "foralder_info.json")).get(user.id)) if parent
+                   else {"foralder_info": None}),
                 "user_id": user.id,
                 "alla_barn": [{"id": b["id"], "namn": b["namn"]} for b in conf["barn"] if not request.get("skolan_bara_barn") or b["id"] == barn] if parent else [],
                 "data": _ut(data, parent),
@@ -7057,7 +7058,13 @@ async def _skola_status(hass: HomeAssistant, barn: str, foralder: bool) -> dict:
     return st
 
 
-FORALDER_INFO_VER = "1"  # höj när "Till dig som förälder" ändras, så att föräldrarna läser den igen
+FORALDER_INFO_VER = "2"  # höj när introduktionen (det föräldern kvitterar) ändras, så att föräldrarna läser den igen
+
+
+def _foralder_kvittens(v) -> dict:
+    """Förälderns kvittens: {ver, tid, ai_samtycke}. Version 1 sparades bara som versionsnumret."""
+    d = v if isinstance(v, dict) else {"ver": v}
+    return {"foralder_info": d.get("ver") == FORALDER_INFO_VER, "foralder_info_tid": d.get("tid"), "ai_samtycke": d.get("ai_samtycke")}
 
 
 class ForalderInfoView(HomeAssistantView):
@@ -7071,10 +7078,16 @@ class ForalderInfoView(HomeAssistantView):
         user = request["hass_user"]
         if user.id not in hass.data[DOMAIN]["conf"]["foraldrar"]:
             raise web.HTTPForbidden
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
         fil = hass.data[DOMAIN]["base"] / "foralder_info.json"
         async with _vlock(hass, "foralder_info"):
             d = await hass.async_add_executor_job(_load_fil, fil)
-            d[user.id] = FORALDER_INFO_VER
+            # Kvittensen sparas med datum och version. AI-samtycket är vårdnadshavarens samtycke som flera AI-tjänster kräver för barn.
+            d[user.id] = {"ver": FORALDER_INFO_VER, "tid": dt_util.now().isoformat(timespec="minutes"), "namn": user.name,
+                          "ai_samtycke": bool((body or {}).get("ai_samtycke"))}
             await hass.async_add_executor_job(_save_fil, fil, d)
         return self.json({"ok": True})
 
@@ -7250,6 +7263,45 @@ async def _inkorg_spara(hass: HomeAssistant, barn: str, mapp: Path, op: str, bod
             await hass.async_add_executor_job(skola.spara, mapp, s)
 
 
+async def _skolkonto_kolla(hass: HomeAssistant, token, pub: str) -> dict:
+    """Kontrollera lärarens skolkonto-intyg mot Microsofts/Googles publika nycklar (sparas en stund)."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    from . import skolkonto
+
+    if not token:
+        return {"bort": True}
+    if not isinstance(token, str):
+        return {"fel": "Intyget har fel format."}
+    cache = hass.data[DOMAIN].setdefault("skolkonto", {"nycklar": {}, "klara": {}})
+    nyckel = hashlib.sha256(f"{pub}|{token}".encode()).hexdigest()
+    if nyckel in cache["klara"]:
+        return cache["klara"][nyckel]
+    lev = skolkonto.leverantor(token)
+    if not lev or not skolkonto.klient(lev):
+        return {"fel": "Intyget kommer inte från Microsoft eller Google."}
+    nu = time.time()
+    hamtad, jwks = cache["nycklar"].get(lev, (0, {}))
+    kid = skolkonto.nyckel_id(token)
+    saknas = not any(k.get("kid") == kid for k in jwks.get("keys", []))
+    if nu - hamtad > 6 * 3600 or (saknas and nu - hamtad > 600):
+        try:
+            async with async_get_clientsession(hass).get(skolkonto.NYCKLAR[lev], timeout=aiohttp.ClientTimeout(total=15)) as r:
+                jwks = await r.json(content_type=None)
+            cache["nycklar"][lev] = (nu, jwks)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+            _LOGGER.warning("Kunde inte hämta %s nycklar för skolkonton: %s", lev, err)
+            return {}  # ingen slutsats nu, försök vid nästa synk
+    try:
+        res = {"ok": skolkonto.kontrollera(token, jwks, pub, nu)}
+    except ValueError as err:
+        res = {"fel": str(err)}
+    if len(cache["klara"]) > 500:
+        cache["klara"].clear()
+    cache["klara"][nyckel] = res
+    return res
+
+
 class KlassView(HomeAssistantView):
     """Lärarappen synkar med en elev. Ingen inloggning, hemlig nyckel i klasslänken."""
 
@@ -7278,6 +7330,8 @@ class KlassView(HomeAssistantView):
         except ValueError:
             return self.json({"fel": "Fel format."}, status_code=400)
         mapp = _dir(hass, hitta["id"])
+        # Lärarrummet 0.13.0+ skickar alltid "konto" (intyget eller null). Äldre lärarappar säger inget.
+        konto = await _skolkonto_kolla(hass, body.get("konto"), str(body.get("pub") or "")) if "konto" in body else None
         async with hass.data[DOMAIN]["locks"][hitta["id"]]:
             async with _vlock(hass, f"skola:{hitta['id']}"):
                 s = await hass.async_add_executor_job(skola.las, mapp)
@@ -7286,7 +7340,7 @@ class KlassView(HomeAssistantView):
                 data = await hass.async_add_executor_job(_load, mapp)
                 try:
                     svar = skola.ta_emot(s, data, hitta["namn"], body, plugg.studieteknik(data, fraga.alder(data)),
-                                         raw, request.headers.get("X-Laxspelet-Signatur", ""))
+                                         raw, request.headers.get("X-Laxspelet-Signatur", ""), konto)
                 except PermissionError as err:
                     return self.json({"fel": str(err)}, status_code=409)
                 except ValueError as err:

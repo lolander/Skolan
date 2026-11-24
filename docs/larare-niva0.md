@@ -1,6 +1,8 @@
-# Kom igång med Läxspelet Lärare på nivå 0
+# Kom igång med Lärarrummet på nivå 0
 
-*En sida för rektor, IT och dataskyddsombud. Gäller Läxspelet Lärare 0.12.0 och senare.*
+*Lärarrummet hette tidigare Läxspelet Lärare. Filnamn och grupprincipnycklar har kvar det gamla namnet (Laxspelet-Larare, LaxspeletLarare).*
+
+*En sida för rektor, IT och dataskyddsombud. Gäller Lärarrummet 0.12.0 och senare.*
 
 **Nivå 0 betyder att lärarappen inte sparar några uppgifter om elever.** Därför kan en skola börja i liten skala, med ett litet beslut. Nivå 1 och 2 (elevnamn och uppgifter om enskilda elever) kan komma senare, efter en egen bedömning.
 

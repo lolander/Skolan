@@ -3868,6 +3868,12 @@ class SkolanPanel extends HTMLElement {
     const roll = (x) => x.roll === "mentor" ? `mentor${x.verifierad?.klass ? ` för ${esc(x.verifierad.klass)}` : ""} <span class="muted">(rektorns beslut)</span>`
       : x.roll === "amne" ? `ämneslärare i ${esc(x.amne)} <span class="muted">(godkänd av mentorn${x.verifierad?.mentor ? ` ${esc(x.verifierad.mentor)}` : ""})</span>`
       : `<span class="muted">ingen roll: ${esc(orsak[x.verifierad?.orsak] || "nivå 0")}</span>`;
+    // Skolkontot: Microsoft/Google intygar namn och organisation. Det visar anställning, inte lärarlegitimation.
+    const kontoKort = (x) => x.konto ? (x.konto.giltig ? ` · <span class="small" title="Verifierad med skolkonto hos ${esc(x.konto.lev_namn)}">✔ ${esc(x.konto.doman)}</span>${x.konto.avviker ? ` <span class="small">⚠️ annan domän än skolans övriga lärare</span>` : ""}`
+        : ` · <span class="small">⚠️ verifieringen har gått ut</span>`) : ` · <span class="small muted">inte verifierad</span>`;
+    const kontoInfo = (x) => `<div class="small" style="margin:6px 0">${x.konto ? `✔ <b>Verifierad med skolkonto</b> hos ${esc(x.konto.lev_namn)}: ${esc(x.konto.namn)} (${esc(x.konto.epost)}), ${new Date(x.konto.tid * 1000).toLocaleDateString("sv-SE")}${x.konto.giltig ? "" : " – har gått ut, läraren behöver verifiera sig igen"}.
+        <span class="muted">Det betyder att ${esc(x.konto.doman)} har gett personen ett konto. Det är inte en kontroll av lärarlegitimation.</span>`
+        : `<span class="muted">Läraren har inte verifierat sig med sitt skolkonto. Fråga skolan om du är osäker på vem det är.</span>`}${x.konto_fel ? `<div class="small">⚠️ Verifieringen kunde inte godkännas: ${esc(x.konto_fel)}</div>` : ""}</div>`;
     const sk = k.skolan || {}, fs = sk.forslag;
     const skolKort = fs ? `<div class="card" style="border:2px solid var(--primary-color)"><b>🏫 ${fs.typ === "rektor" ? `Ny rektor på ${esc(fs.namn || "skolan")}` : `${esc(fs.namn || "En skola")} vill kopplas till ${esc(s.namn)}`}</b>
         <div>Rektor: <b>${esc(fs.rektor_namn || "?")}</b>${fs.larare ? ` <span class="small muted">(via ${esc(fs.larare)})</span>` : ""}</div>
@@ -3878,8 +3884,9 @@ class SkolanPanel extends HTMLElement {
     const larKort = lararna.length || fs ? `<div class="card"><b>🏫 ${esc(s.namn)}s lärare</b>
         ${skolKort}
         <div class="small muted">Läxspelet kontrollerar själv varje lärare: rektorn utser mentorn, och mentorn godkänner ämneslärarna. Mentorn får det du delar. En ämneslärare får bara sina godkända ämnen i rapporter, statistik och studieteknik. Lärare utan roll får bara det som är nivå 0 (veckobrev, material och klassens summor). Du kan ändra vad varje lärare får.</div>
-        ${lararna.map((x) => `<details class="sk-larare"><summary><b>${esc(x.namn || "Läraren")}</b> · ${roll(x)}${x.skola?.namn ? ` · ${esc(x.skola.namn)}` : ""} · <span class="small">🔐 nivå ${x.behorighet?.niva ?? 0}</span>
+        ${lararna.map((x) => `<details class="sk-larare"><summary><b>${esc(x.namn || "Läraren")}</b> · ${roll(x)}${x.skola?.namn ? ` · ${esc(x.skola.namn)}` : ""}${kontoKort(x)} · <span class="small">🔐 nivå ${x.behorighet?.niva ?? 0}</span>
             <span class="small muted"> · synkad ${esc((x.synkad || "").replace("T", " "))}</span></summary>
+          ${kontoInfo(x)}
           ${k.funktioner.filter((fn) => fn.id !== "mejl").map((fn) => `<label class="kap-rad small"><input type="checkbox" data-sk-lf="${x.id}|${fn.id}" ${x.dela?.[fn.id] ? "checked" : ""} ${this._busy ? "disabled" : ""}> ${fn.ikon} ${esc(fn.namn)} ${x.inst?.[fn.id] ? "" : `<span class="muted">(läraren har den av)</span>`}</label>`).join("")}
           <button class="mini" data-sk-bort="${x.id}">Koppla bort ${esc(x.namn || "läraren")}</button></details>`).join("")}</div>` : "";
     const sm = k.smtp || {};
@@ -3890,6 +3897,8 @@ class SkolanPanel extends HTMLElement {
           <div class="small muted">${esc(x.info)}</div>
           <div class="small">${lararna.length > 1 ? "Lärarna" : "Läraren"}: ${larText(x.id)} · ${k.aktiv[x.id] ? "<b>🟢 Aktiv</b>" : "⚪ Inte aktiv"}</div></div>`).join("")}</div>
       <div class="card"><b>Läraren</b>
+        <label class="kap-rad small"><input type="checkbox" data-sk-f="bara_verifierade" ${f.bara_verifierade ? "checked" : ""} ${this._busy ? "disabled" : ""}> ✔ <b>Ta bara emot lärare som har verifierat sig med sitt skolkonto</b></label>
+        <div class="small muted">Microsoft eller Google intygar då lärarens namn och skolans organisation. Läxspelet kontrollerar inte lärarlegitimation eller anställning – det ansvarar skolan för.</div>
         <label class="small">Namnet läraren ser <input id="sk-namn" maxlength="40" value="${esc(f.namn || "")}" placeholder="${esc(s.namn)}"></label>
         <label class="small">Lärarens e-post <input id="sk-mejl" type="email" value="${esc(f.mejl_till || "")}" placeholder="larare@skolan.se"></label>
         <div class="small">Skicka e-postrapporten dessa dagar kl. 18:</div>
@@ -4823,13 +4832,27 @@ class SkolanPanel extends HTMLElement {
         ${rad("📸", `<b>Meddelande eller veckobrev från skolan:</b> ☰ Meny → 📸 Meddelande eller veckobrev. Ta en skärmdump eller fota brevet, så föreslår AI:n läxorna. Du granskar innan något läggs in.`)}
         ${rad("📥", `<b>En enskild läxa:</b> tryck <b>📥 Lägg in läxa</b> på startsidan, välj ämne och vad som ska göras (glosor, läsläxa, prov eller uppgift). Barnet kan också göra det själv.`)}
         ${rad("📝", `<b>Glosor:</b> öppna ämnet och fota glosorna, så skapas en övning och ett förhör.`)}
-        ${rad("🏫", `<b>Lärare med Läxspelet Lärare</b> kan skicka veckobrev och material direkt. Det hamnar i din inkorg under ⚙️ Föräldrasidan → Skolan, och du godkänner först.`)}` },
+        ${rad("🏫", `<b>Lärare med Lärarrummet</b> kan skicka veckobrev och material direkt. Det hamnar i din inkorg under ⚙️ Föräldrasidan → Skolan, och du godkänner först.`)}` },
+      { ikon: "🏫", rubrik: "Lärare och skolan", text: `
+        ${rad("✋", `<b>Du bestämmer.</b> En lärare får bara det du har slagit på, och du godkänner skolan och rektorn innan rektorns beslut gäller. Du kan koppla bort en lärare när som helst under ⚙️ Föräldrasidan → Skolan.`)}
+        ${rad("🔐", `<b>Behörigheter:</b> rektorn bestämmer i Lärarrummet vad lärarna får se (nivå 0–2), vilka som är mentorer och mentorn godkänner ämneslärarna. Läxspelet kontrollerar att besluten är signerade av den rektor du har godkänt.`)}
+        ${rad("✔️", `<b>Verifierad med skolkonto</b> betyder att Microsoft eller Google intygar lärarens namn och att skolan eller kommunen (t.ex. <i>kommun.se</i>) har gett personen ett konto. Det visar en koppling till skolan, <b>inte</b> att personen har lärarlegitimation.`)}
+        ${rad("⚖️", `<b>Läxspelet kontrollerar inte lärarlegitimation eller anställning.</b> Det ansvaret ligger hos skolan, som anställer lärarna och delar ut skolkonton och behörigheter. Läxspelet visar bara det skolan och Microsoft/Google intygar. Är du osäker på en lärare, fråga skolan.`)}
+        ${rad("🛡️", `Vill du vara extra försiktig: slå på <b>Ta bara emot lärare som har verifierat sig med sitt skolkonto</b> under ⚙️ Föräldrasidan → Skolan.`)}` },
       { ikon: "🤖", rubrik: "Koppla på AI", text: `
         <p>${s.har_ai ? "✅ <b>AI är påkopplad.</b>" : "❌ <b>Ingen AI är påkopplad än.</b> Utan AI fungerar inte glosor från foton, veckobrev, e-böcker, rättning av skrivuppgifter och husdjurets hjälp. Resten fungerar."}</p>
         ${f ? rad("⚙️", `<b>☰ Meny → ⚙️ Inställningar → 🤖 AI</b>: välj AI-tjänst och klistra in en nyckel. Läs tjänstens villkor: flera tjänster kräver 18 år eller betald nivå för appar som barn använder (t.ex. Googles Gemini). En lokal AI på datorn skickar ingenting.${f.installningar ? ` <button class="mini" id="ob-inst2">⚙️ Öppna Inställningar</button>` : ""}`)
-          : rad("🤖", `<b>Enklast: ☰ Meny → 🤖 AI-tjänst.</b> Koppla in t.ex. Mistral (gratisplan, europeiskt företag) direkt i Läxspelet: skapa en nyckel, klistra in, testa och tryck Använd. <button class="mini" id="ob-aival">🤖 Öppna AI-tjänst</button>`)
+          : rad("🤖", `<b>Enklast: ☰ Meny → 🤖 AI-tjänst.</b> Koppla in t.ex. Mistral (europeiskt företag) direkt i Läxspelet: skapa en nyckel, slå på betalning per användning med ett utgiftstak (gratisplanen räcker inte), klistra in, testa och tryck Använd. <button class="mini" id="ob-aival">🤖 Öppna AI-tjänst</button>`)
             + rad("🧩", `Eller använd en AI-integration i Home Assistant som kan göra <b>AI-uppgifter</b> (t.ex. Anthropic eller OpenAI) och välj den under Inställningar → Enheter och tjänster → Skolan → Konfigurera → AI-tjänst.${haInst} Googles Gemini får enligt Googles villkor inte användas i appar som barn använder.`)}
-        ${rad("🔐", `Det barnet skickar till AI-funktionerna (t.ex. ett foto av glosor) går till den AI-tjänst ni väljer, med er egen nyckel. Vissa gratisnivåer kan använda data för att förbättra tjänsten. <a href="https://github.com/lolander/Skolan/blob/main/docs/integritet.md" target="_blank" rel="noopener">Läs mer</a>`)}` },
+        ${rad("🔐", `Det barnet skickar till AI-funktionerna (t.ex. ett foto av glosor) går till den AI-tjänst ni väljer, med er egen nyckel. Vissa gratisnivåer kan använda data för att förbättra tjänsten. <a href="https://github.com/lolander/Skolan/blob/main/docs/ai-val.md" target="_blank" rel="noopener">Jämför AI-tjänsterna</a> · <a href="https://github.com/lolander/Skolan/blob/main/docs/integritet.md" target="_blank" rel="noopener">Integritet</a>`)}` },
+      { ikon: "✍️", rubrik: "Viktigt att veta", sista: true, text: `
+        <p>Läs igenom och kvittera. Kvittensen sparas med datum, och du får läsa igen om något viktigt ändras.</p>
+        ${rad("🤖", `<b>AI-tjänsten är ert val och ert avtal.</b> Det ${n} skickar till AI-funktionerna går till den tjänst ni kopplar in. Flera tjänster (t.ex. Mistral och OpenAI) kräver att en vårdnadshavare har samtyckt när barn använder dem, och vissa tillåter inte barn alls (t.ex. Googles Gemini). Läs tjänstens villkor.`)}
+        ${rad("🤖", `<b>AI kan ha fel.</b> Svaren är märkta som AI. De ersätter inte läraren eller dig.`)}
+        ${rad("🏫", `<b>Läxspelet kontrollerar inte lärarlegitimation eller anställning.</b> Det ansvarar skolan för. "Verifierad med skolkonto" visar bara att skolan har gett läraren ett konto.`)}
+        ${rad("💛", `<b>Mående är ingen övervakning eller vård.</b> Om ${n} väljer ledsen, stressad eller arg flera gånger i rad får du en notis, men Läxspelet fångar inte alla signaler. Prata med ${n}, och kontakta skolans elevhälsa eller 1177 vid oro. Barn kan ringa BRIS på 116 111. Vid akut fara: ring 112.`)}
+        ${f ? rad("🌐", `<b>Gratistunneln:</b> om telefoner och lärare når Läxspelet via Läxspelets gratistunnel går trafiken via Cloudflare, som tekniskt kan läsa den. Med en egen https-adress (t.ex. Nabu Casa) är den krypterad hela vägen.`) : ""}
+        ${rad("💾", `<b>Datan finns hemma hos er</b>, på er dator eller Home Assistant. Ni ansvarar för säkerhetskopior och för vem som har tillgång till enheten.`)}` },
     ];
   }
 
@@ -4882,13 +4905,15 @@ class SkolanPanel extends HTMLElement {
   _foralderInfo(guide) {
     const steg = this._foralderSteg();
     if (!guide) return steg.map((x) => `<div class="card"><b>${x.ikon} ${x.rubrik}</b>${x.text}</div>`).join("")
-      + (this._s.foralder_info === false ? `<div class="actions"><button class="primary" id="ob-borja">👋 Gå igenom introduktionen</button></div>` : `<p class="small muted">✅ Du har gått igenom introduktionen.</p>`);
+      + (this._s.foralder_info === false ? `<div class="actions"><button class="primary" id="ob-borja">👋 Gå igenom introduktionen</button></div>` : `<p class="small muted">✅ Du har kvitterat introduktionen${this._s.foralder_info_tid ? ` ${esc(this._s.foralder_info_tid.slice(0, 10))}` : ""}${this._s.ai_samtycke ? " och samtyckt till AI-tjänsten" : ""}. <button class="mini" id="ob-borja">Gå igenom igen</button></p>`);
     const i = Math.min(this._obSteg || 0, steg.length - 1), x = steg[i];
     return `<div class="small muted">Steg ${i + 1} av ${steg.length} · ${steg.map((y, j) => `<span style="${j === i ? "font-weight:bold;color:var(--primary-color)" : ""}">${y.ikon}</span>`).join(" ")}</div>
       <div class="card" style="border:2px solid var(--primary-color)"><b>${x.ikon} ${x.rubrik}</b>${x.text}
-      ${i === 0 ? `<label class="kap-rad"><input type="checkbox" id="fi-forstar" ${this._obForstar ? "checked" : ""}> Jag förstår att Läxspelet är ett komplement och att jag som förälder fortfarande är viktigast i läxarbetet.</label>` : ""}</div>
+      ${i === 0 ? `<label class="kap-rad"><input type="checkbox" id="fi-forstar" ${this._obForstar ? "checked" : ""}> Jag förstår att Läxspelet är ett komplement och att jag som förälder fortfarande är viktigast i läxarbetet.</label>` : ""}
+      ${x.sista ? `<label class="kap-rad"><input type="checkbox" id="fi-last"> <b>Jag har läst och förstått</b> det som står ovan.</label>
+        <label class="kap-rad"><input type="checkbox" id="fi-ai" ${this._s.ai_samtycke ? "checked" : ""}> Jag är vårdnadshavare och <b>samtycker</b> till att mitt barn använder den AI-tjänst vi kopplar in, enligt tjänstens villkor. <span class="small muted">(Frivilligt, men behövs för AI-funktionerna.)</span></label>` : ""}</div>
       <div class="actions">${i > 0 ? `<button class="ghost" id="ob-bak">‹ Tillbaka</button>` : ""}
-        ${i < steg.length - 1 ? `<button class="primary" id="ob-nasta">Nästa ›</button>` : `<button class="primary" id="fi-ok">✅ Klart, nu börjar vi</button>`}</div>
+        ${i < steg.length - 1 ? `<button class="primary" id="ob-nasta">Nästa ›</button>` : `<button class="primary" id="fi-ok">✅ Kvittera</button>`}</div>
       <p class="small muted">Allt det här finns sedan under ☰ Meny → 📘 Kom igång.</p>`;
   }
 
@@ -8406,13 +8431,16 @@ class SkolanPanel extends HTMLElement {
     });
     on("#ob-aival", () => this._go({ name: "aival" }));
     on("#ob-bak", () => { this._obSteg = Math.max(0, (this._obSteg || 0) - 1); this._render(); });
-    on("#ob-borja", () => { this._obSteg = 0; this._go({ name: "hem" }); });
+    // "Gå igenom igen": visa introduktionen (bara här i appen) tills föräldern kvitterar
+    on("#ob-borja", () => { this._obSteg = 0; this._obForstar = false; this._s.foralder_info = false; this._go({ name: "hem" }); });
     ["#ob-inst", "#ob-inst2"].forEach((id) => on(id, () => this._hass?.fristaende?.installningar?.()));
     on("#fi-ok", async () => {
+      if (!$("#fi-last")?.checked) { this._msg = { type: "error", text: "Bocka i att du har läst och förstått först." }; return this._render(); }
+      const ai = !!$("#fi-ai")?.checked;
       try {
-        const res = await this._f("/api/skolan/foralder_info", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const res = await this._f("/api/skolan/foralder_info", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ai_samtycke: ai }) });
         if (!res.ok) throw new Error(res.statusText);
-        this._s.foralder_info = true;
+        this._s.foralder_info = true; this._s.ai_samtycke = ai; this._s.foralder_info_tid = new Date().toISOString();
         this._msg = { type: "ok", text: "Välkommen! Introduktionen finns alltid under ☰ Meny → 📘 Kom igång." };
       } catch (e) { this._msg = { type: "error", text: String(e.message || e) }; }
       this._render();
