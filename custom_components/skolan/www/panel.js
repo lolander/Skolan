@@ -1680,6 +1680,11 @@ class SkolanPanel extends HTMLElement {
       title = `${TYP_IKON[u.typ] || "📖"} ${esc(u.namn)}`;
       back = { name: "hem" };
       body = u.typ === "hogl" ? this._hoglView(u) : u.typ === "skriv" || u.papper ? this._skrivView(u) : this._uppdragView(u);
+      // Barnet säger att det pluggat till provet utanför appen: föräldern godkänner här (eller i notisen).
+      if (u.typ === "prov" && s.kan_valja && (u.pluggat_vantar || []).length) {
+        body = (u.pluggat_vantar || []).map((d) => `<div class="forhor-kort">📚 ${esc(s.namn)} säger att hen pluggade till provet <b>${esc(veckodag(d))}</b>${u.pluggat_vad?.[d] ? `: ${esc(u.pluggat_vad[d])}` : ""}.
+          <div class="actions" style="margin-top:6px"><button class="primary" data-godkann="${d}" data-ok="1">👍 Godkänn</button><button class="ghost danger" data-godkann="${d}" data-ok="0">Neka</button></div></div>`).join("") + body;
+      }
     } else if (v.name === "pass") {
       title = "🎟️ Läxpasset";
       back = { name: "hem" };
@@ -5155,7 +5160,9 @@ class SkolanPanel extends HTMLElement {
       ])}
 
       ${kort("🔥", "Sviten", [
-        `Gör något i Läxspelet <b>varje dag</b>, även på helgen. Varje dag i rad blir en stjärna på förstasidan.`,
+        `<b>Plugga eller öva varje dag</b>, även på helgen. Varje dag i rad blir en stjärna på förstasidan.`,
+        `🔥 <b>Räknas:</b> glosor och övningar, läxor, förhör, pluggplan och övningsprov inför prov, svaga punkter, Plugga med husdjuret (5 rätt), hjärngympa, Skrivverkstaden och pennuppdrag.`,
+        `❌ <b>Räknas inte</b> (fast du får ⭐): dagens gåta, packa väskan, hur skolan känns, att svara "ingen läxa idag", kistor, köp och bonusar.`,
         `Dag 2 i rad: ${p(2)}, dag 3: ${p(3)} och så vidare upp till ${p(10)} per dag när du har 10 stjärnor.`,
         `Missar du en dag börjar sviten om från början, om du inte har ett 🛡️ svitskydd.`,
         `🩹 <b>Jobba ikapp:</b> missade du igår kan du rädda sviten idag. Tjäna 30 ⭐ med läxor och övningar idag, så räknas igår också. Det går bara dagen efter.`,
@@ -5356,8 +5363,11 @@ class SkolanPanel extends HTMLElement {
     const text = ik ? ""
       : n >= max ? `+${max} ⭐ varje dag du fortsätter`
       : m.streak_idag ? `Kom tillbaka imorgon för +${Math.min(max, n + 1)} ⭐`
-      : n ? `Gör något i Läxspelet idag för +${Math.min(max, n + 1)} ⭐, annars börjar sviten om`
-      : `Gör något i Läxspelet idag, bonusen växer för varje dag i rad`;
+      : n ? `Plugga eller öva idag för +${Math.min(max, n + 1)} ⭐, annars börjar sviten om`
+      : `Plugga eller öva idag, bonusen växer för varje dag i rad`;
+    // Vad räknas? Barnen trodde att alla stjärnor (gåtan, väskan …) håller sviten vid liv.
+    const fatt = !m.streak_idag && !ik && m.idag_p > 0 ? `<div class="small svit-not"><b>⚠️ Du har fått ${m.idag_p} ⭐ idag, men inget av det räknas för sviten än.</b> Plugga eller öva något så räknas dagen.</div>` : "";
+    const vad = !m.streak_idag ? `<div class="small svit-vad">🔥 <b>Räknas:</b> glosor, övningar, läxor, förhör, plugga till prov, hjärngympa och skrivuppgifter.<br>❌ <b>Räknas inte:</b> gåtan, packa väskan, hur skolan känns, "ingen läxa idag", kistor och köp.</div>` : "";
     const skydd = m.skydd ? `<span class="skydd" title="Svitskydd">${"🛡️".repeat(m.skydd)}</span>` : "";
     const radda = m.skydd_raddar ? `<div class="small svit-not"><b>🛡️ Svitskyddet räddar din svit på ${m.skydd_raddar} dagar om du gör något idag!</b></div>` : "";
     const skriv = !m.streak_idag && this._s.skrivkrav?.vantar ? `<div class="small svit-not"><b>✍️ Det du gjort väntar på en skrivövning.</b> Gör Skrivverkstaden eller ett Pennuppdrag så räknas det för sviten (och du får ${this._s.skrivkrav.vantar} ⭐).</div>` : "";
@@ -5370,7 +5380,7 @@ class SkolanPanel extends HTMLElement {
         <div class="svit-info"><div class="svit-titel">${rubrik}</div><div class="small svit-dgr">${ik ? "Du missade igår" : `${n} dag${n === 1 ? "" : "ar"} i rad`}${text ? ` · ${text}` : ""}</div></div>
         ${skydd}
       </div>
-      <div class="svit-stj">${stjarnor}</div>${radda}${skriv}${ikapp}
+      <div class="svit-stj">${stjarnor}</div>${fatt}${radda}${skriv}${ikapp}${vad}
       ${m.djur ? `<span class="svit-fraga" role="button" tabindex="0" data-svit-fraga="${esc(fraga)}">${m.djur.art} Fråga ${esc(m.djur.namn)} om sviten</span>` : ""}
     </div>`;
   }
@@ -6387,7 +6397,9 @@ class SkolanPanel extends HTMLElement {
         <span class="small">${nar} · 🎯 svag mot ${TYP_TEXT[b.svag] || b.svag} · 📚 ${b.pluggdagar} pluggdag${b.pluggdagar === 1 ? "" : "ar"}${b.klart ? " · ✅ allt klart" : ""}</span>
         <div class="pb-liv" title="Skada från plugget"><div style="width:${100 - b.skada}%"></div></div>
         <span class="small">${b.vunnen ? "🏆 Besegrad!" : b.skada ? `💥 ${b.skada} % skadad av ditt plugg` : "Oskadd: plugga inför provet så blir den svagare!"}</span>
-        ${knapp && !b.vunnen && b.dagar_kvar >= 1 ? `<br><button class="mini" data-plan="${b.id}">📅 Pluggplan</button> <button class="mini" data-hjalp-prov="${b.id}">📚 Plugga med ${esc(this._s.meriter?.djur?.namn || "husdjuret")}</button>` : ""}</span>
+        ${knapp && !b.vunnen && b.dagar_kvar >= 1 ? `<br><button class="mini" data-plan="${b.id}">📅 Pluggplan</button> <button class="mini" data-hjalp-prov="${b.id}">📚 Plugga med ${esc(this._s.meriter?.djur?.namn || "husdjuret")}</button>
+          ${b.pluggat_idag ? `<span class="small">✅ Pluggdag idag</span>` : b.pluggat_vantar ? `<span class="small">⏳ Väntar på mamma eller pappa</span>`
+            : `<button class="mini" data-pluggat-prov="${b.id}" title="Pluggade du i boken eller dina anteckningar? Mamma eller pappa godkänner.">✋ Jag pluggade till provet</button>`}` : ""}</span>
       ${knapp && !b.vunnen ? (b.oppen ? `<button class="mini primary" data-provboss="${b.id}" ${this._busy || this._s.arena?.pagar ? "disabled" : ""}>⚔️ Slutstrid</button>`
         : `<span class="small muted center">Öppnar dagen före provet</span>`) : ""}</li>`;
   }
@@ -8581,6 +8593,7 @@ class SkolanPanel extends HTMLElement {
       const info = (f.info || []).filter((x) => x.med !== false && x.text.trim());
       if (info.length) args.info = info;
       if (Object.keys(args).length === 1) return;
+      if (v.inkorg) args.inkorg = v.inkorg; // brevet kom från läraren via Lärarrummet
       if (await this._uppdragAct("veckoplan", args)) {
         if (v.inkorg) await this._skolaAct({ op: "inkorg_klar", id: v.inkorg });
         this._go({ name: "hem" });
@@ -8705,7 +8718,19 @@ class SkolanPanel extends HTMLElement {
     }));
     on("#kista-ok", () => { this._kistaVisa = null; this._render(); });
     on("#laxfraga-ja", async () => { if (await this._act("laxfraga_svar", { ja: true })) this._go({ name: "laxa", steg: "amne" }); });
-    on("#laxfraga-nej", async () => { if (await this._act("laxfraga_svar", { ja: false })) { await this._load(this._s.barn); this._fx({ emojis: ["🐾", "⭐"], antal: 12 }); this._render(); } });
+    on("#laxfraga-nej", async () => { if (await this._act("laxfraga_svar", { ja: false })) { await this._load(this._s.barn); this._fx({ emojis: ["🐾", "⭐"], antal: 12 });
+      if (!this._s.meriter?.streak_idag) this._msg = { type: "ok", text: "🐾 Tack för att du berättade! Kom ihåg: sviten 🔥 räknas bara när du pluggar eller övar, t.ex. 5 glosor, hjärngympa eller plugga till ett prov." };
+      this._render(); } });
+    r.querySelectorAll("[data-pluggat-prov]").forEach((b) => b.addEventListener("click", async () => {
+      if (this._busy) return;
+      const vad = window.prompt("Vad pluggade du? (t.ex. läste kapitel 3, gjorde stenciler) – mamma eller pappa får frågan och godkänner.", "");
+      if (vad === null) return;
+      if (await this._uppdragAct("pluggat_prov", { id: b.dataset.pluggatProv, vad })) {
+        this._msg = { type: "ok", text: "📨 Mamma eller pappa har fått frågan. När de godkänner räknas dagen för sviten 🔥 och mot provbossen." };
+        await this._load(this._s.barn);
+      }
+      this._render();
+    }));
     r.querySelectorAll("[data-provboss]").forEach((b) => b.addEventListener("click", async () => {
       if (this._busy || !(await this._act("provboss_start", { id: b.dataset.provboss }))) return this._render();
       await this._load();
@@ -10350,6 +10375,7 @@ const CSS = `
   .svit .skydd { font-size:20px; flex:none; }
   .svit .svit-stj { margin-top:8px; font-size:20px; }
   .svit-not { margin-top:6px; }
+  .svit-vad { margin-top:8px; padding:8px 10px; border-radius:10px; background:rgba(0,0,0,.06); line-height:1.45; }
   .svit-fraga { display:inline-block; margin-top:8px; padding:5px 10px; border-radius:999px; font-size:13px; font-weight:600; background:rgba(255,255,255,.85); color:#5d4037; cursor:pointer; }
   .svit-fraga:hover { background:#fff; }
   @media (prefers-reduced-motion: reduce) { .svit-fara, .svit-ikapp, .svit .eld, .svit-stj span.nasta { animation:none !important; } }

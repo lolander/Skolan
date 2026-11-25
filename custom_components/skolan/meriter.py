@@ -35,9 +35,9 @@ MEDALJER = [
     ("forsta", "🐣", "Första steget", "Gjort din första övning", "ovningar", 1),
     ("flitig", "📚", "Flitig", "Gjort 25 övningar", "ovningar", 25),
     ("glosmaskin", "🤖", "Glosmaskin", "Gjort 100 övningar", "ovningar", 100),
-    ("rulle", "🔥", "På rulle", "Gjort något i Skolan 3 dagar i rad", "streak", 3),
-    ("veckostjarna", "⭐", "Veckostjärna", "Gjort något i Skolan 7 dagar i rad", "streak", 7),
-    ("manadsmastare", "🏆", "Månadsmästare", "Gjort något i Skolan 30 dagar i rad", "streak", 30),
+    ("rulle", "🔥", "På rulle", "Pluggat eller övat 3 dagar i rad", "streak", 3),
+    ("veckostjarna", "⭐", "Veckostjärna", "Pluggat eller övat 7 dagar i rad", "streak", 7),
+    ("manadsmastare", "🏆", "Månadsmästare", "Pluggat eller övat 30 dagar i rad", "streak", 30),
     ("punktlig", "⏰", "Punktlig", "Lagt in en läxa i tid", "i_tid", 1),
     ("ordning", "🗂️", "Ordningsmästare", "Lagt in 10 läxor i tid", "i_tid", 10),
     ("tidig", "🐦", "Tidig fågel", "Övat 3 olika dagar före ett förhör", "tidig_max", 3),
@@ -748,6 +748,8 @@ def sammanfattning(data: dict) -> dict:
     m = _m(data)
     mandag = (dt_util.now().date() - timedelta(days=dt_util.now().weekday())).isoformat()
     veckan = sum(x["p"] for x in m["logg"] if x["p"] > 0 and x["tid"][:10] >= mandag)
+    idag_iso = dt_util.now().date().isoformat()
+    idag_p = sum(x["p"] for x in m["logg"] if x["p"] > 0 and x["tid"][:10] == idag_iso and x.get("ikon") not in ("🔥", "🛡️"))
     return {
         "intjanat": m.get("intjanat", 0),
         "saldo": m.get("saldo", 0),
@@ -757,6 +759,7 @@ def sammanfattning(data: dict) -> dict:
         "streak": _streak(m["ovningsdagar"]),
         "streak_idag": dt_util.now().date().isoformat() in m["ovningsdagar"],
         "streak_max": P_STREAK_MAX,
+        "idag_p": idag_p,  # ⭐ idag (utan svitbonus): visar barnet att stjärnor inte alltid betyder svitdag
         "skydd": m.get("skydd", 0),
         "skydd_max": SKYDD_MAX,
         "skydd_raddar": (_skydd_lucka(m, dt_util.now().date().isoformat())[1]
@@ -775,8 +778,10 @@ def _senaste_ankomst(veckodag: int, idag: date) -> date:
     return idag - timedelta(days=(idag.weekday() - veckodag) % 7)
 
 
-def lagt_in(data: dict, amne_id: str, typ: str, glosor: dict | None = None) -> None:
-    """Barnet har lagt in glosor/sidor i ett ämne. Matchar mot läxschemat."""
+def lagt_in(data: dict, amne_id: str, typ: str, glosor: dict | None = None, minsta: bool = False) -> None:
+    """Barnet har lagt in glosor/sidor i ett ämne. Matchar mot läxschemat.
+    minsta=True: läraren, veckobrevet eller en förälder hade redan lagt in dem, så barnet får minsta belöningen
+    (som när man lägger in sent: +P_SENT och en bronskista), aldrig bonusen för i tid."""
     idag = dt_util.now().date()
     har_registrerat(data)
     traff = False
@@ -786,7 +791,13 @@ def lagt_in(data: dict, amne_id: str, typ: str, glosor: dict | None = None) -> N
         ankomst = _senaste_ankomst(int(s["kommer"]), idag)
         sen = (idag - ankomst).days
         nyckel = f"lagt_in:{s['id']}:{ankomst.isoformat()}"
-        if sen <= 1:
+        if minsta and sen <= 3:
+            traff = True
+            ge(data, P_SENT, f"Lade in {s['namn']} (fanns redan)", nyckel, "📥")
+            kista_ge(data, "brons", f"{s['namn']} inlagd", f"kista:{nyckel}")
+            if sen <= 1:  # läxan finns ju i tid: räknas för veckans koll
+                _m(data)["nycklar"].append(f"itid:{s['id']}:{ankomst.isoformat()}")
+        elif sen <= 1:
             traff = True
             if ge(data, P_I_TID, f"Lade in {s['namn']} i tid", nyckel, "⏰"):
                 _rakna(data, "i_tid")
@@ -1132,11 +1143,18 @@ def kop_tips(data: dict, typ: str = "tips") -> None:
         ge(data, -pris, "🔁 Extra försök i en övning" if typ == "forsok" else "💡 Tips i en övning", None, ikon)
 
 
-def registrerat(data: dict, u: dict) -> None:
+def registrerat(data: dict, u: dict, minsta: bool = False) -> None:
+    """Barnet lade in ett prov eller en läxa. minsta=True: läraren, veckobrevet eller en förälder hade redan lagt in den,
+    så barnet får den minsta belöningen (en bronskista) i stället för bonus för god tid."""
     idag = dt_util.now().date()
     try:
         dagar = (date.fromisoformat(u["datum"]) - idag).days
     except ValueError:
+        return
+    if minsta:
+        har_registrerat(data)
+        if dagar >= 0:
+            kista_ge(data, "brons", f"{'Provet' if u['typ'] == 'prov' else 'Läxan'} {u['namn']} inlagd (fanns redan)", f"kista:{u['id']}")
         return
     if u["typ"] == "prov" and dagar >= 3:
         ge(data, P_REG_PROV, f"Registrerade provet {u['namn']} i god tid", f"regprov:{u['id']}", "🗓️")
@@ -3857,7 +3875,8 @@ def _provboss_info(data: dict, u: dict) -> dict:
     return {"id": u["id"], "prov": u["namn"], "namn": f"{amne[:1].upper()}{amne[1:]}-monstret", "ikon": PROVBOSS_IKONER[h % len(PROVBOSS_IKONER)],
             "element": el, "svag": ELEMENT_SVAG_MOT[el], "datum": u["datum"], "dagar_kvar": (datum - idag).days,
             "pluggdagar": dagar, "klart": klart, "skada": round(skada * 100),
-            "oppen": -PROVBOSS_EFTER <= (datum - idag).days <= PROVBOSS_FORE, "vunnen": bool(u.get("provboss_vunnen"))}
+            "oppen": -PROVBOSS_EFTER <= (datum - idag).days <= PROVBOSS_FORE, "vunnen": bool(u.get("provboss_vunnen")),
+            "pluggat_idag": idag.isoformat() in u.get("studiedagar", []), "pluggat_vantar": idag.isoformat() in (u.get("pluggat_vantar") or [])}
 
 
 def provboss_lista(data: dict) -> list[dict]:

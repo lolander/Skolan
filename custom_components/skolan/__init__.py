@@ -3567,8 +3567,14 @@ def _apply(data: dict, body: dict) -> list[str]:
         if body.get("glosor"):
             g = _find(a["glosor"], body.get("glosor"))
             g.update({"namn": namn, "sprak": sprak, "par": par, "forhor": forhor or None, "typ": typ})
+        elif (g := _sla_ihop_glosor({"glosor": [x for x in a["glosor"] if x.get("typ", "glosor") == typ]}, namn, forhor or None, par)):
+            # samma glosor en gång till: nya ord lades till i den gamla listan, ingen kopia.
+            # Barnet får ändå stjärnor, men den minsta mängden om någon annan lade in dem först.
+            if body.get("_barn"):
+                meriter.lagt_in(data, a["id"], "glosor", g, minsta=g.get("av") != "barn")
         else:
-            ny_g = {"id": _new_id(), "namn": namn, "sprak": sprak, "par": par, "forhor": forhor or None, "skapad": dt_util.now().date().isoformat(), "typ": typ}
+            ny_g = {"id": _new_id(), "namn": namn, "sprak": sprak, "par": par, "forhor": forhor or None, "skapad": dt_util.now().date().isoformat(), "typ": typ,
+                    "av": "barn" if body.get("_barn") else "foralder"}
             hade = meriter.har_material(a)
             a["glosor"].append(ny_g)
             if body.get("_barn") and not hade:
@@ -5694,11 +5700,15 @@ class UppdragView(HomeAssistantView):
                         "av_namn": user.name,
                         **({"papper": True} if papper else {}),
                     }
-                    _framsteg(data, u)
-                    lista.append(u)
+                    fanns = _sla_ihop_uppdrag(data, lista, u)
+                    if fanns:  # samma prov/läxa fanns redan på samma dag: informationen läggs till, ingen kopia
+                        u = fanns
+                    else:
+                        _framsteg(data, u)
+                        lista.append(u)
                     del lista[:-200]
-                    if not foralder:
-                        meriter.registrerat(data, u)
+                    if not foralder:  # fanns den redan från läraren, veckobrevet eller en förälder: minsta belöningen
+                        meriter.registrerat(data, u, minsta=bool(fanns) and fanns.get("av_id") != user.id)
                     for g_id in glosor:  # provdatum blir förhörsdatum på glosorna om de saknar ett
                         g = _find(a["glosor"], g_id)
                         if not g.get("forhor"):
@@ -5778,6 +5788,22 @@ class UppdragView(HomeAssistantView):
                             d["tid"] = dt_util.now().isoformat(timespec="minutes")
                             be_om = (u, dag)
                             meriter.kolla_utmaning(data)
+                    elif op == "pluggat_prov":  # barnet pluggade till provet utanför appen, en förälder godkänner
+                        if foralder:
+                            raise ValueError("Bara barnet kan säga att det har pluggat.")
+                        idag = dt_util.now().date().isoformat()
+                        if u["typ"] != "prov" or u.get("klart") or (u.get("datum") or "") <= idag:
+                            raise ValueError("Det går bara före provdagen.")
+                        if idag in u.get("studiedagar", []):
+                            raise ValueError("Idag räknas redan som pluggdag för provet. 👍")
+                        vantar = u.setdefault("pluggat_vantar", [])
+                        if idag in vantar:
+                            raise ValueError("Mamma eller pappa har redan fått frågan om idag.")
+                        vantar.append(idag)
+                        u.setdefault("pluggat_vad", {})[idag] = re.sub(r"\s+", " ", str(body.get("vad") or "")).strip()[:120]
+                        for k in [k for k in u["pluggat_vad"] if k not in vantar]:
+                            u["pluggat_vad"].pop(k, None)
+                        be_om = (u, idag)
                     elif op in ("skriv_klar", "las_klar"):
                         if (u["typ"] != "skriv" and not (u["typ"] == "las" and u.get("papper"))) or u.get("klart"):
                             raise ValueError("Den är redan klar.")
@@ -6631,6 +6657,14 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
     lista = data.setdefault("uppdrag", [])
     nu = dt_util.now().isoformat(timespec="minutes")
     skapat, hogl_id = [], None
+    larare = None  # brevet kom från läraren (Lärarrummet): prov, läxor och glosor märks med det
+    if body.get("inkorg"):
+        try:
+            b_in = next((x for x in skola.las(path)["inkorg"] if x.get("id") == body["inkorg"]), None)
+            larare = (b_in or {}).get("larare") or None
+        except Exception:  # noqa: BLE001
+            larare = None
+    kalla_brev = "larare" if larare else "veckobrev"
 
     def datum(v):
         v = str(v or "")[:10]
@@ -6665,10 +6699,15 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
             u["dagar"] = [{"datum": d, "status": None} for d in dagar]
         elif not sidor:
             raise ValueError("Läsläxan behöver sidor i e-boken (eller välj högläsning).")
-        _framsteg(data, u)
-        lista.append(u)
-        hogl_id = u["id"]
-        skapat.append(f"📖 {u['namn']}")
+        fanns = _sla_ihop_uppdrag(data, lista, u)
+        if fanns:
+            hogl_id = fanns["id"]
+            skapat.append(f"🔁 {fanns['namn']} (fanns redan, informationen lades till)")
+        else:
+            _framsteg(data, u)
+            lista.append(u)
+            hogl_id = u["id"]
+            skapat.append(f"📖 {u['namn']}")
     skriv = body.get("skriv")
     if skriv:
         a = _find(amnen, skriv.get("amne"))
@@ -6679,9 +6718,13 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
             "kapitel": str(skriv.get("kapitel") or "")[:200], "sidor": sidor, "glosor": [], "datum": datum(skriv.get("datum")),
             "kopplad": hogl_id, "skapad": nu, "av_id": user.id, "av_namn": user.name,
         }
-        _framsteg(data, u)
-        lista.append(u)
-        skapat.append(f"✍️ {u['namn']}")
+        fanns = _sla_ihop_uppdrag(data, lista, u)
+        if fanns:
+            skapat.append(f"🔁 {fanns['namn']} (fanns redan, informationen lades till)")
+        else:
+            _framsteg(data, u)
+            lista.append(u)
+            skapat.append(f"✍️ {u['namn']}")
     ord_ = body.get("ord")
     if ord_:
         a = _find(amnen, ord_.get("amne"))
@@ -6699,9 +6742,11 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
         if ord_.get("glosor"):
             g = _find(a["glosor"], ord_["glosor"])
             g.update({"par": par, "forhor": forhor or g.get("forhor"), "sprak": sprak})
+        elif (g := _sla_ihop_glosor(a, _name(ord_.get("namn") or "Veckans ord"), forhor, par)):
+            pass  # samma glosor fanns redan: nya ord lades till
         else:
             g = {"id": _new_id(), "namn": _name(ord_.get("namn") or "Veckans ord"), "sprak": sprak,
-                 "par": par, "forhor": forhor, "skapad": dt_util.now().date().isoformat()}
+                 "par": par, "forhor": forhor, "skapad": dt_util.now().date().isoformat(), "av": "larare" if larare else "veckobrev", **({"larare": larare} if larare else {})}
             a["glosor"].append(g)
         skapat.append(f"📝 {g['namn']} ({len(par)} ord)")
     for x in (body.get("uppgifter") or [])[:10]:  # läxor ur ett meddelande: läsa (utan bok i appen) eller göra
@@ -6721,7 +6766,12 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
         las_ = x.get("typ") == "las"
         u = {"id": _new_id(), "typ": "las" if las_ else "skriv", "namn": _name(vad), "amne": a["id"], "amne_namn": a["namn"],
              "bok": None, "fran": None, "till": None, "kapitel": vad, "sidor": [], "glosor": [], "datum": d,
-             "skapad": nu, "av_id": user.id, "av_namn": user.name, "kalla": "meddelande", **({"papper": True} if las_ else {"uppgift": True})}
+             "skapad": nu, "av_id": user.id, "av_namn": user.name, "kalla": "larare" if larare else "meddelande", **({"larare": larare} if larare else {}),
+             **({"papper": True} if las_ else {"uppgift": True})}
+        fanns = _sla_ihop_uppdrag(data, lista, u)
+        if fanns:
+            skapat.append(f"🔁 {fanns['namn']} (fanns redan, informationen lades till)")
+            continue
         _framsteg(data, u)
         lista.append(u)
         skapat.append(f"{'📖' if las_ else '✏️'} {u['namn']}")
@@ -6739,7 +6789,11 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
             raise ValueError("Välj ett ämne för provet.")
         u = {"id": _new_id(), "typ": "prov", "namn": _name(x.get("namn") or f"{a['namn']}-prov"), "amne": a["id"], "amne_namn": a["namn"],
              "bok": None, "fran": None, "till": None, "kapitel": str(x.get("omfattning") or "")[:200], "sidor": [], "glosor": [],
-             "datum": d, "skapad": nu, "av_id": user.id, "av_namn": user.name, "kalla": "veckobrev"}
+             "datum": d, "skapad": nu, "av_id": user.id, "av_namn": user.name, "kalla": kalla_brev, **({"larare": larare} if larare else {})}
+        fanns = _sla_ihop_uppdrag(data, lista, u)
+        if fanns:  # samma prov igen: slås ihop (pluggdagarna ligger kvar)
+            skapat.append(f"🔁 {fanns['namn']} (fanns redan, informationen lades till)")
+            continue
         _framsteg(data, u)
         lista.append(u)
         skapat.append(f"📝 {u['namn']}")
@@ -6748,12 +6802,86 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
         si = data.setdefault("skolinfo", [])
         mandag = str(body.get("mandag") or "")[:10]
         for x in info:
+            if any(y.get("text") == str(x["text"]).strip()[:200] and y.get("datum") == (datum(x.get("datum")) if x.get("datum") else "") for y in si):
+                continue  # samma sak från skolan finns redan
             si.append({"id": _new_id(), "text": str(x["text"]).strip()[:200], "datum": datum(x.get("datum")) if x.get("datum") else "",
                        "tid": str(x.get("tid") or "")[:5], "vecka": mandag, "skapad": nu})
         del si[:-80]
         skapat.append(f"📌 {len(info)} saker från skolan")
     del lista[:-200]
     return skapat
+
+
+def _jamfor_namn(t: str) -> str:
+    return re.sub(r"[^a-z0-9åäö]+", "", str(t or "").lower())
+
+
+def _samma_uppdrag(lista: list, typ: str, namn: str, datum: str | None, amne: str | None = None) -> dict | None:
+    """Ett uppdrag på samma ställe: samma typ och samma dag, och samma ämne eller samma namn
+    (stora/små bokstäver, mellanslag och tecken spelar ingen roll)."""
+    n = _jamfor_namn(namn)
+    return next((u for u in lista if u.get("typ") == typ and u.get("datum") == datum and not u.get("klart")
+                 and ((amne and u.get("amne") == amne) or _jamfor_namn(u.get("namn")) == n)), None)
+
+
+def _med_text(gammal: str, ny: str, max_len: int = 300) -> str:
+    """Lägg till ny information utan att upprepa det som redan står där."""
+    gammal, ny = str(gammal or "").strip(), str(ny or "").strip()
+    if not ny or _jamfor_namn(ny) in _jamfor_namn(gammal):
+        return gammal[:max_len]
+    if not gammal or _jamfor_namn(gammal) in _jamfor_namn(ny):
+        return ny[:max_len]
+    return f"{gammal} · {ny}"[:max_len]
+
+
+def _sla_ihop_uppdrag(data: dict, lista: list, u: dict) -> dict | None:
+    """Finns redan ett prov/en läxa på samma ställe slås det nya ihop med det gamla så att all information kommer med.
+    Returnerar det gamla uppdraget (som nu är uppdaterat), eller None om det nya ska läggas till."""
+    gammal = _samma_uppdrag(lista, u.get("typ"), u.get("namn"), u.get("datum"), u.get("amne"))
+    if not gammal:
+        return None
+    nn, gn = _jamfor_namn(u.get("namn")), _jamfor_namn(gammal.get("namn"))
+    if nn and nn not in gn and gn not in nn:  # helt annat namn: det nya namnet blir en del av infon
+        gammal["kapitel"] = _med_text(gammal.get("kapitel"), u.get("namn"))
+    gammal["kapitel"] = _med_text(gammal.get("kapitel"), u.get("kapitel"))
+    if not any(a["id"] == gammal.get("amne") for a in data.get("amnen", [])) and u.get("amne"):
+        gammal["amne"], gammal["amne_namn"] = u["amne"], u.get("amne_namn")
+    if u.get("bok") and not gammal.get("bok"):
+        gammal.update({k: u.get(k) for k in ("bok", "fran", "till")})
+    if u.get("bok") == gammal.get("bok"):
+        har = {x.get("nyckel") for x in gammal.get("sidor") or []}
+        gammal["sidor"] = list(gammal.get("sidor") or []) + [x for x in u.get("sidor") or [] if x.get("nyckel") not in har]
+    gammal["glosor"] = list(dict.fromkeys(list(gammal.get("glosor") or []) + list(u.get("glosor") or [])))
+    if u.get("dagar"):  # högläsning: alla läsdagar från båda
+        har = {d["datum"] for d in gammal.get("dagar") or []}
+        gammal["dagar"] = sorted(list(gammal.get("dagar") or []) + [d for d in u["dagar"] if d["datum"] not in har], key=lambda d: d["datum"])
+    for k in ("papper", "uppgift"):
+        if u.get(k):
+            gammal[k] = True
+    _framsteg(data, gammal)
+    return gammal
+
+
+def _sla_ihop_glosor(a: dict, namn: str, forhor: str | None, par: list) -> dict | None:
+    """Samma glosor en gång till (samma namn, eller samma förhörsdag) i samma ämne: lägg till nya ord i den gamla listan."""
+    n = _jamfor_namn(namn)
+    g = next((g for g in a.get("glosor", []) if _jamfor_namn(g.get("namn")) == n or (forhor and g.get("forhor") == forhor)), None)
+    if not g:
+        return None
+    har = {_jamfor_namn(p[0]) for p in g.get("par", [])}
+    for p in par:
+        if _jamfor_namn(p[0]) not in har:
+            g.setdefault("par", []).append(p)
+            har.add(_jamfor_namn(p[0]))
+        else:  # samma ord: fyll i översättningen om den saknades
+            for q in g["par"]:
+                if _jamfor_namn(q[0]) == _jamfor_namn(p[0]) and not str(q[1]).strip() and str(p[1]).strip():
+                    q[1] = p[1]
+    if forhor and not g.get("forhor"):
+        g["forhor"] = forhor
+    if _jamfor_namn(namn) != _jamfor_namn(g.get("namn")) and namn:
+        g["namn"] = _name(f"{g['namn']} + {namn}")
+    return g
 
 
 def _godkann_glosor(data: dict, gid: str, datum: str | None, ok: bool) -> str | None:
@@ -6798,6 +6926,16 @@ def _godkann_i(data: dict, u: dict, datum: str | None, ok: bool) -> str | None:
             return f"👍 Högläsningen ({VECKODAG[date.fromisoformat(d['datum']).weekday()]}) är godkänd! +{meriter.P_HOGL_DAG} ⭐"
         d["status"] = "nej"
         return "🙈 Högläsningen blev inte godkänd. Läs högt för mamma eller pappa och tryck igen."
+    if u["typ"] == "prov":  # pluggade till provet utanför appen
+        vantar = u.get("pluggat_vantar") or []
+        if datum not in vantar:
+            return None
+        vantar.remove(datum)
+        (u.get("pluggat_vad") or {}).pop(datum, None)
+        if not ok:
+            return f"🙈 Pluggandet till {u['namn']} blev inte godkänt. Visa mamma eller pappa vad du har gjort."
+        meriter.prov_studiedag(data, u, datum)  # räknas för den dagen: svitdag och pluggdag mot provbossen
+        return f"👍 Pluggandet till {u['namn']} är godkänt! Dagen räknas för sviten 🔥 och mot provbossen."
     if u["typ"] == "skriv" or (u["typ"] == "las" and u.get("papper")):
         if u.get("klart"):
             return None
@@ -6821,6 +6959,10 @@ async def _be_om_godkannande(hass: HomeAssistant, barn: str, u: dict, datum: str
         titel = f"🗣️ {namn} har läst högt" + (" 🎙️" if d.get("inspelning") else "")
         text = f"{u['namn']}{': ' + u['kapitel'] if u.get('kapitel') else ''} ({VECKODAG[date.fromisoformat(datum).weekday()]}). " + (
             f"Tryck här för att lyssna på inspelningen ({d.get('insp_sek', 0) // 60} min). Godkänn?" if d.get("inspelning") else "Godkänn?")
+    elif u["typ"] == "prov":
+        vad = (u.get("pluggat_vad") or {}).get(datum or "") or ""
+        titel = f"📚 {namn} har pluggat till provet"
+        text = f"{u['namn']} ({VECKODAG[date.fromisoformat(datum).weekday()]}){': ' + vad if vad else ''}. Pluggat utanför appen. Har du sett det? Godkänn?"
     elif u["typ"] == "bok":
         titel = f"📸 {namn} har fotat en bok"
         text = f"{u['namn']}: {u['sidor']} nya sidor (+{u['pris']} ⭐). Kolla att sidorna är skarpa och i rätt ordning. Godkänn?"
