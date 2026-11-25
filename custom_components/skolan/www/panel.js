@@ -539,16 +539,30 @@ const STRID_CSS = `
 
 // Evolution: storleken (Stor, Jätte, Legend) och formen (efter barnets vanor) syns på husdjuret.
 const EVO_FARG = { blixt: "#ffeb3b", visdom: "#b388ff", prick: "#ff5252", flit: "#69f0ae", boss: "#ff7043" };
-function evoBak(steg, form) {
-  const f = form?.id, farg = EVO_FARG[f] || "#fff59d";
+function evoBak(steg, form, G = { cx: 100, cy: 98, r: 44 }) {
+  const f = form?.id, farg = EVO_FARG[f] || "#fff59d", fargStark = EVO_FARG[f] || "#ffd54f";
   let s = "";
+  if (steg >= 4) { // Jätte och Legend: strålar som snurrar långsamt bakom djuret
+    const n = steg >= 5 ? 16 : 12, R = steg >= 5 ? 98 : 88;
+    const str = Array.from({ length: n }, (_, i) => { const a = (i / n) * Math.PI * 2, b = a + Math.PI / n * 0.55;
+      return `M100 120 L${(100 + Math.cos(a) * R).toFixed(1)} ${(120 + Math.sin(a) * R).toFixed(1)} L${(100 + Math.cos(b) * R).toFixed(1)} ${(120 + Math.sin(b) * R).toFixed(1)} Z`; }).join(" ");
+    s += `<path d="${str}" fill="${steg >= 5 ? "#ffe082" : "#fff59d"}" opacity="${steg >= 5 ? 0.5 : 0.35}"><animateTransform attributeName="transform" type="rotate" values="0 100 120;360 100 120" dur="${steg >= 5 ? 14 : 20}s" repeatCount="indefinite"/></path>`;
+  }
+  if (steg >= 4) { // ryggtaggar/kam i formens färg runt huvudet
+    const t = steg >= 5 ? 7 : 5, L = steg >= 5 ? 26 : 22, rr = G.r + 2;
+    for (let i = 0; i < t; i++) {
+      const a = Math.PI * (1.15 + (0.7 * i) / (t - 1)), b1 = a - 0.16, b2 = a + 0.16;
+      const p = (v, d) => `${(G.cx + Math.cos(v) * d).toFixed(1)} ${(G.cy + Math.sin(v) * d).toFixed(1)}`;
+      s += `<path d="M${p(b1, rr - 6)} L${p(a, rr + L)} L${p(b2, rr - 6)} Z" fill="${EVO_FARG[f] || "#ff7043"}" stroke="#4e342e" stroke-width="3" stroke-linejoin="round"/>`;
+    }
+  }
   if (steg >= 3) { // aura som pulserar, starkare ju större
-    const op = { 3: 0.35, 4: 0.55, 5: 0.8 }[Math.min(5, steg)];
+    const op = { 3: 0.5, 4: 0.7, 5: 0.9 }[Math.min(5, steg)];
     s += `<defs><radialGradient id="evo-aura-${f || "x"}"><stop offset="0" stop-color="${farg}" stop-opacity=".9"/><stop offset="1" stop-color="${farg}" stop-opacity="0"/></radialGradient></defs>
       <circle cx="100" cy="125" r="${76 + steg * 4}" fill="url(#evo-aura-${f || "x"})" opacity="${op}"><animate attributeName="opacity" values="${op};${op * 0.5};${op}" dur="2.6s" repeatCount="indefinite"/></circle>`;
   }
   if (steg >= 5) { // legend: vingar
-    const v = (sp) => `<path transform="${sp ? "translate(200 0) scale(-1 1)" : ""}" d="M72 128 C40 92 6 96 10 122 C22 116 26 128 18 138 C32 132 38 142 30 152 C46 146 56 150 66 148 Z" fill="#fffde7" stroke="#ffd54f" stroke-width="3"><animateTransform attributeName="transform" type="rotate" values="0 72 128;-8 72 128;0 72 128" dur="1.8s" repeatCount="indefinite" additive="sum"/></path>`;
+    const v = (sp) => `<path transform="${sp ? "translate(200 0) scale(-1 1)" : ""}" d="M76 124 C46 76 10 72 14 106 C26 100 30 114 20 124 C36 118 40 132 28 142 C44 138 50 150 40 160 C56 154 64 156 72 150 Z" fill="#fff8e1" stroke="#ffb300" stroke-width="3.5"><animateTransform attributeName="transform" type="rotate" values="0 72 128;-8 72 128;0 72 128" dur="1.8s" repeatCount="indefinite" additive="sum"/></path>`;
     s += v(false) + v(true);
   }
   if (f === "boss") s += `<path d="M66 116 Q100 104 134 116 L150 184 Q125 174 100 182 Q75 174 50 184 Z" fill="#c62828" stroke="#8e0000" stroke-width="2"/><path d="M66 116 Q100 104 134 116 L132 126 Q100 116 68 126 Z" fill="#8e0000"/>`;
@@ -557,6 +571,22 @@ function evoBak(steg, form) {
   if (f === "blixt") s += `<g stroke="#ffd600" stroke-width="5" fill="none" stroke-linejoin="round"><polyline points="30,60 44,92 32,96 48,132"/><polyline points="170,60 156,92 168,96 152,132"/>
     <animate attributeName="opacity" values="1;.2;1;1;.4;1" dur="1.4s" repeatCount="indefinite"/></g>`;
   if (f === "prick") s += `<g opacity=".35"><circle cx="100" cy="128" r="74" fill="none" stroke="#ff5252" stroke-width="6"/><circle cx="100" cy="128" r="54" fill="none" stroke="#fff" stroke-width="6"/></g>`;
+  return s;
+}
+// Tydliga kännetecken per storlek, i formens färg (så att varje utveckling syns direkt).
+function evoMarken(steg, form, cx, cy, r, hatt, mage, topp = cy - r) {
+  const farg = EVO_FARG[form?.id] || "#ffb300";
+  let s = "";
+  if (steg === 1 && !hatt) // nykläckt: en bit äggskal på huvudet
+    s += `<path d="M${cx - r * 0.7} ${topp + r * 0.38} Q${cx} ${topp - r * 0.32} ${cx + r * 0.7} ${topp + r * 0.38} l-${r * 0.2} -${r * 0.16} l-${r * 0.2} ${r * 0.14} l-${r * 0.2} -${r * 0.2} l-${r * 0.2} ${r * 0.18} l-${r * 0.2} -${r * 0.16} l-${r * 0.2} ${r * 0.14} l-${r * 0.2} -${r * 0.18} Z" fill="#fff8e1" stroke="#a1887f" stroke-width="3" stroke-linejoin="round"/>`;
+  if (steg >= 3) { // kindmärken
+    const k = (sx) => `<path d="M${cx + sx * r * 0.72} ${cy + r * 0.1} l${sx * r * 0.22} -${r * 0.06} M${cx + sx * r * 0.72} ${cy + r * 0.26} l${sx * r * 0.22} -${r * 0.02}" stroke="${farg}" stroke-width="${steg >= 4 ? 5 : 4}" stroke-linecap="round"/>`;
+    s += k(-1) + k(1);
+  }
+  if (steg >= 3 && mage) { // emblem på bröstet
+    const [mx, my] = mage, er = steg >= 5 ? 13 : 11;
+    s += `<circle cx="${mx}" cy="${my}" r="${er}" fill="${farg}" stroke="#fff" stroke-width="3"/><text x="${mx}" y="${my + er * 0.45}" font-size="${er * 1.25}" text-anchor="middle" fill="#fff">${form?.ikon || "★"}</text>`;
+  }
   return s;
 }
 function evoFram(form, cx, cy, r, hatt) {
@@ -574,12 +604,20 @@ function evoFram(form, cx, cy, r, hatt) {
   return s;
 }
 
+function evoStjarnor(steg) {
+  if (steg < 5) return "";
+  return `<g><animateTransform attributeName="transform" type="rotate" values="0 100 118;360 100 118" dur="7s" repeatCount="indefinite"/>${[0, 120, 240].map((v) => {
+    const a = (v * Math.PI) / 180;
+    return `<text x="${(100 + Math.cos(a) * 86).toFixed(1)}" y="${(124 + Math.sin(a) * 70).toFixed(1)}" font-size="18" text-anchor="middle" fill="#ffd54f">✦</text>`; }).join("")}</g>`;
+}
+
 const TYP_TEXT = { eld: "🔥 Eld", natur: "🍃 Natur", blixt: "⚡ Blixt", vatten: "🌊 Vatten", is: "❄️ Is", kraft: "💥 Kraft" };
 
 function ritaDjur(art, humor, steg, x = {}) {
   const u = DJUR_UTSEENDE[art] || DJUR_UTSEENDE["🐶"];
   const K = u.kropp, M = u.mage, linje = "#3e2723";
-  const skala = steg === 0 ? 1 : 0.72 + steg * 0.06; // växer med storleken
+  const skala = [1, 0.64, 0.8, 0.93, 1.03, 1.08][Math.min(5, steg)]; // växer tydligt med storleken
+  const evoFilter = steg >= 5 ? "saturate(1.2) drop-shadow(0 0 5px #ffd54f)" : steg >= 4 ? "saturate(1.15)" : "";
   let ut = `<svg viewBox="0 0 200 200" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">`;
   if (x.deko) ut += `<text x="172" y="190" font-size="34" text-anchor="middle" opacity=".45">${x.deko}</text>`;
   ut += `<ellipse cx="100" cy="186" rx="${46 * skala}" ry="7" fill="rgba(0,0,0,.18)"/>`;
@@ -609,8 +647,9 @@ function ritaDjur(art, humor, steg, x = {}) {
     return f;
   };
   if (x.form) ut += `<circle cx="28" cy="28" r="20" fill="rgba(255,255,255,.75)" stroke="#ffd54f" stroke-width="3"/><text x="28" y="36" font-size="22" text-anchor="middle">${x.form.ikon}</text>`;
-  ut += `<g class="kropp ${x.variant?.anim ? "variant-anim" : ""}" style="transform-origin:100px 185px;transform:scale(${skala});${x.variant ? `filter:${x.variant.filter};` : ""}">`;
-  if (steg > 0) ut += evoBak(steg, x.form);
+  const filt = [x.variant?.filter, evoFilter].filter(Boolean).join(" ");
+  ut += `<g class="kropp ${x.variant?.anim ? "variant-anim" : ""}" style="transform-origin:100px 185px;transform:scale(${skala});${filt ? `filter:${filt};` : ""}">`;
+  if (steg > 0) ut += evoBak(steg, x.form, u.form ? { cx: u.ansikte[0], cy: u.ansikte[1], r: u.ansikte[2] } : undefined);
   if (steg === 0) {
     // ägget, med sprickor och ett litet ansikte
     ut += `<path d="M100 60 C140 60 152 120 150 145 C148 175 125 185 100 185 C75 185 52 175 50 145 C48 120 60 60 100 60 Z" fill="#fff8e1" stroke="#d7ccc8" stroke-width="3"/>`;
@@ -623,11 +662,11 @@ function ritaDjur(art, humor, steg, x = {}) {
   if (u.form) {
     // larvigt husdjur: egen form, samma ansikten och saker
     const [cx, cy, r] = u.ansikte;
-    ut += u.form() + ansikte(cx, cy, r) + evoFram(x.form, cx, cy, r, x.hatt);
+    ut += u.form() + ansikte(cx, cy, r) + evoMarken(steg, x.form, cx, cy, r, x.hatt, null, u.topp + 4) + evoFram(x.form, cx, cy, r, x.hatt);
     if (x.hatt && PA_OGONEN.has(x.hatt.id)) ut += `<text x="${cx}" y="${cy + 14}" font-size="${r + 6}" text-anchor="middle">${x.hatt.ikon}</text>`;
     else if (x.hatt) ut += `<text x="${cx + 4}" y="${u.topp + 6}" font-size="50" text-anchor="middle" transform="rotate(-10 ${cx} ${u.topp})">${x.hatt.ikon}</text>`;
     else if (x.krona) ut += `<text x="${cx}" y="${u.topp + 4}" font-size="46" text-anchor="middle">👑</text>`;
-    ut += `</g>`;
+    ut += `</g>` + evoStjarnor(steg);
     if (x.kompis) ut += `<text class="kompis-svg" x="164" y="178" font-size="38" text-anchor="middle">${x.kompis.ikon}</text>`;
     if (x.eff?.partikel) [[30, 50], [170, 70], [40, 140]].forEach(([px, py], n) => (ut += `<text class="partikel p${n}" x="${px}" y="${py}" font-size="24" text-anchor="middle">${x.eff.partikel}</text>`));
     return ut + `</svg>`;
@@ -677,12 +716,12 @@ function ritaDjur(art, humor, steg, x = {}) {
   if (u.grisnos) ut += `<ellipse cx="${hx}" cy="${hy + 8}" rx="13" ry="9" fill="${u.grisnos}" stroke="#ec407a" stroke-width="2"/><ellipse cx="${hx - 5}" cy="${hy + 8}" rx="2.5" ry="4" fill="#ad1457"/><ellipse cx="${hx + 5}" cy="${hy + 8}" rx="2.5" ry="4" fill="#ad1457"/>`;
   if (u.nabb) ut += `<path d="M${hx - 8} ${hy + 6} L${hx + 8} ${hy + 6} L${hx} ${hy + 16} Z" fill="${u.nabb}"/>`;
   if (u.morrhar) ut += `<path d="M${hx - 22} ${hy + 10} h-18 M${hx - 22} ${hy + 16} l-16 5 M${hx + 22} ${hy + 10} h18 M${hx + 22} ${hy + 16} l16 5" stroke="${linje}" stroke-width="2" opacity=".6"/>`;
-  ut += evoFram(x.form, hx, hy, hr, x.hatt);
+  ut += evoMarken(steg, x.form, hx, hy, hr, x.hatt, [100, 160]) + evoFram(x.form, hx, hy, hr, x.hatt);
   // saker: på ögonen eller på huvudet, som en del av bilden
   if (x.hatt && PA_OGONEN.has(x.hatt.id)) ut += `<text x="${hx}" y="${hy + 14}" font-size="46" text-anchor="middle">${x.hatt.ikon}</text>`;
   else if (x.hatt) ut += `<text x="${hx + 4}" y="${hy - hr + 16}" font-size="50" text-anchor="middle" transform="rotate(-10 ${hx} ${hy - hr})">${x.hatt.ikon}</text>`;
   else if (x.krona) ut += `<text x="${hx}" y="${hy - hr + 14}" font-size="46" text-anchor="middle">👑</text>`;
-  ut += `</g>`;
+  ut += `</g>` + evoStjarnor(steg);
   if (x.kompis) ut += `<text class="kompis-svg" x="160" y="178" font-size="38" text-anchor="middle">${x.kompis.ikon}</text>`;
   if (x.eff?.partikel) [[30, 50], [170, 70], [40, 140]].forEach(([px, py], n) => (ut += `<text class="partikel p${n}" x="${px}" y="${py}" font-size="24" text-anchor="middle">${x.eff.partikel}</text>`));
   return ut + `</svg>`;
@@ -951,7 +990,7 @@ function hjUddaFraga(niva) {
 const hjMinneStart = (niva) => 2 + Math.floor(niva / 3); // samma som minne_start i hjarngympa.py
 
 // ---------- widgetbilden ----------
-const WIDGETBILD_VER = 1; // höj när ritaDjur ändras så att alla bilder ritas om
+const WIDGETBILD_VER = 2; // höj när ritaDjur ändras så att alla bilder ritas om
 
 // CSS-filter (skimmer) som SVG-färgmatriser: CSS-filter i en SVG-bild fungerar inte överallt.
 function cssFilterMatris(css) {
@@ -1257,6 +1296,7 @@ class SkolanPanel extends HTMLElement {
       }
       this._s = body;
       this._widgetBild();
+      this._evoKoll();
       if (this._lankBok) {
         const a = (body.data.amnen || []).find((x) => (x.bocker || []).some((b) => b.id === this._lankBok));
         if (a) this._view = { name: "bok", amne: a.id, bok: this._lankBok };
@@ -2179,6 +2219,99 @@ class SkolanPanel extends HTMLElement {
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 4800);
     this._fanfar();
+  }
+
+  // Utvecklingsscen (Pokémon-likt): när det aktiva husdjuret växer ett steg eller får en ny form.
+  // Spelas en gång per enhet och djur; första gången på en enhet sparas bara läget.
+  _evoKoll() {
+    const s = this._s, d = s?.meriter?.djur;
+    if (!d || s.kan_valja || document.getElementById("skolan-evo")) return;
+    const id = (d.mina || []).find((h) => h.aktiv)?.id || d.art;
+    const nyckel = `skolan_evo_${s.barn}_${id}`, nu = { steg: d.steg, form: d.form?.id || "" };
+    let fore = null;
+    try {
+      fore = JSON.parse(localStorage.getItem(nyckel) || "null");
+      localStorage.setItem(nyckel, JSON.stringify(nu));
+    } catch (e) { return; } // privat läge: hellre ingen scen än samma scen varje gång
+    if (!fore || typeof fore.steg !== "number") return;
+    const vaxte = nu.steg > fore.steg, nyForm = !!nu.form && nu.form !== fore.form && nu.steg >= 2;
+    if (vaxte || nyForm) this._evoScen(d, fore, nu, vaxte);
+  }
+
+  _evoScen(d, fore, nu, vaxte) {
+    const lugn = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const FORMER = { blixt: ["⚡", "Blixtform"], visdom: ["📚", "Visdomsform"], prick: ["🎯", "Prickform"], flit: ["✨", "Flitform"], boss: ["⚔️", "Hjälteform"] };
+    const formObj = (f) => (f && FORMER[f] ? { id: f, ikon: FORMER[f][0], namn: FORMER[f][1] } : null);
+    const stegNamn = (this._s.djur_steg || [])[nu.steg] || "";
+    const kla = vaxte && fore.steg === 0;
+    const gammal = ritaDjur(d.art, "glad", fore.steg, { form: fore.steg >= 2 ? formObj(fore.form) : null, krona: fore.steg >= 5 });
+    const ny = ritaDjur(d.art, "glad", nu.steg, { form: formObj(nu.form), krona: nu.steg >= 5 });
+    const NYTT = { 1: "Ägget har kläckts! 🐣", 2: "Nu kan den få en form efter det du gör mest", 3: "Märken och ett emblem på bröstet 🔰", 4: "Taggar, strålar och mycket mer kraft 💪", 5: "Vingar, krona och guldglans 👑" };
+    const punkter = [];
+    if (vaxte) { punkter.push(NYTT[nu.steg] || "Större och starkare 💪"); if (nu.steg >= 2) punkter.push("Nya saker kan ha låsts upp i butiken 🔓"); }
+    if (nu.form && nu.form !== fore.form) punkter.push(`Ny form: ${FORMER[nu.form]?.[0] || ""} ${FORMER[nu.form]?.[1] || ""}`);
+    const rubrik = kla ? "Ägget kläcks!" : `${esc(d.namn)} utvecklas!`;
+    const klar = vaxte ? (kla ? `${esc(d.namn)} är född!` : `${esc(d.namn)} blev ${esc(stegNamn)}!`) : `${esc(d.namn)} fick ${esc(FORMER[nu.form]?.[1] || "en ny form")}!`;
+    const el = document.createElement("div");
+    el.id = "skolan-evo";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-label", klar.replace(/<[^>]+>/g, ""));
+    el.innerHTML = `<style>
+      #skolan-evo{position:fixed;inset:0;z-index:9990;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+        background:radial-gradient(circle at 50% 45%,#3949ab 0%,#1a1f3d 55%,#0b0d1a 100%);color:#fff;font:700 20px/1.3 system-ui,sans-serif;text-align:center;padding:16px}
+      #skolan-evo .ev-t{font-size:clamp(24px,7vw,38px);font-weight:900;text-shadow:0 3px 0 #000,0 0 18px #7986cb;min-height:1.3em}
+      #skolan-evo .ev-scen{position:relative;width:min(70vw,300px);height:min(70vw,300px)}
+      #skolan-evo .ev-scen > div{position:absolute;inset:0}
+      #skolan-evo .ev-scen svg{width:100%;height:100%}
+      #skolan-evo .vit{filter:brightness(0) invert(1) drop-shadow(0 0 12px #fff) drop-shadow(0 0 28px #9fa8da)}
+      #skolan-evo .ev-glod{position:absolute;inset:-20%;border-radius:50%;background:radial-gradient(#fff 0%,rgba(255,255,255,.4) 30%,transparent 65%);opacity:0;pointer-events:none}
+      #skolan-evo.lyser .ev-glod{animation:ev-glod 1.2s ease-in-out infinite}
+      #skolan-evo .ev-blixt{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none}
+      #skolan-evo.blixt .ev-blixt{animation:ev-blixt .9s ease-out forwards}
+      #skolan-evo .ev-stralar{position:absolute;inset:-35%;opacity:0;background:repeating-conic-gradient(from 0deg,rgba(255,236,130,.55) 0 10deg,transparent 10deg 24deg);border-radius:50%;
+        -webkit-mask:radial-gradient(circle,#000 30%,transparent 70%);mask:radial-gradient(circle,#000 30%,transparent 70%)}
+      #skolan-evo.klar .ev-stralar{opacity:1;animation:ev-snurr 12s linear infinite}
+      #skolan-evo.klar .ev-ny{animation:ev-pop .7s cubic-bezier(.2,1.6,.4,1)}
+      #skolan-evo ul{list-style:none;margin:0;padding:0;font-size:17px;font-weight:600;opacity:0}
+      #skolan-evo.klar ul{animation:ev-in .5s ease-out .5s forwards}
+      #skolan-evo li{margin:4px 0}
+      #skolan-evo button{font:800 18px system-ui,sans-serif;padding:12px 28px;border-radius:999px;border:0;background:#ffd54f;color:#3e2723;opacity:0;pointer-events:none}
+      #skolan-evo.klar button{animation:ev-in .4s ease-out 1s forwards;pointer-events:auto}
+      @keyframes ev-glod{50%{opacity:.85}}
+      @keyframes ev-blixt{0%{opacity:0}15%{opacity:1}100%{opacity:0}}
+      @keyframes ev-snurr{to{transform:rotate(360deg)}}
+      @keyframes ev-pop{0%{transform:scale(.4)}100%{transform:scale(1)}}
+      @keyframes ev-in{to{opacity:1}}
+    </style>
+    <div class="ev-t" id="ev-t">${lugn ? rubrik : "Vad händer?!"}</div>
+    <div class="ev-scen"><div class="ev-stralar"></div><div class="ev-glod"></div>
+      <div class="ev-gammal">${gammal}</div><div class="ev-ny" style="opacity:0">${ny}</div></div>
+    <ul>${punkter.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>
+    <button type="button" id="ev-ok">Häftigt! 🎉</button>
+    <div class="ev-blixt"></div>`;
+    document.body.appendChild(el);
+    const $ = (q) => el.querySelector(q), gam = $(".ev-gammal"), nyEl = $(".ev-ny"), t = $("#ev-t");
+    const stang = () => { el.remove(); };
+    $("#ev-ok").addEventListener("click", stang);
+    const visaKlar = () => {
+      gam.style.opacity = "0"; gam.classList.remove("vit");
+      nyEl.classList.remove("vit"); nyEl.style.opacity = "1";
+      t.innerHTML = klar;
+      el.classList.remove("lyser"); el.classList.add("klar");
+      this._fx({ emojis: ["✨", "⭐", d.art, FORMER[nu.form]?.[0] || "🌟"], antal: 34, konfetti: true, farg: "#ffd54f", ljud: true });
+      setTimeout(() => $("#ev-ok")?.focus(), 1100);
+    };
+    if (lugn) { visaKlar(); return; }
+    // 1) "Vad händer?!" → 2) djuret lyser vitt och blinkar mellan gammal och ny form allt snabbare → 3) blixt → 4) nya djuret
+    setTimeout(() => { t.innerHTML = rubrik; el.classList.add("lyser"); gam.classList.add("vit"); nyEl.classList.add("vit"); }, 1300);
+    const takt = [520, 440, 360, 300, 240, 190, 150, 120, 95, 75, 60, 50, 45, 40];
+    let tid = 2300, visaNy = false;
+    for (const ms of takt) {
+      tid += ms;
+      setTimeout(() => { visaNy = !visaNy; nyEl.style.opacity = visaNy ? "1" : "0"; gam.style.opacity = visaNy ? "0" : "1"; }, tid);
+    }
+    setTimeout(() => el.classList.add("blixt"), tid + 150);
+    setTimeout(visaKlar, tid + 420);
   }
 
   // Effekt över hela skärmen: stor text, emojis som sprutar ut och ev. konfetti. Respekterar "minska rörelse".
@@ -5175,6 +5308,7 @@ class SkolanPanel extends HTMLElement {
 
       ${kort("🧬", "Djuret utvecklas", [
         `När djuret är Liten utvecklas det efter det du gör mest: ⚡ Glosrekord, 📚 läsläxor, 🎯 alla rätt på förhör, ✨ många övningar eller ⚔️ besegrade bossar. Du får också en titel som syns på topplistan.`,
+        `Varje storlek syns på djuret: 🐣 Bebis har kvar en bit av äggskalet, 🔰 Stor får märken och ett emblem i formens färg, 💪 Jätte får taggar och strålar, 👑 Legend får vingar, krona och guldglans. När djuret utvecklas får du se det hända!`,
       ])}
 
       ${kort("🛡️", "Svitskydd", [
