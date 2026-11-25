@@ -6138,7 +6138,8 @@ class SkolanPanel extends HTMLElement {
     const amnOpt = (val, nytt) => opt([...(nytt ? [] : [["", "Välj ämne…"]]), ...amnen.map((y) => [y.id, y.namn])], val);
     if (f.uppgifter?.length) {
       html += `<h3>📋 Läxor</h3>${f.uppgifter.map((x, i) => `<div class="form vb-rad ${x.med === false ? "av" : ""}">
-        <label class="kap-rad"><input type="checkbox" data-vbu-med="${i}" ${x.med === false ? "" : "checked"}> <b>Lägg in läxan</b></label>
+        ${x.extra ? `<div class="small"><b>🎯 ${x.frivillig ? "Frivillig extrauppgift till hela klassen" : `Extrauppgift från läraren till ${esc(this._s.namn)}`}.</b> När den är klar och du har godkänt får läraren veta det vid nästa synk.</div>` : ""}
+        <label class="kap-rad"><input type="checkbox" data-vbu-med="${i}" ${x.med === false ? "" : "checked"}> <b>Lägg in ${x.extra ? "extrauppgiften" : "läxan"}</b></label>
         <label>Vad ska göras? <input data-vbu="${i}" data-f="vad" value="${esc(x.vad)}" maxlength="200"></label>
         <div class="two"><label>Ämne <select data-vbu="${i}" data-f="amne">${!x.amne && x.amne_namn ? `<option value="" selected>➕ Nytt ämne: ${esc(x.amne_namn)}</option>` : ""}${amnOpt(x.amne, !x.amne && x.amne_namn)}</select></label>
           <label>Klart senast <input data-vbu="${i}" data-f="datum" type="date" value="${esc(x.datum || "")}"></label></div>

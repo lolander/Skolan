@@ -12,9 +12,16 @@ function demoAndra(b) {
       if (b.klass) d.klass = b.klass; if (b.larare) d.larare = b.larare;
       for (const k in d.funktioner) if (k in b) { d.inst_val[k] = !!b[k]; d.inst[k] = !!b[k] && d.behorighet.ratt.includes(k); }
       break;
-    case "veckobrev":
-      d.veckobrev.unshift({ id: Math.random().toString(36).slice(2), titel: b.titel || "Veckobrev", vecka: b.vecka || d.boss.vecka, skapad: DEMO_TID(), ai: b.ai || {}, fil: b.fil || null });
-      DEMO_LOGG("veckobrev", `Veckobrev ${d.veckobrev[0].titel} (v.${d.veckobrev[0].vecka}).`); break;
+    case "veckobrev": {
+      const slag = ["laxa", "prov", "extra"].includes(b.slag) ? b.slag : "veckobrev";
+      const till = (b.till || []).filter((x) => d.elever.some((e) => e.id === x));
+      if (slag !== "veckobrev" && !/^\d{4}-\d{2}-\d{2}$/.test(b.datum || "")) return { fel: "Välj ett datum." };
+      if (slag === "extra" && till.length && !(d.behorighet.ratt || []).includes("grupper")) return { fel: "Extrauppgifter till enskilda elever kräver nivå 1 (elevnamn). Rektorn bestämmer." };
+      const namnPa = (ids) => ids.map((x) => (d.elever.find((e) => e.id === x) || {}).namn || "?");
+      d.veckobrev.unshift({ id: Math.random().toString(36).slice(2), slag, titel: b.titel || "Veckobrev", vecka: b.vecka || d.boss.vecka, skapad: DEMO_TID(), ai: b.ai || {}, fil: b.fil || null,
+        datum: b.datum || "", ...(slag === "extra" ? { till, klara: {}, frivillig: !till.length, till_namn: namnPa(till), klara_namn: [] } : { till_namn: [], klara_namn: [] }) });
+      DEMO_LOGG(slag === "extra" ? "extra" : "veckobrev", `${{ veckobrev: "Veckobrev", laxa: "Läxa", prov: "Provmeddelande", extra: "Extrauppgift" }[slag]} ${d.veckobrev[0].titel}${till.length ? ` till ${namnPa(till).join(", ")}` : ""}.`); break;
+    }
     case "veckobrev_bort": d.veckobrev = d.veckobrev.filter((x) => x.id !== b.id); break;
     case "grupp_ny": {
       const med = (b.medlemmar || []).filter((x) => d.elever.some((e) => e.id === x));
@@ -48,7 +55,11 @@ function demoAndra(b) {
       if ((typ === "material" || typ === "schema") && !b.fil) return { fel: "Välj en PDF eller ett foto." };
       d.material.unshift({ id: Math.random().toString(36).slice(2, 10), typ, titel: b.titel.trim(), amne: b.amne || "", text: b.text || "", datum: b.datum || "",
         max: b.max ? Number(b.max) : null, fil: b.fil || null, till: b.till || [], resultat: {}, skapad: DEMO_TID(), fatt: [] });
-      DEMO_LOGG(typ === "riktlinje" ? "anteckning" : typ, `${{ prov: "Prov", schema: "Schema", riktlinje: "Riktlinje till AI:n" }[typ] || "Studiematerial"}: ${typ === "riktlinje" ? b.text : b.titel}${b.amne ? ` (${b.amne})` : ""}`); break;
+      DEMO_LOGG(typ === "riktlinje" ? "anteckning" : typ, `${{ prov: "Prov", schema: "Schema", riktlinje: "Riktlinje till AI:n" }[typ] || "Studiematerial"}: ${typ === "riktlinje" ? b.text : b.titel}${b.amne ? ` (${b.amne})` : ""}`);
+      if (typ === "prov" && b.meddela !== false && (b.datum || "") > new Date().toISOString().slice(0, 10))  // klassen får provet direkt
+        d.veckobrev.unshift({ id: Math.random().toString(36).slice(2), slag: "prov", titel: `📝 Prov: ${b.titel.trim()}`, vecka: d.boss.vecka, skapad: DEMO_TID(), datum: b.datum, prov_id: d.material[0].id,
+          ai: { prov: [{ namn: b.titel.trim(), amne: b.amne || "", datum: b.datum, omfattning: b.text || "" }] }, till_namn: [], klara_namn: [] });
+      break;
     }
     case "material_bort": d.material = d.material.filter((m) => m.id !== b.id); break;
     case "prov_resultat": {

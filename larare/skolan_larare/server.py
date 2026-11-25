@@ -404,12 +404,13 @@ class Klass:
                 "amne": self.d.get("amne", ""), "roll": self.skola.min_roll()["roll"] or "", "skola": self.skola.publik(), "provkalender": self.skola.provkalender(),
                 "skolkonto": {"tillgangliga": skolkonto.tillgangliga(), "konto": skolkonto.publik(self.d.get("skolkonto")),
                               "fornya": bool(self.d.get("skolkonto")) and time.time() - float(self.d["skolkonto"].get("tid") or 0) > 90 * 86400},
-                "elever": sorted(elever, key=lambda x: x["namn"].lower()), "veckobrev": self.d["veckobrev"][-10:][::-1],
+                "elever": sorted(elever, key=lambda x: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", x["namn"].lower())]), "veckobrev": [{**b, "klara_namn": [self.elev_namn(x) for x in (b.get("klara") or {})], "till_namn": [self.elev_namn(x) for x in (b.get("till") or [])]}
+                              for b in self.d["veckobrev"][-60:][::-1]],
                 "boss": self.boss() if self.far("klasslag") else None, "adress": f"{lan_ip()}:{self.port}", "url": self.url,
                 "grupper": [self.grupp_publik(g) for g in self.d["grupper"] if g.get("aktiv")],
                 "gamla_grupper": [self.grupp_publik(g) for g in self.d["grupper"] if not g.get("aktiv")][-30:][::-1],
                 "historik": [h for h in self.d["historik"] if self.historik_ok(h)][-300:][::-1], "material": [m if m["typ"] != "prov" or self.har("prov") else {**m, "resultat": {}, "fatt": []} for m in material],
-                "veckobrev_fatt": {b["id"]: [self.elev_namn(eid) for eid, s in mott.items() if b["id"] in s] for b in self.d["veckobrev"][-10:]}}
+                "veckobrev_fatt": {b["id"]: [self.elev_namn(eid) for eid, s in mott.items() if b["id"] in s] for b in self.d["veckobrev"][-60:]}}
 
     async def synka(self, session: ClientSession, lank: str) -> dict:
         """Synka med en elevs Skolan. Returnerar elevens rad."""
@@ -443,8 +444,14 @@ class Klass:
 
         brev = []
         if self.far("veckobrev"):
-            for b in [b for b in self.d["veckobrev"] if b.get("vecka", "") >= vecka_nu()[:5]][-3:]:
-                p = med_fil(b, b.get("fil"), "veckobrev")
+            idag = date.today().isoformat()
+            vanliga = [b for b in self.d["veckobrev"] if b.get("slag", "veckobrev") == "veckobrev" and b.get("vecka", "") >= vecka_nu()[:5]][-3:]
+            # läxor, provmeddelanden och extrauppgifter skickas så länge de gäller; extrauppgifter bara till de valda eleverna
+            egna = [b for b in self.d["veckobrev"] if b.get("slag", "veckobrev") != "veckobrev" and (b.get("datum") or idag) >= idag
+                    and (b.get("slag") != "extra" or (not b.get("till") if not self.far("grupper") else (not b.get("till") or e["id"] in b["till"])))][-20:]
+            for b in vanliga + egna:
+                p = med_fil({**{k: v for k, v in b.items() if k not in ("till", "klara")}, **({"riktad": bool(b.get("till"))} if b.get("slag") == "extra" else {})},
+                            b.get("fil"), "veckobrev")
                 if p:
                     brev.append(p)
         material = []
@@ -506,6 +513,11 @@ class Klass:
             e.pop("elev_id", None)
         if self.far("insikt"):
             self.ta_emot_insikt(svar.get("insikt"))
+        for bid in (svar.get("extra_klara") or [])[:40]:
+            b = next((x for x in self.d["veckobrev"] if x["id"] == bid and x.get("slag") == "extra"), None)
+            if b and (not b.get("till") or e["id"] in b["till"]) and e["id"] not in b.setdefault("klara", {}):
+                b["klara"][e["id"]] = time.strftime("%Y-%m-%d %H:%M")
+                self.logga("extra", f"{e['namn']} är klar med extrauppgiften {b['titel']}.")
         for gid in (svar.get("grupp_klara") or [])[:20]:
             g = next((x for x in self.d["grupper"] if x["id"] == gid and e["id"] in x["medlemmar"]), None)
             if g and e["id"] not in g.setdefault("klara", {}):
@@ -707,11 +719,28 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                         d["inst"][k] = bool(body[k])
             elif op == "veckobrev":
                 ai = body.get("ai") if isinstance(body.get("ai"), dict) else {}
-                d["veckobrev"].append({"id": secrets.token_urlsafe(8), "titel": str(body.get("titel") or "Veckobrev")[:80],
-                                       "vecka": str(body.get("vecka") or vecka_nu())[:10], "skapad": time.strftime("%Y-%m-%d %H:%M"), "ai": ai,
-                                       "fil": fil_info(body.get("fil"))})
-                d["veckobrev"] = d["veckobrev"][-30:]
-                klass.logga("veckobrev", f"Veckobrev {d['veckobrev'][-1]['titel']} (v.{d['veckobrev'][-1]['vecka']}).")
+                slag = body.get("slag") if body.get("slag") in ("laxa", "prov", "extra") else "veckobrev"
+                datum = str(body.get("datum") or "")[:10]
+                till = [x for x in dict.fromkeys(body.get("till") or []) if any(e["id"] == x for e in d["elever"])]
+                if slag != "veckobrev":
+                    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum):
+                        raise ValueError("Välj ett datum.")
+                    if not any(ai.get(k) for k in ("uppgifter", "prov", "ord")):
+                        raise ValueError("Skriv vad som ska göras.")
+                if slag == "extra" and body.get("till") and not till:
+                    raise ValueError("Välj minst en elev.")
+                if slag == "extra" and till and not klass.har("grupper"):
+                    raise ValueError("Extrauppgifter till enskilda elever kräver nivå 1 (elevnamn). Rektorn bestämmer.")
+                post = {"id": secrets.token_urlsafe(8), "slag": slag, "titel": str(body.get("titel") or "Veckobrev")[:80],
+                        "vecka": str(body.get("vecka") or vecka_nu())[:10], "skapad": time.strftime("%Y-%m-%d %H:%M"), "ai": ai,
+                        "datum": datum, "fil": fil_info(body.get("fil"))}
+                if slag == "extra":
+                    post.update({"till": till, "klara": {}, "frivillig": not till})
+                d["veckobrev"].append(post)
+                d["veckobrev"] = d["veckobrev"][-120:]
+                vad = {"veckobrev": "Veckobrev", "laxa": "Läxa", "prov": "Provmeddelande", "extra": "Extrauppgift"}[slag]
+                klass.logga("extra" if slag == "extra" else "veckobrev", f"{vad} {post['titel']}" + (f" (v.{post['vecka']})" if slag == "veckobrev" else f" ({datum})")
+                            + (f" till {', '.join(klass.elev_namn(x) for x in till)}" if till else " (frivillig, hela klassen)" if slag == "extra" else "") + ".")
             elif op == "veckobrev_bort":
                 for b in [b for b in d["veckobrev"] if b["id"] == body.get("id")]:
                     ta_bort_fil(b.get("fil"))
@@ -734,11 +763,17 @@ def bygg_app(klass: Klass, uppd: Uppdaterare | None = None) -> web.Application:
                      "skapad": time.strftime("%Y-%m-%d %H:%M")}
                 d["material"].append(m)
                 d["material"] = d["material"][-200:]
+                if typ == "prov" and body.get("meddela", True) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", m["datum"]) and m["datum"] > date.today().isoformat():
+                    d["veckobrev"].append({"id": secrets.token_urlsafe(8), "slag": "prov", "titel": f"📝 Prov: {titel}"[:80], "vecka": vecka_nu(),
+                                           "skapad": time.strftime("%Y-%m-%d %H:%M"), "datum": m["datum"], "fil": None, "prov_id": m["id"],
+                                           "ai": {"prov": [{"namn": titel, "amne": m["amne"], "datum": m["datum"], "omfattning": m["text"][:200]}]}})
+                    d["veckobrev"] = d["veckobrev"][-120:]
                 klass.logga("prov" if typ == "prov" else "material", f"{({'prov': 'Prov', 'schema': 'Schema', 'riktlinje': 'Riktlinje till AI:n'}).get(typ, 'Studiematerial')}: {titel}" + (f" ({m['amne']})" if m["amne"] else ""))
             elif op == "material_bort":
                 m = next(x for x in d["material"] if x["id"] == body.get("id"))
                 ta_bort_fil(m.get("fil"))
                 d["material"].remove(m)
+                d["veckobrev"] = [b for b in d["veckobrev"] if b.get("prov_id") != m["id"]]  # provmeddelandet försvinner också
             elif op == "prov_resultat":
                 m = next(x for x in d["material"] if x["id"] == body.get("id") and x["typ"] == "prov")
                 eid = str(body.get("elev") or "")

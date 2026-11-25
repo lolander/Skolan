@@ -5987,7 +5987,7 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
     amnen = data.get("amnen", [])
     a_las = _hitta_amne(amnen, "läsläx", "läs")
     a_skriv = _hitta_amne(amnen, "skriv", "läxbok")
-    a_ord = _hitta_amne(amnen, "ord", "glos")
+    a_ord = (_amne_match(amnen, str(ai["ord_amne"])) if ai.get("ord_amne") else None) or _hitta_amne(amnen, "ord", "glos")
     kapitel = {}
     for a in (a_las, a_skriv):
         for b in (a or {}).get("bocker", []):
@@ -6019,6 +6019,8 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
     las_dagar = sorted({int(x) for x in (ai.get("las_dagar") or []) if str(x).lstrip("-").isdigit() and 0 <= int(x) <= 6})
     ord_lista = [str(x).strip()[:170] for x in (ai.get("ord") or []) if str(x).strip()][:100]
     diktamen = dag(ai["diktamen_dag"]) if ai.get("diktamen_dag") is not None else None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(ai.get("forhor_datum") or "")):  # läraren gav ett datum (läxa utanför veckobrevet)
+        diktamen = ai["forhor_datum"]
     g_finns = next((g for g in (a_ord or {}).get("glosor", []) if diktamen and g.get("forhor") == diktamen), None)
     titel = f"Kapitel {knr}" if knr else (knamn or "Veckans läsläxa")
     def iso(v):
@@ -6031,7 +6033,8 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
             continue
         a = _amne_match(amnen, str(x.get("amne") or "")) if x.get("amne") else None
         uppgifter.append({"typ": "las" if x.get("typ") == "las" else "gora", "vad": str(x["vad"]).strip()[:200], "amne": (a or {}).get("id"),
-                          "amne_namn": str(x.get("amne") or "")[:MAX_NAME], "datum": iso(x.get("datum"))})
+                          "amne_namn": str(x.get("amne") or "")[:MAX_NAME], "datum": iso(x.get("datum")),
+                          **({"extra": True, "frivillig": bool(x.get("frivillig")), "post": str(x.get("post") or "")[:40]} if x.get("extra") else {})})
     prov = []
     for x in (ai.get("prov") or [])[:6]:
         if not isinstance(x, dict) or not iso(x.get("datum")):
@@ -6068,7 +6071,7 @@ def _forslag_veckobrev(path: Path, data: dict, ai: dict) -> dict:
         "ord": {
             "amne": (a_ord or {}).get("id"), "glosor": (g_finns or {}).get("id"),
             "befintliga": [p[0] for p in (g_finns or {}).get("par", [])],
-            "namn": (g_finns or {}).get("namn") or f"Veckans ord v.{(mandag.isocalendar()[1])}",
+            "namn": str(ai.get("ord_namn") or "")[:MAX_NAME] or (g_finns or {}).get("namn") or f"Veckans ord v.{(mandag.isocalendar()[1])}",
             "ord": ord_lista, "forhor": diktamen, "sprak": ai.get("glosor_sprak"),
         } if ord_lista else None,
     }
@@ -6657,11 +6660,11 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
     lista = data.setdefault("uppdrag", [])
     nu = dt_util.now().isoformat(timespec="minutes")
     skapat, hogl_id = [], None
-    larare = None  # brevet kom från läraren (Lärarrummet): prov, läxor och glosor märks med det
+    larare, larar_id = None, None  # brevet kom från läraren (Lärarrummet): prov, läxor och glosor märks med det
     if body.get("inkorg"):
         try:
             b_in = next((x for x in skola.las(path)["inkorg"] if x.get("id") == body["inkorg"]), None)
-            larare = (b_in or {}).get("larare") or None
+            larare, larar_id = (b_in or {}).get("larare") or None, (b_in or {}).get("larar_id") or None
         except Exception:  # noqa: BLE001
             larare = None
     kalla_brev = "larare" if larare else "veckobrev"
@@ -6768,6 +6771,9 @@ def _veckoplan(path: Path, data: dict, body: dict, user) -> list[str]:
              "bok": None, "fran": None, "till": None, "kapitel": vad, "sidor": [], "glosor": [], "datum": d,
              "skapad": nu, "av_id": user.id, "av_namn": user.name, "kalla": "larare" if larare else "meddelande", **({"larare": larare} if larare else {}),
              **({"papper": True} if las_ else {"uppgift": True})}
+        if x.get("extra"):  # extrauppgift från läraren: läraren får veta när den är klar
+            u.update({"namn": _name(f"🎯 {'Frivillig extrauppgift' if x.get('frivillig') else 'Extrauppgift'}: {vad}"), "extra": True,
+                      "frivillig": bool(x.get("frivillig")), "larar_post": str(x.get("post") or "")[:40] or None, "larar_id": larar_id})
         fanns = _sla_ihop_uppdrag(data, lista, u)
         if fanns:
             skapat.append(f"🔁 {fanns['namn']} (fanns redan, informationen lades till)")
@@ -6858,6 +6864,9 @@ def _sla_ihop_uppdrag(data: dict, lista: list, u: dict) -> dict | None:
     for k in ("papper", "uppgift"):
         if u.get(k):
             gammal[k] = True
+    for k in ("extra", "frivillig", "larar_post", "larar_id", "larare"):  # extrauppgift/lärare: läraren ska få veta när den är klar
+        if u.get(k) and not gammal.get(k):
+            gammal[k] = u[k]
     _framsteg(data, gammal)
     return gammal
 

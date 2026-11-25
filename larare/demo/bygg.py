@@ -10,6 +10,7 @@ from skolan_larare import server as s
 s.lan_ip = lambda: "192.168.1.50"
 ut = Path(sys.argv[1]); ut.mkdir(parents=True, exist_ok=True)
 v = s.vecka_nu()
+_om = lambda n: (datetime.date.today() + datetime.timedelta(days=n)).isoformat()  # datum framåt i demon
 namn = ["Alva", "Bilal", "Clara", "Elias", "Freja", "Hugo", "Leo", "Maja", "Noah", "Saga", "Vera", "Omar"]
 el = []
 for i, n in enumerate(namn):
@@ -56,7 +57,20 @@ d = {"larar_id": "demo", "klass": "4B", "larare": "Anna Lärare", "inst": {k: Tr
      "elever": el, "extra": {v: 40},
      "veckobrev": [{"id": "vb1", "titel": "Veckobrev v.47", "vecka": v, "skapad": "2026-11-16 15:10",
                     "ai": {"kapitel": 6, "kapitel_namn": "Skeppet", "las_dagar": [0, 2, 3], "ord": ["skepp", "segel", "hamn", "storm", "kompass", "ankare"],
-                           "glosor": [["hund", "dog"], ["katt", "cat"]], "glosor_sprak": ["Svenska", "Engelska"]}}],
+                           "glosor": [["hund", "dog"], ["katt", "cat"]], "glosor_sprak": ["Svenska", "Engelska"]}},
+                   # läxor, prov och extrauppgifter utanför veckobrevet (Hemarbete i menyn)
+                   {"id": "lx1", "slag": "laxa", "titel": "✏️ Läxa i Matte: Räkna s. 34 uppgift 1–10", "vecka": v, "skapad": "2026-11-17 13:20", "datum": _om(3),
+                    "ai": {"uppgifter": [{"typ": "gora", "vad": "Räkna s. 34 uppgift 1–10", "amne": "Matte", "datum": _om(3)}]}},
+                   {"id": "lx2", "slag": "laxa", "titel": "📝 Glosor i Engelska: Kapitel 4 – Djur", "vecka": v, "skapad": "2026-11-17 13:25", "datum": _om(6),
+                    "ai": {"glosor": [["häst", "horse"], ["ko", "cow"], ["gris", "pig"]], "glosor_sprak": ["Svenska", "Engelska"], "ord_namn": "Kapitel 4 – Djur", "ord_amne": "Engelska", "forhor_datum": _om(6)}},
+                   {"id": "pm1", "slag": "prov", "titel": "📝 Prov: Vikingatiden", "vecka": v, "skapad": "2026-11-17 10:00", "datum": _om(8),
+                    "ai": {"prov": [{"namn": "Vikingatiden", "amne": "SO", "datum": _om(8), "omfattning": "Kapitel 4–6 och kartan"}]}},
+                   {"id": "ex1", "slag": "extra", "titel": "🎯 Extrauppgift i Engelska: Gör klart s. 20–24", "vecka": v, "skapad": "2026-11-18 08:40", "datum": _om(5),
+                    "till": ["e1", "e4"], "klara": {"e1": "2026-11-19 17:05"}, "frivillig": False,
+                    "ai": {"uppgifter": [{"typ": "gora", "vad": "Gör klart s. 20–24", "amne": "Engelska", "datum": _om(5), "extra": True}]}},
+                   {"id": "ex2", "slag": "extra", "titel": "🎯 Extrauppgift i Svenska: Läs en valfri bok och skriv tre meningar om den", "vecka": v, "skapad": "2026-11-18 08:45", "datum": _om(10),
+                    "till": [], "klara": {"e3": "2026-11-20 19:10", "e7": "2026-11-21 16:30"}, "frivillig": True,
+                    "ai": {"uppgifter": [{"typ": "gora", "vad": "Läs en valfri bok och skriv tre meningar om den", "amne": "Svenska", "datum": _om(10), "extra": True, "frivillig": True}]}}],
      "grupper": [
         {"id": "g1", "namn": "Grupp 1", "medlemmar": ["e0", "e3", "e7"], "uppgift": "Gör en affisch om vikingatiden", "datum": "2026-11-21", "skapad": "2026-11-16 09:05", "aktiv": True, "klara": {"e3": "2026-11-16 18:40"}},
         {"id": "g2", "namn": "Grupp 2", "medlemmar": ["e1", "e4", "e8"], "uppgift": "Gör en affisch om vikingatiden", "datum": "2026-11-21", "skapad": "2026-11-16 09:05", "aktiv": True, "klara": {}},

@@ -44,7 +44,7 @@ FUNKTIONER = {
     "rapport": ("📊", "Veckorapport till läraren i lärarappen", "När eleven synkar ser läraren en kort rapport: dagar övat, förhör och prov."),
     "klasslag": ("🏫", "Klasslag", "Klassen bekämpar en gemensam boss. Läraren ser bara klassens summa, aldrig ditt barns poäng."),
     "mejl": ("📧", "Rapport via e-post", "Läxspelet mejlar en kort rapport till läraren de dagar du väljer."),
-    "grupper": ("👥", "Grupper och gruppuppgifter", "Läraren kan sätta ditt barn i tillfälliga grupper med en uppgift. Barnet ser gruppen och kan bocka av uppgiften."),
+    "grupper": ("👥", "Grupper och extrauppgifter", "Läraren kan sätta ditt barn i tillfälliga grupper med en uppgift, och skicka extrauppgifter till just ditt barn (t.ex. för att komma ikapp). Du godkänner extrauppgifterna innan de läggs in."),
     "statistik": ("📈", "Statistik till läraren", "Läraren ser hur ditt barn pluggar: dagar per vecka, förhör, prov och ämnen. Inga stjärnor, husdjur eller jämförelser."),
     "schema": ("🗓️", "Schemat till läraren", "Läraren ser den digitala kopian av schemat som Läxspelet har läst av (lektioner, salar och lärare)."),
     "studieteknik": ("🧠", "Studieteknik till läraren", "Läraren ser hur ditt barn pluggar: pluggplaner och hur de följs, vad som är svårt, svaga punkter, skrivandet och AI:ns tankar om studietekniken. Inga stjärnor, husdjur eller jämförelser."),
@@ -655,11 +655,24 @@ def _rensa_brev(b: dict) -> dict | None:
             return None
 
     ai = b.get("ai") if isinstance(b.get("ai"), dict) else {}
+    slag = b.get("slag") if b.get("slag") in ("laxa", "prov", "extra") else "veckobrev"
+
+    def iso(v):
+        v = _text(v, 10)
+        return v if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v) else ""
+    # fristående läxor, prov och extrauppgifter från Lärarrummet (samma form som AI:n ger för ett veckobrev)
+    uppgifter = [{"typ": "las" if x.get("typ") == "las" else "gora", "vad": _text(x.get("vad"), 200), "amne": _text(x.get("amne"), 40), "datum": iso(x.get("datum")),
+                  **({"extra": True, "frivillig": bool(x.get("frivillig")), "post": str(b["id"])} if slag == "extra" else {})}
+                 for x in (ai.get("uppgifter") or [])[:10] if isinstance(x, dict) and _text(x.get("vad"), 200)]
+    prov = [{"namn": _text(x.get("namn"), 60) or "Prov", "amne": _text(x.get("amne"), 40), "datum": iso(x.get("datum")), "omfattning": _text(x.get("omfattning"), 200)}
+            for x in (ai.get("prov") or [])[:6] if isinstance(x, dict) and iso(x.get("datum"))]
     glosor = [[_text(p[0], 80), _text(p[1], 80)] for p in (ai.get("glosor") or []) if isinstance(p, list) and len(p) == 2 and _text(p[0], 80)][:60]
     ord_ = [_text(o, 60) for o in (ai.get("ord") or []) if _text(o, 60)][:40]
     sprak = [_text(x, 20) for x in (ai.get("glosor_sprak") or [])][:2]
-    return {"id": str(b["id"]), "titel": _text(b.get("titel"), 80) or "Veckobrev", "vecka": _text(b.get("vecka"), 10),
-            "ai": {"kapitel": ai.get("kapitel") if isinstance(ai.get("kapitel"), int) else None, "kapitel_namn": _text(ai.get("kapitel_namn"), 60) or None,
+    return {"id": str(b["id"]), "titel": _text(b.get("titel"), 80) or "Veckobrev", "vecka": _text(b.get("vecka"), 10), "slag": slag,
+            "riktad": bool(b.get("riktad")) and slag == "extra",
+            "ai": {"uppgifter": uppgifter, "prov": prov, "forhor_datum": iso(ai.get("forhor_datum")) or None,
+                   "ord_namn": _text(ai.get("ord_namn"), 60) or None, "ord_amne": _text(ai.get("ord_amne"), 40) or None,"kapitel": ai.get("kapitel") if isinstance(ai.get("kapitel"), int) else None, "kapitel_namn": _text(ai.get("kapitel_namn"), 60) or None,
                    "las_dagar": [d for d in (dag(x) for x in (ai.get("las_dagar") or [])) if d is not None][:7],
                    "hoglasning": bool(ai.get("hoglasning")), "skriv_dag": dag(ai.get("skriv_dag")),
                    # en lista per veckobrev: glosor med översättning går före, stavningsorden nämns då i instruktionerna
@@ -798,6 +811,8 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
     if aktiv(s, "veckobrev", lid):
         for b in (body.get("veckobrev") or [])[:10]:
             r = _rensa_brev(b)
+            if r and r.get("riktad") and not aktiv(s, "grupper", lid):
+                continue  # extrauppgift till just det här barnet: föräldern har inte slagit på grupper och extrauppgifter
             if r and r["id"] not in kanda:
                 in_korg({**r, "typ": "veckobrev"}, b.get("fil"))
     if aktiv(s, "material", lid):
@@ -861,6 +876,8 @@ def ta_emot(s: dict, data: dict, barn_namn: str, body: dict, studieteknik: dict 
             "rapport": rapport(data, namn, lar=lar) if aktiv(s, "rapport", lid) else None,
             "klass": {"vecka": vecka, "poang": meriter._vecko_poang(data).get(vecka, 0)} if aktiv(s, "klasslag", lid) else None,
             "grupp_klara": [g["id"] for g in s["grupper"] if g.get("klar") and g.get("larare") in (lid, None)] if aktiv(s, "grupper", lid) else [],
+            # extrauppgifter från läraren som barnet är klart med (godkända av föräldern), bara läraren som skickade dem
+            "extra_klara": [u["larar_post"] for u in data.get("uppdrag", []) if u.get("larar_post") and u.get("klart") and u.get("larar_id") in (lid, None)][-40:],
             "statistik": statistik(data, lar=lar) if aktiv(s, "statistik", lid) else None,
             "studieteknik": _studieteknik_for(studieteknik, lar) if aktiv(s, "studieteknik", lid) else None,
             "schema": [{k: x.get(k) for k in ("dag", "start", "slut", "namn", "sal", "larare", "info", "ej")} for x in data.get("lektioner", [])][:80] if aktiv(s, "schema", lid) else None,
