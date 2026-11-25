@@ -1199,8 +1199,21 @@ class SkolanPanel extends HTMLElement {
     return `/api/skolan/fjarr/${m[1]}?${p}`;
   }
 
-  _f(url, opt) {
-    return this._hass.fetchWithAuth(this._apiUrl(url), opt);
+  // Nätfel (iPhone: "Load failed", Chrome: "Failed to fetch") blir ett begripligt meddelande.
+  // forsok > 0 provar igen efter en stund: bara där en dubbel fråga inte gör något (chattarna).
+  async _f(url, opt, forsok = 0) {
+    try {
+      return await this._hass.fetchWithAuth(this._apiUrl(url), opt);
+    } catch (e) {
+      if (!(e instanceof TypeError) && !/load failed|failed to fetch|networkerror|network connection/i.test(e?.message || "")) throw e;
+      if (forsok > 0) {
+        await new Promise((r) => setTimeout(r, 1500));
+        return this._f(url, opt, forsok - 1);
+      }
+      const fel = new Error("Anslutningen bröts. Kolla nätet och försök igen. 📶");
+      fel.natfel = true;
+      throw fel;
+    }
   }
 
   async _load(barn) {
@@ -2060,7 +2073,7 @@ class SkolanPanel extends HTMLElement {
                <div class="muted small">Lyssna och stava ordet. Tryck igen för att höra det långsammare.</div>`
             : `<div class="muted small">${esc(q.fran)}</div>
           <div class="word">${esc(q.fraga)}</div>`}
-          <input id="fh-svar" placeholder="${q.dikt ? "Skriv ordet" : ["namn", "vad", "formel", "begrepp", "förklaring"].includes((q.till || "").toLowerCase()) ? `Skriv ${esc(q.till.toLowerCase())}` : `Skriv på ${esc((q.till || "").toLowerCase() || "det andra språket")}`}" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <input id="fh-svar" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="${q.dikt ? "Skriv ordet" : ["namn", "vad", "formel", "begrepp", "förklaring"].includes((q.till || "").toLowerCase()) ? `Skriv ${esc(q.till.toLowerCase())}` : `Skriv på ${esc((q.till || "").toLowerCase() || "det andra språket")}`}">
           <button class="primary" id="fh-svara">${i === n - 1 ? "Lämna in ✓" : "Nästa →"}</button>
         </div>`;
     }
@@ -2783,7 +2796,7 @@ class SkolanPanel extends HTMLElement {
         const sk = res?.skriv || v.skrivRes;
         return `<div class="card hjalp-kort"><b>✍️ ${esc(x.skrivfraga)}</b>
           <div class="small muted">Svara med egna ord i hela meningar. Glöm inte stor bokstav och punkt!</div>
-          <textarea id="lo-skriv" class="bk-in" rows="4" maxlength="1500" ${res ? "disabled" : ""} placeholder="Skriv ditt svar här…">${esc(res?.skriv?.svar ?? v.skriv ?? "")}</textarea>
+          <textarea id="lo-skriv" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" class="bk-in" rows="4" maxlength="1500" ${res ? "disabled" : ""} placeholder="Skriv ditt svar här…">${esc(res?.skriv?.svar ?? v.skriv ?? "")}</textarea>
           ${sk ? `<div class="small">${sk.ok ? "✅" : "✏️"} ${sk.bra ? `${esc(sk.bra)} ` : ""}${sk.tips ? `<b>${esc(sk.tips)}</b>` : ""}</div>` : ""}</div>`;
       })() : ""}
       ${res ? `<div class="lar-beloning">${res.ratt} av ${res.av} rätt!${res.p ? ` +${res.p} ⭐` : ""}</div>${res.vantar ? this._vantarRad(v.d.status.belonung) : ""}<div class="actions"><button class="primary" id="int-tillbaka">Klar</button></div>`
@@ -3387,7 +3400,7 @@ class SkolanPanel extends HTMLElement {
         <details><summary class="small">Visa hela rätta texten</summary><p>${esc(res.facit)}</p></details>
         <div class="actions"><button class="primary" id="sk-ny">✨ En ny text</button><button class="ghost" id="sk-hem">Klar</button></div>`;
       return `<div class="small"><b>Nivå ${x.niva}: ${esc(x.niva_namn)}</b> · ${esc(x.niva_info)}</div>
-        <textarea id="sk-svar" class="sk-text" rows="8" spellcheck="false" autocapitalize="off" autocorrect="off">${esc(v.svar ?? x.visa)}</textarea>
+        <textarea id="sk-svar" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" class="sk-text" rows="8">${esc(v.svar ?? x.visa)}</textarea>
         <div class="small muted">Ändra i texten: sätt ut tecken och gör stora bokstäver där det behövs. Ändra inte orden.</div>
         <div class="actions"><button class="primary" id="sk-ratta" ${this._busy ? "disabled" : ""}>✔️ Rätta</button><button class="ghost" id="sk-aterstall">↺ Börja om</button></div>`;
     }
@@ -3412,7 +3425,7 @@ class SkolanPanel extends HTMLElement {
     return `<div class="card hjalp-kort">${v.uppgift ? `<b>📝 ${esc(v.uppgift)}</b>${v.tips?.length ? `<ul class="lista">${v.tips.map((t) => `<li class="small">💡 ${esc(t)}</li>`).join("")}</ul>` : ""}`
         : `<p class="small">Skriv om vad du vill, eller få en skrivuppgift.</p>`}
         <div class="actions" style="margin-top:6px"><button class="mini" id="sk-uppgift" ${this._busy ? "disabled" : ""}>🎲 ${v.uppgift ? "En annan uppgift" : "Ge mig en uppgift"}</button></div></div>
-      <textarea id="sk-fritt" class="sk-text" rows="12" placeholder="Skriv din text här. Tryck Enter två gånger för ett nytt stycke.">${esc(v.text || "")}</textarea>
+      <textarea id="sk-fritt" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" class="sk-text" rows="12" placeholder="Skriv din text här. Tryck Enter två gånger för ett nytt stycke.">${esc(v.text || "")}</textarea>
       <div class="small muted">${ord} ord${v.version ? ` · version ${v.version + 1}` : ""}</div>
       <div class="actions"><button class="primary" id="sk-bedom" ${this._busy ? "disabled" : ""}>${v.version ? "📤 Skicka den förbättrade texten" : "📤 Få tips på min text"}</button></div>
       ${this._busy ? `<p class="small muted">AI:n läser din text…</p>` : ""}
@@ -4074,7 +4087,7 @@ class SkolanPanel extends HTMLElement {
     const q = x.fragor[i];
     return `${topp}${senText}<div class="card duell-fraga"><div class="small muted">Ord ${i + 1} av ${x.antal} · ${esc(q.fran)} → ${esc(q.till)}</div>
       <div class="duell-ord">${esc(q.fraga)}</div>
-      <input id="duell-svar" data-i="${i}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Skriv på ${esc(q.till.toLowerCase())}…">
+      <input id="duell-svar" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-i="${i}" placeholder="Skriv på ${esc(q.till.toLowerCase())}…">
       <button class="primary" id="duell-skicka" ${this._busy ? "disabled" : ""}>Svara</button></div>`;
   }
 
@@ -6459,12 +6472,13 @@ class SkolanPanel extends HTMLElement {
   async _fragaSkicka(fraga) {
     const f = this._fraga, el = this.shadowRoot.querySelector("#fraga-text"), text = (fraga || el?.value || "").trim();
     if (!f || !text || f.tanker) return;
+    let fel = false;
     f.historik.push({ vem: "barn", text });
     f.tanker = true;
     this._render();
     try {
       const res = await this._f("/api/skolan/fraga", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ barn: this._s.barn, text, historik: f.historik.slice(0, -1) }) });
+        body: JSON.stringify({ barn: this._s.barn, text, historik: f.historik.slice(0, -1) }) }, 1);
       const x = await res.json();
       if (!res.ok) throw new Error(x.message || res.statusText);
       f.historik.push({ vem: "djur", text: x.svar });
@@ -6472,10 +6486,12 @@ class SkolanPanel extends HTMLElement {
       if (x.hjalp) this._omsorg = x.hjalp;
     } catch (e) {
       f.historik.pop();
-      this._msg = { type: "error", text: e.message || String(e) };
+      fel = true;
+      this._msg = { type: "error", text: e.natfel ? `${this._s.meriter?.djur?.namn || "Husdjuret"} hörde inte riktigt, nätet hackade. Tryck på Fråga igen! 📶` : e.message || String(e) };
     } finally {
       f.tanker = false;
       this._render();
+      if (fel) { const t = this.shadowRoot.querySelector("#fraga-text"); if (t && !fraga) t.value = text; }
       const c = this.shadowRoot.querySelector(".lar-chatt");
       c?.lastElementChild?.scrollIntoView({ block: "nearest" });
       if (!f.tanker) this.shadowRoot.querySelector("#fraga-text")?.focus();
@@ -6618,7 +6634,7 @@ class SkolanPanel extends HTMLElement {
     const x = lista[0], a = (s.data.amnen || []).find((y) => y.id === x.amne);
     return `<div class="small muted">${lista.length} kvar idag · kommer tillbaka efter 1, 3 och 7 dagar tills den sitter (${x.steg} av 3)</div>
       <div class="card hjalp-kort"><div class="small muted">${esc(a?.namn || "")}</div><div class="duell-ord" style="font-size:20px">${esc(x.fraga)}</div>
-        ${v.visa ? `<div class="sv-facit">Rätt svar: <b>${esc(x.facit)}</b></div>` : `<textarea id="sv-text" rows="2" placeholder="Tänk ut svaret (eller skriv det här)"></textarea>`}</div>
+        ${v.visa ? `<div class="sv-facit">Rätt svar: <b>${esc(x.facit)}</b></div>` : `<textarea id="sv-text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" rows="2" placeholder="Tänk ut svaret (eller skriv det här)"></textarea>`}</div>
       <div class="actions">${v.visa ? `<button class="primary" data-sv="1">😀 Jag kunde</button><button class="ghost" data-sv="0">😟 Inte än</button>` : `<button class="primary" id="sv-visa">👀 Visa svaret</button>`}</div>`;
   }
 
@@ -6737,6 +6753,7 @@ class SkolanPanel extends HTMLElement {
   async _hjalpSkicka(fast) {
     const h = this._hjalp, el = this.shadowRoot.querySelector("#hjalp-text"), text = (fast || el?.value || "").trim();
     if (!h || h.tanker || (!text && !h.bild)) return;
+    let fel = false;
     const bild = h.lage === "uppgift" || h.lage === "skriv" ? h.bild : null;
     h.historik.push({ vem: "barn", text: text || "Här är uppgiften.", bild: !!bild });
     h.tanker = true;
@@ -6748,9 +6765,9 @@ class SkolanPanel extends HTMLElement {
         const fd = new FormData();
         fd.append("json", JSON.stringify(json));
         fd.append("file", bild, bild.name || "uppgift.jpg");
-        res = await this._f("/api/skolan/hjalp", { method: "POST", body: fd });
+        res = await this._f("/api/skolan/hjalp", { method: "POST", body: fd }, 1);
       } else {
-        res = await this._f("/api/skolan/hjalp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) });
+        res = await this._f("/api/skolan/hjalp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(json) }, 1);
       }
       const x = await res.json();
       if (!res.ok) throw new Error(x.message || res.statusText);
@@ -6765,10 +6782,12 @@ class SkolanPanel extends HTMLElement {
       }
     } catch (e) {
       h.historik.pop();
-      this._msg = { type: "error", text: e.message || String(e) };
+      fel = true;
+      this._msg = { type: "error", text: e.natfel ? `${this._s.meriter?.djur?.namn || "Husdjuret"} hörde inte riktigt, nätet hackade. Försök igen! 📶` : e.message || String(e) };
     } finally {
       h.tanker = false;
       this._render();
+      if (fel) { const t = this.shadowRoot.querySelector("#hjalp-text"); if (t && !fast && text) t.value = text; }
       this.shadowRoot.querySelector(".lar-chatt")?.lastElementChild?.scrollIntoView({ block: "nearest" });
       this.shadowRoot.querySelector("#hjalp-text")?.focus();
     }
@@ -6888,12 +6907,12 @@ class SkolanPanel extends HTMLElement {
     else if (barn) igar = `<button class="mini" id="gata-visa">🔓 Se svaret på gårdagens gåta${ig.gissning ? " (du gissade!)" : ""}</button>`;
     const fraga = g.gissning
       ? `<div class="small">Din gissning: <b>${esc(g.gissning)}</b> · svaret kommer i morgon 🤫 ${barn ? `<button class="mini" id="gata-andra">Ändra</button>` : ""}</div>`
-      : barn ? `<div class="gata-rad"><input id="gata-svar" maxlength="60" placeholder="Din gissning…"><button class="mini primary" id="gata-gissa">Gissa</button></div><div class="small muted" id="gata-sparad"></div>`
+      : barn ? `<div class="gata-rad"><input id="gata-svar" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="Din gissning…"><button class="mini primary" id="gata-gissa">Gissa</button></div><div class="small muted" id="gata-sparad"></div>`
       : `<div class="small muted">Barnet har inte gissat än.</div>`;
     return `<div class="card dagens-kort">
       <div class="dagens-halsning">🌞 ${esc(g.halsning)}</div>
       ${h ? `<div class="handelse"><b>${h.ikon} ${esc(h.namn)}</b> · ${esc(h.info)}</div>` : ""}
-      <div class="gata"><div class="gata-rubrik">🧩 Dagens gåta</div><div class="gata-fraga">${esc(g.gata)}</div>${this._gataAndra ? `<div class="gata-rad"><input id="gata-svar" maxlength="60" value="${esc(g.gissning)}"><button class="mini primary" id="gata-gissa">Spara</button></div>` : fraga}
+      <div class="gata"><div class="gata-rubrik">🧩 Dagens gåta</div><div class="gata-fraga">${esc(g.gata)}</div>${this._gataAndra ? `<div class="gata-rad"><input id="gata-svar" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="60" value="${esc(g.gissning)}"><button class="mini primary" id="gata-gissa">Spara</button></div>` : fraga}
       <div class="small muted">Rätt svar ger +${g.p_gata} ⭐ när du öppnar svaret i morgon.</div></div>
       ${igar}</div>`;
   }
@@ -6941,7 +6960,7 @@ class SkolanPanel extends HTMLElement {
       <div class="card gs-fraga-kort"><div class="small muted">Ord ${gs.pos + 1} av ${gs.ordning.length}${sprak ? ` · svara på ${esc(sprak).toLowerCase()}` : ""}</div>
         <div class="gs-fraga">${esc(fraga)}</div>
         ${gs.visaFacit ? `<div class="gs-facit">Rätt svar: <b>${esc(gs.visaFacit)}</b></div><button class="primary" id="gs-nasta">Nästa ›</button>`
-          : `<div class="gata-rad"><input id="gs-svar" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ditt svar…"><button class="primary" id="gs-skicka" ${this._busy ? "disabled" : ""}>⚔️ Attack</button></div>`}</div>`;
+          : `<div class="gata-rad"><input id="gs-svar" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Ditt svar…"><button class="primary" id="gs-skicka" ${this._busy ? "disabled" : ""}>⚔️ Attack</button></div>`}</div>`;
   }
 
   async _glosstridSvar() {
@@ -7803,7 +7822,7 @@ class SkolanPanel extends HTMLElement {
                <button class="primary" id="nasta">Nästa →</button>
                ${this._hadeRattOk(o, svar) ? `<button class="ghost" id="hade-ratt">Jag hade rätt</button>` : ""}`
             : `${o.tips?.[k.i] ? `<div class="tips-rad">💡 ${[...String(svar)].map((c, j) => (j < o.tips[k.i] || c === " " ? esc(c) : "_")).join("&#8203;")}</div>` : ""}
-               <input id="svar" placeholder="${gTyp(g) === "glosor" ? `Skriv på ${esc(till.toLowerCase() || "det andra språket")}` : `Skriv ${esc(till.toLowerCase() || "svaret")}`}" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(o.utkast || "")}">
+               <input id="svar" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="${gTyp(g) === "glosor" ? `Skriv på ${esc(till.toLowerCase() || "det andra språket")}` : `Skriv ${esc(till.toLowerCase() || "svaret")}`}" value="${esc(o.utkast || "")}">
                <div class="actions center">
                  <button class="primary" id="kolla" ${this._busy ? "disabled" : ""}>Kolla${!this._s.kan_valja && (o.forsok?.[k.i] || 0) >= 2 ? " (1 ⭐ om fel)" : ""}</button>
                  ${(o.tips?.[k.i] || 0) < [...String(svar)].length - 1 ? `<button class="ghost" id="tips" ${this._busy ? "disabled" : ""}>💡 Tips (${this._s.kan_valja ? "gratis" : "1 ⭐"})</button>` : ""}
