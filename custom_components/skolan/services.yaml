@@ -1,0 +1,3 @@
+ladda_om_appen:
+  name: Ladda om appen
+  description: Laddar in en ny panel.js utan att starta om Home Assistant.

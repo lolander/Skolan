@@ -4010,7 +4010,8 @@ class SkolanPanel extends HTMLElement {
       ${mentor || amnesl.length ? `<div class="small">${mentor ? `Mentor: <b>${esc(mentor.namn || "")}</b>` : ""}${amnesl.length ? `${mentor ? " · " : ""}${amnesl.map((x) => `${esc(x.amne || "Ämne")}: ${esc(x.namn || "")}`).join(" · ")}` : ""}</div>` : ""}
       ${kl ? `<div class="small">Klassens boss: ${esc(kl.ikon)} ${esc(kl.boss)} · ❤️ ${kvar} av ${kl.hp} kvar · ${kl.antal} elever med</div>
         <div class="progress boss-hp"><div style="width:${Math.round((kvar / kl.hp) * 100)}%"></div></div>
-        <div class="small muted">Allt du pluggar hjälper klassen. Klarar ni bossen får alla ${30} ⭐. Synka på lektionen så räknas ditt plugg.</div>` : ""}
+        <div class="small muted">Allt du pluggar hjälper klassen. Klarar ni bossen får alla ${30} ⭐. Synka på lektionen så räknas ditt plugg.</div>
+        ${kl.skada > 0 ? `<button class="mini" id="klassboss-film">⚔️ Se klassens strid</button>` : ""}` : ""}
       ${(k.grupper || []).map((g) => `<div class="grupp-kort"><b>👥 ${esc(g.namn)}</b> <span class="small muted">med ${g.medlemmar.map(esc).join(", ")}</span>
         <div>${esc(g.uppgift) || "<span class='muted'>Ingen uppgift än</span>"}${g.datum ? ` <span class="small muted">· klar senast ${esc(g.datum)}</span>` : ""}</div>
         ${g.klar ? `<div class="small">✅ Du har bockat av uppgiften. Läraren ser det när du synkar.</div>` : `<button class="mini primary" data-grupp-klar="${g.id}">✔️ Vi är klara</button>`}</div>`).join("")}
@@ -4249,7 +4250,8 @@ class SkolanPanel extends HTMLElement {
           <div class="progress boss-hp"><div style="width:${Math.round((kvar / b.hp) * 100)}%"></div></div>
           <div class="small">${b.klar ? `🎉 Besegrad! Alla i laget fick <b>${b.beloning} ⭐</b>.` : `❤️ ${kvar} av ${b.hp} liv kvar · besegra den senast söndag ${fmt(b.slut)}`}</div>
           <div class="small muted">Allt som någon i laget pluggar den här veckan gör skada. ${b.klar ? "" : `Belöning: <b>${b.beloning} ⭐</b> till var och en.`}</div>
-          <div class="lag-bidrag">${L.medlemmar.map((x) => `<span>${esc(x.namn)}: <b>${x.vecka}</b></span>`).join("")}</div></div></div>`;
+          <div class="lag-bidrag">${L.medlemmar.map((x) => `<span>${esc(x.namn)}: <b>${x.vecka}</b></span>`).join("")}</div>
+          ${b.skada > 0 ? `<button class="mini" id="lagboss-film">⚔️ Se veckans strid</button>` : ""}</div></div>`;
       const ls = s.lagstrid || {}, medDjur = L.medlemmar.filter((x) => x.art).length;
       html += `<h3>⚔️ Lagstrid ${L.medlemmar.length} mot ${L.medlemmar.length}</h3>
         <p class="small muted">Hela laget mot ett datorstyrt utmanarlag. Du styr ditt husdjur och datorn styr lagkamraterna. Kostar 1 ⚡. Vinst ger ${ls.vinst} 🏆 och XP, förlust ${ls.forlust} 🏆.</p>
@@ -4312,13 +4314,249 @@ class SkolanPanel extends HTMLElement {
 
   async _lagstridDrag(drag) {
     if (this._busy) return;
+    const fore = this._s.lagstrid?.pagar ? JSON.parse(JSON.stringify(this._s.lagstrid.pagar)) : null;
     if (!(await this._act("lagstrid_drag", { drag, mal: this._lsMal || 0 }))) return;
     const k = this._s.data?.meriter?.karta || {};
     const p = k.lagstrid || (k.lagstrid_hist || []).at(-1);
     this._lsTur = p?.turer?.at(-1) || null;
     if (!k.lagstrid) this._lsSlut = { ...p, vann: this._lsTur?.slut === "vinst" };
+    const film = fore && this._lsTur?.h?.length ? this._lagFilm(fore, this._lsTur) : null;
     await this._load();
+    if (film) await film;
     this._render();
+  }
+
+  // Lagstridens filmscen (turordning som i klassiska rollspel): motståndarna till vänster, laget till höger.
+  // Varje slag spelas upp: anfallaren kliver fram, attacken flyger, skadan studsar upp, livet sjunker, KO.
+  // Läggs i document.body så att omritningar inte avbryter den. Tryck för att hoppa över. Löser när den är klar.
+  _lagFilm(fore, tur, opt = {}) {
+    document.getElementById("skolan-lagfilm")?.remove();
+    const lugn = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const info = this._s.arena?.drag || {};
+    const sidor = { lag: fore.lag.map((x) => ({ ...x })), de: fore.de.map((x) => ({ ...x })) };
+    const FARG = { eld: "#ff6d00", natur: "#66bb6a", blixt: "#ffeb3b", vatten: "#29b6f6", is: "#b3e5fc", kraft: "#e040fb" };
+    const skyddT = { bubbla: "🫧 Bubblan!", block: "🛡️ Blockerad!", spegel: "🪞 Speglad!", tagg: "🦔 Taggar!", typ: "🛡️ Typskydd" };
+    // Som i klassiska rollspel: motståndarna överst, de egna husdjuren nederst (samma vy för båda spelarna).
+    const plats = (sida, i, n) => {  // procent av scenen
+      if (sidor[sida]?.[i]?.boss) return { x: 50, y: 30 };
+      const x = n <= 1 ? 50 : 14 + (i * 72) / (n - 1);
+      const y = (sida === "de" ? 27 : 73) + (n > 2 && i % 2 ? (sida === "de" ? -5 : 5) : 0);
+      return { x, y };
+    };
+    const kampe = (x, sida, i) => {
+      const { x: px, y: py } = plats(sida, i, sidor[sida].length), ute = x.liv <= 0;
+      const w = `min(${Math.min(24, Math.floor(84 / Math.max(1, sidor[sida].length)))}vw,110px)`;
+      return `<div class="lf-k ${sida} ${ute ? "ko" : ""} ${x.boss ? "boss" : ""}" data-k="${sida}${i}" style="left:${px}%;top:${py}%;--w:${w}">
+        <div class="lf-namn">${esc(x.namn)}${sida === "lag" && i === (opt.du ?? 0) ? " ⭐" : ""}</div>
+        <div class="lf-liv"><div style="width:${Math.max(0, (x.liv / x.max) * 100)}%"></div></div>
+        <div class="lf-djur">${x.art ? ritaDjur(x.art, ute ? "hungrig" : "glad", Math.max(1, x.steg), {}) : `<span class="lf-ikon">${x.ikon || "🐾"}</span>`}</div></div>`;
+    };
+    const el = document.createElement("div");
+    el.id = "skolan-lagfilm";
+    el.innerHTML = `<style>
+      #skolan-lagfilm{position:fixed;inset:0;z-index:99999;overflow:hidden;font-family:system-ui,sans-serif;color:#fff;cursor:pointer;user-select:none;
+        background:radial-gradient(ellipse at 50% 30%,#3949ab 0%,#1a1a40 55%,#07071a 100%);animation:lfIn .3s ease-out}
+      #skolan-lagfilm.ut{animation:lfUt .35s ease-in forwards}
+      #skolan-lagfilm .lf-mark{position:absolute;left:-30%;right:-30%;bottom:0;height:62%;background:linear-gradient(#283593,#050510);transform:perspective(500px) rotateX(50deg);transform-origin:bottom}
+      #skolan-lagfilm .lf-lag{position:absolute;top:10px;font:800 13px system-ui;opacity:.85;text-shadow:1px 1px 0 #000}
+      #skolan-lagfilm .lf-lag.de{left:12px} #skolan-lagfilm .lf-lag.lag{left:12px;top:auto;bottom:max(12px,env(safe-area-inset-bottom))}
+      #skolan-lagfilm .lf-k{position:absolute;width:var(--w,min(22vw,110px));transform:translate(-50%,-50%);text-align:center;transition:filter .4s,opacity .6s}
+      #skolan-lagfilm .lf-k .lf-djur{width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:44px}
+      #skolan-lagfilm .lf-k .lf-djur svg{width:100%;height:100%}
+      #skolan-lagfilm .lf-ikon{font-size:min(16vw,76px);line-height:1;filter:drop-shadow(0 6px 8px rgba(0,0,0,.5))}
+      #skolan-lagfilm .lf-k.boss{width:min(44vw,220px)} #skolan-lagfilm .lf-k.boss .lf-ikon{font-size:min(34vw,170px);animation:lfBoss 2.4s ease-in-out infinite}
+      #skolan-lagfilm .lf-k.boss .lf-namn{font-size:14px;color:#ffccbc} #skolan-lagfilm .lf-k.boss .lf-liv{height:9px}
+      #skolan-lagfilm .lf-tal small{display:block;font-size:14px;color:#ffd54f}
+      @keyframes lfBoss{50%{transform:translateY(-6px) scale(1.03)}}
+      #skolan-lagfilm .lf-namn{font:800 11px system-ui;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:1px 1px 0 #000}
+      #skolan-lagfilm .lf-liv{height:6px;margin:2px 6px 0;border-radius:3px;background:rgba(0,0,0,.5);overflow:hidden}
+      #skolan-lagfilm .lf-liv div{height:100%;background:linear-gradient(#b9f6ca,#00c853);transition:width .5s ease-out}
+      #skolan-lagfilm .lf-k.de .lf-liv div{background:linear-gradient(#ff8a80,#d50000)}
+      #skolan-lagfilm .lf-k.ko{filter:grayscale(1) brightness(.6);opacity:.55}
+      #skolan-lagfilm .lf-k.ko .lf-djur{animation:lfKo .6s ease-in forwards}
+      #skolan-lagfilm .lf-k.aktiv .lf-namn{color:#ffd54f}
+      #skolan-lagfilm .lf-skott{position:absolute;font-size:42px;transform:translate(-50%,-50%);pointer-events:none;filter:drop-shadow(0 0 10px var(--g)) drop-shadow(0 0 22px var(--g))}
+      #skolan-lagfilm .lf-pang{position:absolute;width:30px;height:30px;margin:-15px;border-radius:50%;border:5px solid var(--g);pointer-events:none;animation:lfPang .5s ease-out forwards}
+      #skolan-lagfilm .lf-tal{position:absolute;transform:translate(-50%,-50%);font:900 34px system-ui;color:#ff5252;text-shadow:0 3px 0 #000,0 0 14px rgba(0,0,0,.6);pointer-events:none;animation:lfTal 1s ease-out forwards;white-space:nowrap}
+      #skolan-lagfilm .lf-tal.miss{color:#e0e0e0;font-size:26px} #skolan-lagfilm .lf-tal.skydd{color:#80d8ff;font-size:18px}
+      #skolan-lagfilm .lf-ruta{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1;max-width:92vw;padding:8px 16px;border:3px solid #fff;border-radius:8px;
+        background:rgba(10,10,40,.92);font:800 15px system-ui;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .15s}
+      #skolan-lagfilm .lf-ruta.syns{opacity:1}
+      #skolan-lagfilm .lf-ruta.de{border-color:#ff8a80} #skolan-lagfilm .lf-ruta.lag{border-color:#b9f6ca}
+      #skolan-lagfilm .lf-slut{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%) scale(.3);font:900 52px system-ui;text-align:center;opacity:0;white-space:nowrap;z-index:2;padding:14px 26px;border-radius:18px;background:rgba(7,7,26,.85);border:3px solid var(--g);
+        text-shadow:0 4px 0 #000,0 0 30px var(--g)}
+      #skolan-lagfilm .lf-slut small{display:block;font-size:18px;font-weight:700;margin-top:6px}
+      #skolan-lagfilm .lf-slut.syns{animation:lfSlut .7s cubic-bezier(.2,1.4,.4,1) forwards}
+      #skolan-lagfilm .lf-hoppa{position:absolute;right:12px;bottom:max(12px,env(safe-area-inset-bottom));font:700 12px system-ui;opacity:.6}
+      @keyframes lfIn{from{opacity:0}to{opacity:1}} @keyframes lfUt{to{opacity:0}}
+      @keyframes lfKo{0%{transform:none}100%{transform:translateY(14px) rotate(80deg)}}
+      @keyframes lfPang{0%{transform:scale(.3);opacity:1}100%{transform:scale(4);opacity:0}}
+      @keyframes lfTal{0%{transform:translate(-50%,-30%) scale(.4);opacity:0}20%{transform:translate(-50%,-80%) scale(1.25);opacity:1}35%{transform:translate(-50%,-80%) scale(1)}80%{opacity:1}100%{transform:translate(-50%,-140%);opacity:0}}
+      @keyframes lfSlut{0%{transform:translate(-50%,-50%) scale(.3);opacity:0}60%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}
+    </style>
+      <div class="lf-mark"></div>
+      <div class="lf-lag de">${esc(fore.de_namn || "")}</div><div class="lf-lag lag">${esc(fore.lag_namn || "")}</div>
+      ${sidor.de.map((x, i) => kampe(x, "de", i)).join("")}${sidor.lag.map((x, i) => kampe(x, "lag", i)).join("")}
+      <div class="lf-ruta"></div><div class="lf-slut"></div><div class="lf-hoppa">Tryck för att hoppa över ⏭</div>`;
+    document.body.appendChild(el);
+    const k = (sida, i) => el.querySelector(`[data-k="${sida}${i}"]`);
+    const pos = (sida, i) => plats(sida, i, sidor[sida].length);
+    const ruta = el.querySelector(".lf-ruta");
+    const fart = lugn ? 0.6 : 1, ms = (x) => x * fart;
+    let hoppa = false, klar;
+    const vanta = (x) => new Promise((r) => { if (hoppa) return r(); const t = setTimeout(r, ms(x)); el._t = (el._t || []).concat(t); });
+    const ljud = (slag) => {
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC || hoppa) return;
+        const ac = (this._ac ||= new AC()); ac.resume?.();
+        const t0 = ac.currentTime, ut = ac.createGain(); ut.gain.value = 0.1; ut.connect(ac.destination);
+        const ton = (f, s, d, form = "square", till = null) => {
+          const o = ac.createOscillator(), g = ac.createGain();
+          o.type = form; o.frequency.setValueAtTime(f, t0 + s); if (till) o.frequency.exponentialRampToValueAtTime(till, t0 + s + d);
+          g.gain.setValueAtTime(0.0001, t0 + s); g.gain.exponentialRampToValueAtTime(1, t0 + s + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t0 + s + d);
+          o.connect(g).connect(ut); o.start(t0 + s); o.stop(t0 + s + d + 0.02);
+        };
+        ({ fram: () => ton(330, 0, 0.12, "triangle", 660), traff: () => ton(150, 0, 0.18, "sawtooth", 50), miss: () => ton(600, 0, 0.18, "triangle", 1200),
+           ko: () => [392, 330, 262].forEach((f, i) => ton(f, i * 0.16, 0.2, "triangle")),
+           vinst: () => [523, 659, 784, 659, 784, 1047].forEach((f, i) => ton(f, i * 0.13, i === 5 ? 0.5 : 0.12, "square")),
+           forlust: () => [392, 349, 311, 262].forEach((f, i) => ton(f, i * 0.22, 0.25, "triangle")) }[slag] || (() => {}))();
+      } catch (_) { /* inget ljud */ }
+    };
+    const spela = async () => {
+      await vanta(500);
+      for (const h of tur.h) {
+        if (hoppa) break;
+        const anf = sidor[h.sida][h.i], mal = sidor[h.mal_sida][h.mal];
+        if (!anf || !mal) continue;
+        const at = h.atObj || info[h.at] || { ikon: "⚔️", namn: h.at, typ: "kraft" };
+        const g = FARG[at.typ] || FARG.kraft, a = pos(h.sida, h.i), m = pos(h.mal_sida, h.mal);
+        const ka = k(h.sida, h.i), km = k(h.mal_sida, h.mal);
+        ruta.className = `lf-ruta syns ${h.sida}`;
+        ruta.textContent = `${anf.namn} använder ${at.ikon} ${at.namn}!`;
+        ka?.classList.add("aktiv");
+        ljud("fram");
+        // Anfallaren kliver fram.
+        const steg = h.sida === "lag" ? -7 : 7;
+        ka?.animate([{ transform: "translate(-50%,-50%)" }, { transform: `translate(-50%,calc(-50% + ${steg}vh)) scale(1.08)` }],
+          { duration: ms(260), fill: "forwards", easing: "ease-out" });
+        await vanta(300);
+        // Attacken flyger till målet.
+        const skott = document.createElement("div");
+        skott.className = "lf-skott"; skott.style.setProperty("--g", g); skott.textContent = h.at === "a_meteor" ? "☄️" : at.ikon;
+        skott.style.left = `${a.x}%`; skott.style.top = `${a.y}%`;
+        el.appendChild(skott);
+        if (!lugn) skott.animate([{ left: `${a.x}%`, top: `${a.y}%`, transform: "translate(-50%,-50%) scale(.6) rotate(0)" },
+          { left: `${(a.x + m.x) / 2}%`, top: `${Math.min(a.y, m.y) - 12}%`, transform: "translate(-50%,-50%) scale(1.3) rotate(180deg)", offset: 0.5 },
+          { left: `${m.x}%`, top: `${m.y}%`, transform: "translate(-50%,-50%) scale(1) rotate(360deg)" }], { duration: ms(450), fill: "forwards", easing: "ease-in" });
+        await vanta(lugn ? 150 : 450);
+        skott.remove();
+        // Träff.
+        const tal = document.createElement("div");
+        tal.style.left = `${m.x}%`; tal.style.top = `${m.y - 8}%`;
+        if (h.miss) {
+          tal.className = "lf-tal miss"; tal.textContent = "MISS!"; ljud("miss");
+          km?.animate([{ transform: "translate(-50%,-50%)" }, { transform: "translate(calc(-50% + 7vw),-50%)" }, { transform: "translate(-50%,-50%)" }], { duration: ms(350) });
+        } else {
+          const pang = document.createElement("div");
+          pang.className = "lf-pang"; pang.style.setProperty("--g", g); pang.style.left = `${m.x}%`; pang.style.top = `${m.y}%`;
+          el.appendChild(pang); setTimeout(() => pang.remove(), 600);
+          tal.className = "lf-tal"; tal.innerHTML = `${h.skada > 0 ? `−${h.skada}` : "0"}${h.svag ? "<small>SVAG PUNKT!</small>" : ""}`;
+          ljud("traff");
+          if (!lugn) km?.animate([{ transform: "translate(-50%,-50%)", filter: "brightness(3)" }, { transform: "translate(calc(-50% + 6px),-50%)" },
+            { transform: "translate(calc(-50% - 6px),-50%)" }, { transform: "translate(-50%,-50%)", filter: "none" }], { duration: ms(380) });
+          mal.liv = Math.max(0, mal.liv - (h.skada || 0));
+          if (h.tillbaka) anf.liv = Math.max(0, anf.liv - h.tillbaka);
+        }
+        el.appendChild(tal); setTimeout(() => tal.remove(), 1100);
+        if (h.skydd && skyddT[h.skydd]) {
+          const sk = document.createElement("div");
+          sk.className = "lf-tal skydd"; sk.textContent = skyddT[h.skydd] + (h.tillbaka ? ` −${h.tillbaka}` : "");
+          sk.style.left = `${m.x}%`; sk.style.top = `${m.y + 14}%`; el.appendChild(sk); setTimeout(() => sk.remove(), 1100);
+        }
+        const livDiv = (kk, x) => { const d = kk?.querySelector(".lf-liv div"); if (d) d.style.width = `${Math.max(0, (x.liv / x.max) * 100)}%`; };
+        livDiv(km, mal); livDiv(ka, anf);
+        await vanta(350);
+        ka?.animate([{ transform: `translate(-50%,calc(-50% + ${steg}vh)) scale(1.08)` }, { transform: "translate(-50%,-50%)" }], { duration: ms(220), fill: "forwards" });
+        ka?.classList.remove("aktiv");
+        for (const [kk, x] of [[km, mal], [ka, anf]]) {
+          if (x.liv <= 0 && !kk?.classList.contains("ko")) {
+            kk?.classList.add("ko"); ljud("ko");
+            ruta.textContent = `😵 ${x.namn} orkar inte mer!`;
+            await vanta(700);
+          }
+        }
+        await vanta(250);
+      }
+      ruta.className = "lf-ruta";
+      el.querySelectorAll(".lf-k").forEach((x) => x.classList.remove("aktiv"));
+      if (tur.slut && !hoppa) {
+        const vann = tur.slut === "vinst", slut = el.querySelector(".lf-slut");
+        slut.style.setProperty("--g", vann ? "#ffd54f" : "#90a4ae");
+        const txt = (opt.slut || {})[vann ? "vinst" : "forlust"] || (vann ? ["🥇 VINST!", "Laget vann lagstriden!"] : ["💔 Förlust", "Bra kämpat!"]);
+        slut.innerHTML = `${txt[0]}<small>${txt[1] || ""}</small>`;
+        slut.classList.add("syns"); ljud(vann ? "vinst" : "forlust");
+        await vanta(2200);
+      } else await vanta(300);
+    };
+    return new Promise((res) => {
+      klar = () => {
+        if (el.classList.contains("ut")) return;
+        hoppa = true; (el._t || []).forEach(clearTimeout);
+        el.classList.add("ut"); setTimeout(() => { el.remove(); res(); }, 350);
+      };
+      el.addEventListener("click", () => klar());
+      spela().then(() => klar());
+    });
+  }
+
+  // Lagbossen och klassens boss som filmscen. auto = spela bara om bossen tagit ny skada sedan barnet såg den sist.
+  _bossMinne(nyckel, ny) {
+    try {
+      if (ny) localStorage.setItem(nyckel, JSON.stringify(ny));
+      return JSON.parse(localStorage.getItem(nyckel) || "null");
+    } catch (e) { return null; }
+  }
+
+  async _lagbossFilm(auto) {
+    const L = this._s.lag, b = L?.boss;
+    if (!b || document.getElementById("skolan-lagfilm")) return;
+    const nyckel = `skolan_lagboss_${this._s.namn || ""}_${b.slut}_${b.namn}`, sen = (auto && this._bossMinne(nyckel)) || { skada: 0, per: {}, klar: false };
+    const D = b.skada - (sen.skada || 0);
+    this._bossMinne(nyckel, { skada: b.skada, klar: !!b.klar, per: Object.fromEntries(L.medlemmar.map((x) => [x.namn, x.vecka])) });
+    if (D <= 0) return;
+    const med = L.medlemmar.map((x, i) => ({ x, i, d: Math.max(0, x.vecka - ((sen.per || {})[x.namn] || 0)) }));
+    const sum = med.reduce((t, y) => t + y.d, 0);
+    const typer = ["eld", "blixt", "vatten", "natur", "is", "kraft"], ikon = { eld: "🔥", blixt: "⚡", vatten: "💧", natur: "🍃", is: "❄️", kraft: "💥" };
+    let kvar = D;
+    const anf = sum ? med.filter((y) => y.d > 0) : [med[0]];
+    const h = anf.map((y, j) => {
+      const sk = j === anf.length - 1 ? kvar : Math.max(1, Math.round((D * y.d) / (sum || 1)));
+      kvar -= sk;
+      const typ = typer[y.i % typer.length];
+      return { sida: "lag", i: y.i, mal_sida: "de", mal: 0, skada: Math.max(0, sk), atObj: { ikon: ikon[typ], namn: `Pluggkraft (${y.d || "?"} ⭐)`, typ } };
+    }).filter((y) => y.skada > 0);
+    await this._lagFilm({ lag_namn: `${L.marke} ${L.namn}`, de_namn: "Veckans lagboss",
+      lag: L.medlemmar.map((x) => ({ namn: x.namn, art: x.art, steg: x.steg, ikon: "🥚", liv: 1, max: 1 })),
+      de: [{ namn: b.namn, ikon: b.ikon, boss: true, liv: b.hp - (sen.skada || 0), max: b.hp }] },
+      { h, slut: b.klar && !sen.klar ? "vinst" : null }, { du: L.medlemmar.findIndex((x) => x.namn === this._s.namn), slut: { vinst: ["🏆 BESEGRAD!", `Alla i laget får ${b.beloning} ⭐`] } });
+  }
+
+  async _klassbossFilm(auto) {
+    const kl = this._s.skola?.klass, d = this._s.meriter?.djur;
+    if (!kl || document.getElementById("skolan-lagfilm")) return;
+    const nyckel = `skolan_klassboss_${this._s.namn || ""}_${kl.boss}_${kl.hp}`, sen = (auto && this._bossMinne(nyckel)) || { skada: 0, klar: false };
+    const klar = kl.skada >= kl.hp, D = kl.skada - (sen.skada || 0);
+    this._bossMinne(nyckel, { skada: kl.skada, klar });
+    if (D <= 0) return;
+    const lag = [{ namn: d?.namn || "Du", art: d?.art, steg: d?.steg || 1, ikon: "🧑‍🎓", liv: 1, max: 1 },
+      { namn: `${Math.max(0, (kl.antal || 1) - 1)} klasskamrater`, ikon: "🧑‍🤝‍🧑", liv: 1, max: 1 }];
+    const halv = Math.max(1, Math.round(D / 2));
+    const h = [{ sida: "lag", i: 1, mal_sida: "de", mal: 0, skada: D - halv, atObj: { ikon: "📚", namn: "Klassens plugg", typ: "blixt" } },
+      { sida: "lag", i: 0, mal_sida: "de", mal: 0, skada: halv, atObj: { ikon: "✏️", namn: "Pluggkraft", typ: "kraft" } }].filter((y) => y.skada > 0);
+    await this._lagFilm({ lag_namn: "🏫 Klassen", de_namn: "Klassens boss", lag,
+      de: [{ namn: kl.boss, ikon: kl.ikon, boss: true, liv: kl.hp - (sen.skada || 0), max: kl.hp }] },
+      { h, slut: klar && !sen.klar ? "vinst" : null }, { slut: { vinst: ["🏆 BESEGRAD!", "Alla i klassen får 30 ⭐"] } });
   }
 
   _lagstridView() {
@@ -4508,6 +4746,21 @@ class SkolanPanel extends HTMLElement {
     if (!(await this._act("attack", { attack: x.id }))) return false;
     const sen = this._s.data?.meriter?.karta?.senaste || {};
     const laddat = this._load();
+    if (fore.mon?.boss && djur) {  // världsboss: filmscen som i klassiska rollspel, sedan stridsmenyn igen
+      const motFas = !sen.klar && sen.liv_max != null && sen.liv_fore != null;
+      const motAt = sen.mot_at || { ikon: fore.mon.ikon, namn: "Motattack", typ: "kraft" };
+      const h = [{ sida: "lag", i: 0, mal_sida: "de", mal: 0, atObj: { ...x, ikon: x.id === "a_meteor" ? "☄️" : x.ikon }, skada: sen.skada ?? x.nu, svag: sen.svag ?? x.svag }];
+      if (motFas) h.push({ sida: "de", i: 0, mal_sida: "lag", mal: 0, atObj: { ...motAt, ikon: motAt.id === "a_meteor" ? "☄️" : motAt.ikon },
+        skada: sen.mot || 0, miss: !!sen.miss, skydd: sen.miss ? "" : sen.skydd, tillbaka: sen.tillbaka });
+      const film = this._lagFilm({ lag_namn: "", de_namn: `${fore.mon.varld?.ikon || "👑"} ${fore.mon.namn}`,
+        lag: [{ namn: djur.namn, art: djur.art, steg: djur.steg, liv: sen.liv_fore ?? 1, max: sen.liv_max ?? 1 }],
+        de: [{ namn: fore.mon.namn, ikon: fore.mon.ikon, boss: true, liv: fore.kvar, max: fore.hp }] },
+        { h, slut: sen.klar ? "vinst" : null }, { slut: { vinst: ["👑 SEGER!", `${fore.mon.namn} är besegrad!`] } });
+      await laddat;
+      await film;
+      this._strid(this._stridLage({ idle: true, fortsatt: true, laddat }));
+      return true;
+    }
     this._strid({ at: x, djur, ...fore, skada: sen.skada ?? x.nu, svag: sen.svag ?? x.svag, klar: !!sen.klar,
       mot: sen.mot || 0, miss: !!sen.miss, livFore: sen.liv_fore, livMax: sen.liv_max, live: true, fortsatt, laddat,
       skydd: sen.skydd, tillbaka: sen.tillbaka, skold: sen.skold, meteorer: sen.meteorer, motAt: sen.mot_at, motLak: sen.mot_lak });
@@ -9496,6 +9749,10 @@ class SkolanPanel extends HTMLElement {
       this._render();
     });
     on("#lagstrid-start", () => this._lagstridStart());
+    on("#lagboss-film", () => this._lagbossFilm(false));
+    on("#klassboss-film", () => this._klassbossFilm(false));
+    if (r.querySelector("#lagboss-film") && !this._lagbossVisad) { this._lagbossVisad = true; setTimeout(() => this._lagbossFilm(true), 400); }
+    if (r.querySelector("#klassboss-film") && !this._klassbossVisad) { this._klassbossVisad = true; setTimeout(() => this._klassbossFilm(true), 400); }
     on("#lagstrid-fortsatt", () => this._go({ name: "lagstrid" }));
     on("#lagstrid-ge-upp", async () => { if (confirm("Ge upp lagstriden?") && (await this._act("lagstrid_ge_upp"))) { await this._load(); this._go({ name: "lag" }); } });
     r.querySelectorAll("[data-ls-mal]").forEach((b) => b.addEventListener("click", () => { this._lsMal = Number(b.dataset.lsMal); this._render(); }));

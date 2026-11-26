@@ -699,8 +699,24 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ateruppta)
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _starta_grind)
 
+    await _registrera_panel(hass)
+
+    async def _ladda_om_appen(call) -> None:
+        """Ny panel.js utan omstart av HA: registrera panelen igen med ny adress."""
+        from homeassistant.components import frontend
+
+        frontend.async_remove_panel(hass, "skolan", warn_if_unknown=False)
+        await _registrera_panel(hass)
+        _LOGGER.info("Skolan: appen laddad om utan omstart")
+
+    hass.services.async_register(DOMAIN, "ladda_om_appen", _ladda_om_appen)
+    return True
+
+
+async def _registrera_panel(hass: HomeAssistant) -> None:
     # Ny fil = ny adress och nytt elementnamn, så ingen webbläsare visar en gammal app ur cachen.
-    panel_v = f"{VERSION}-{int((Path(__file__).parent / 'www' / 'panel.js').stat().st_mtime)}"
+    mtime = await hass.async_add_executor_job(lambda: (Path(__file__).parent / "www" / "panel.js").stat().st_mtime)
+    panel_v = f"{VERSION}-{int(mtime)}"
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path="skolan",
@@ -711,7 +727,6 @@ async def _starta(hass: HomeAssistant, conf: dict) -> bool:
         require_admin=False,
         config={},
     )
-    return True
 
 
 # ---------- hjälpare ----------
