@@ -6200,6 +6200,35 @@ class SkolanPanel extends HTMLElement {
     this._render();
   }
 
+  // Öppnar en signerad sida (utskrift, schema, nedladdning) i ett nytt fönster.
+  // I HA-appen (iOS/Android) fungerar varken tomma popup-fönster eller utskrift i appen: där öppnas sidan
+  // i telefonens webbläsare i stället, och där finns utskriftsdialogen.
+  _iApp() {
+    return !!(window.externalApp || window.webkit?.messageHandlers?.getExternalAuth) || /Home ?Assistant\//i.test(navigator.userAgent || "");
+  }
+
+  async _oppnaSida(hamta, felText) {
+    const app = this._iApp();
+    const w = app ? null : window.open("", "_blank"); // i webbläsaren: öppnas direkt i klicket så att det inte blockeras
+    try {
+      const res = await hamta();
+      const url = new URL(res.path, window.location.href).href;
+      if (w) w.location.href = url;
+      else if (app) {
+        const a = Object.assign(document.createElement("a"), { href: url, target: "_blank", rel: "noopener" });
+        document.body.appendChild(a); a.click(); a.remove();
+        this._msg = { type: "ok", text: "📄 Sidan öppnas i webbläsaren. Där trycker du på dela-knappen → Skriv ut (eller utskriften startar själv)." };
+        this._render();
+      } else window.location.href = url;
+      return true;
+    } catch (e) {
+      w?.close();
+      this._msg = { type: "error", text: `${felText}: ${e.message || e}` };
+      this._render();
+      return false;
+    }
+  }
+
   async _uppdragAct(op, args = {}) {
     this._busy = true;
     this._render();
@@ -8217,23 +8246,14 @@ class SkolanPanel extends HTMLElement {
       const val = v.utskrift;
       if (!b || !val.size) return;
       const idx = b.sidor.map((f, i) => (val.has(f) ? i + 1 : null)).filter(Boolean);
-      // Öppna fönstret direkt (inne i klicket) så att det inte blockeras, och fyll det sen.
-      const w = window.open("", "_blank");
-      try {
-        const q = new URLSearchParams({
-          barn: this._s.barn, amne: v.amne, bok: v.bok,
-          sidor: idx.length ? idx.join(",") : "ingen",
-          fram: val.has("fram") ? "1" : "0", bak: val.has("bak") ? "1" : "0",
-        });
-        const res = await this._hass.callWS({ type: "auth/sign_path", path: this._apiUrl(`/api/skolan/utskrift?${q}`), expires: 120 });
-        if (w) w.location.href = res.path;
-        else window.location.href = res.path;
+      const q = new URLSearchParams({
+        barn: this._s.barn, amne: v.amne, bok: v.bok,
+        sidor: idx.length ? idx.join(",") : "ingen",
+        fram: val.has("fram") ? "1" : "0", bak: val.has("bak") ? "1" : "0",
+      });
+      if (await this._oppnaSida(() => this._hass.callWS({ type: "auth/sign_path", path: this._apiUrl(`/api/skolan/utskrift?${q}`), expires: 300 }), "Kunde inte öppna utskriften")) {
         delete v.utskrift;
-        this._msg = null;
-        this._render();
-      } catch (e) {
-        w?.close();
-        this._msg = { type: "error", text: `Kunde inte öppna utskriften: ${e.message || e}` };
+        if (!this._iApp()) this._msg = null;
         this._render();
       }
     });
@@ -8779,11 +8799,7 @@ class SkolanPanel extends HTMLElement {
       if (this._s.kan_valja) r.querySelectorAll("[data-ls-i]").forEach((b) => b.addEventListener("click", () => { v.red = Number(b.dataset.lsI); this._render(); setTimeout(() => this.shadowRoot.querySelector("#ls-red")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }));
       on("#ls-ny", () => { v.red = "ny"; this._render(); setTimeout(() => this.shadowRoot.querySelector("#ls-red")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); });
       on("#ls-utskrift", async () => {
-        const w = window.open("", "_blank"); // öppnas direkt i klicket så att det inte blockeras
-        try {
-          const res = await this._hass.callWS({ type: "auth/sign_path", path: this._apiUrl(`/api/skolan/schema_sida?barn=${encodeURIComponent(this._s.barn)}`), expires: 300 });
-          if (w) w.location.href = res.path; else window.location.href = res.path;
-        } catch (e) { w?.close(); this._msg = { type: "error", text: `Kunde inte öppna schemat: ${e.message || e}` }; this._render(); }
+        await this._oppnaSida(() => this._hass.callWS({ type: "auth/sign_path", path: this._apiUrl(`/api/skolan/schema_sida?barn=${encodeURIComponent(this._s.barn)}`), expires: 300 }), "Kunde inte öppna schemat");
       });
       on("#ls-tomt", () => { v.f = { lektioner: [], amnen: [] }; v.red = "ny"; this._render(); });
       on("#lr-avbryt", () => { v.red = null; this._render(); });
@@ -8953,11 +8969,7 @@ class SkolanPanel extends HTMLElement {
         if (x) { v.ner = x; this._render(); }
       });
       on("#bk-hamta", async () => {
-        const w = window.open("", "_blank");
-        try {
-          const res = await this._hass.callWS({ type: "auth/sign_path", path: `/api/skolan/backup?hamta=${encodeURIComponent(v.ner.fil)}`, expires: 300 });
-          if (w) w.location.href = res.path; else window.location.href = res.path;
-        } catch (e) { w?.close(); this._msg = { type: "error", text: `Kunde inte ladda ner: ${e.message || e}` }; this._render(); }
+        await this._oppnaSida(() => this._hass.callWS({ type: "auth/sign_path", path: `/api/skolan/backup?hamta=${encodeURIComponent(v.ner.fil)}`, expires: 300 }), "Kunde inte ladda ner");
       });
       $("#bk-fil")?.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) this._bkLaddaUpp(f); });
       on("#bk-oppna", () => this._bkOppna($("#bk-in-losen")?.value || ""));
@@ -9072,11 +9084,7 @@ class SkolanPanel extends HTMLElement {
         window.open(`mailto:${encodeURIComponent(v.d?.mejl || "").replace(/%2C/g, ",")}?subject=${encodeURIComponent(amne)}&body=${encodeURIComponent(textFor(k))}`, "_blank");
       }));
       on("#lr-samtal", async () => {
-        const w = window.open("", "_blank");
-        try {
-          const res = await this._hass.callWS({ type: "auth/sign_path", path: `/api/skolan/samtal?barn=${encodeURIComponent(this._s.barn)}`, expires: 300 });
-          if (w) w.location.href = res.path; else window.location.href = res.path;
-        } catch (e) { w?.close(); this._msg = { type: "error", text: `Kunde inte öppna underlaget: ${e.message || e}` }; this._render(); }
+        await this._oppnaSida(() => this._hass.callWS({ type: "auth/sign_path", path: `/api/skolan/samtal?barn=${encodeURIComponent(this._s.barn)}`, expires: 300 }), "Kunde inte öppna underlaget");
       });
     }
     // Det jag gillar
